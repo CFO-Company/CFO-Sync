@@ -1,0 +1,14 @@
+﻿[project]
+name = "cfo-sync"
+version = "0.1.0"
+description = "App local modular para coleta de APIs e exportacao para Google Sheets"
+requires-python = ">=3.11"
+
+dependencies = [
+  "google-api-python-client==2.166.0",
+  "google-auth==2.38.0"
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"

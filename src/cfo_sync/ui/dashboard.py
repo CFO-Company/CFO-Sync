@@ -1,0 +1,76 @@
+﻿from __future__ import annotations
+
+from datetime import date
+from pathlib import Path
+
+import streamlit as st
+
+from cfo_sync.core.config_loader import load_app_config
+from cfo_sync.core.pipeline import SyncPipeline
+
+
+def run_dashboard() -> None:
+    st.set_page_config(page_title="CFO Sync", layout="wide")
+    st.title("CFO Sync")
+    st.caption("Coleta de APIs por plataforma e exportacao para Google Sheets")
+
+    config = load_app_config(Path("secrets/app_config.json"))
+    pipeline = SyncPipeline(config)
+
+    platforms = {p.key: p for p in config.platforms}
+    platform_key = st.selectbox("Plataforma", list(platforms.keys()), index=0)
+    selected_platform = platforms[platform_key]
+
+    client = st.selectbox("Cliente", selected_platform.clients, index=0)
+    available_resources = [resource.name for resource in selected_platform.resources]
+    if not available_resources:
+        st.warning("Nenhum recurso configurado para esta plataforma.")
+        return
+
+    selected_resource = st.selectbox("Recurso", available_resources, index=0)
+
+    today = date.today()
+    first_day_of_month = today.replace(day=1)
+    period = st.date_input(
+        "Periodo (inicio e fim)",
+        value=(first_day_of_month, today),
+        format="DD/MM/YYYY",
+    )
+
+    if not isinstance(period, (tuple, list)) or len(period) != 2:
+        st.warning("Selecione data inicial e data final.")
+        return
+
+    start_date = period[0]
+    end_date = period[1]
+    start_date_str = start_date.isoformat()
+    end_date_str = end_date.isoformat()
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Coletar e salvar no banco local", use_container_width=True):
+            count = pipeline.collect(
+                platform_key=platform_key,
+                client=client,
+                start_date=start_date_str,
+                end_date=end_date_str,
+                resource_names=[selected_resource],
+            )
+            st.success(f"{count} registros coletados e salvos localmente.")
+
+    with c2:
+        if st.button("Exportar para Sheets", use_container_width=True):
+            count = pipeline.export_to_sheets(
+                platform_key=platform_key,
+                client=client,
+                start_date=start_date_str,
+                end_date=end_date_str,
+                resource_names=[selected_resource],
+            )
+            st.success(f"{count} registros enviados para exportacao.")
+
+    st.divider()
+    st.subheader("Arquitetura aplicada")
+    st.write("- UI unica em `src/cfo_sync/ui`")
+    st.write("- Conector separado por plataforma em `src/cfo_sync/platforms`")
+    st.write("- Config central para clientes/plataformas em `secrets/app_config.json`")
