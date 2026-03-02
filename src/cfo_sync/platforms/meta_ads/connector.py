@@ -5,6 +5,7 @@ from pathlib import Path
 from cfo_sync.core.models import RawRecord, ResourceConfig
 from cfo_sync.platforms.meta_ads.contas import fetch_contas_stub
 from cfo_sync.platforms.meta_ads.credentials import MetaAdsCredentialsStore
+from cfo_sync.platforms.meta_ads.insights import fetch_insights
 
 
 class MetaAdsConnector:
@@ -28,5 +29,14 @@ class MetaAdsConnector:
 
         if resource.name == "contas":
             return fetch_contas_stub(client, resource, accounts)
+        if resource.name == "insights":
+            return fetch_insights(
+                client=client,
+                resource=resource,
+                accounts=accounts,
+                auth=self.credentials_store.auth,
+                start_date=start_date,
+                end_date=end_date,
+            )
 
         return []

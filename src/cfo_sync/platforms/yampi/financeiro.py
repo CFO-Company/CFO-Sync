@@ -17,6 +17,8 @@ def fetch_financeiro(
     sub_clients: list[str] | None = None,
 ) -> list[RawRecord]:
     period_start, period_end = normalize_period(start_date, end_date)
+    period_start_date = date.fromisoformat(period_start)
+    period_end_date = date.fromisoformat(period_end)
     selected_aliases = aliases
     if sub_clients:
         selected_names = {name.strip() for name in sub_clients if name.strip()}
@@ -29,8 +31,16 @@ def fetch_financeiro(
             start_date=period_start,
             end_date=period_end,
         )
-        rows.extend(_aggregate_monthly(client, alias_credential.alias, orders, resource.name))
-
+        rows.extend(
+            _aggregate_monthly(
+                client,
+                alias_credential.alias,
+                orders,
+                resource.name,
+                period_start=period_start_date,
+                period_end=period_end_date,
+            )
+        )
     rows.sort(key=lambda row: str(row["alias"]).lower())
     rows.sort(key=lambda row: _parse_row_date(str(row["data"])), reverse=True)
     return rows
@@ -41,8 +51,29 @@ def _aggregate_monthly(
     alias_name: str,
     orders: list[dict[str, Any]],
     resource_name: str,
+    period_start: date | None = None,
+    period_end: date | None = None,
 ) -> list[RawRecord]:
     bucket: dict[str, dict[str, Any]] = {}
+
+    if period_start is not None and period_end is not None and period_start <= period_end:
+        current = date(period_start.year, period_start.month, 1)
+        last = date(period_end.year, period_end.month, 1)
+        while current <= last:
+            month_key = current.isoformat()
+            bucket[month_key] = {
+                "data": current.strftime("%d/%m/%Y"),
+                "nome_empresa": company_name,
+                "alias": alias_name,
+                "vendas_produto": 0.0,
+                "descontos_concedidos": 0.0,
+                "juros_venda": 0.0,
+                "resource": resource_name,
+            }
+            if current.month == 12:
+                current = date(current.year + 1, 1, 1)
+            else:
+                current = date(current.year, current.month + 1, 1)
 
     for order in orders:
         created = _extract_order_date(order.get("created_at"))

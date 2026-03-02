@@ -62,6 +62,12 @@ class GoogleSheetsExporter:
 
         if not existing_values:
             all_values = [ordered_columns] + [self._to_sheet_row(row, ordered_columns) for row in rows]
+            self._ensure_grid_capacity(
+                spreadsheet_id=spreadsheet_id,
+                tab_name=tab_name,
+                required_rows=len(all_values),
+                required_columns=len(ordered_columns),
+            )
             service.spreadsheets().values().update(
                 spreadsheetId=spreadsheet_id,
                 range=f"{tab_name}!A1",
@@ -78,6 +84,12 @@ class GoogleSheetsExporter:
                 header_changed = True
 
         if header_changed:
+            self._ensure_grid_capacity(
+                spreadsheet_id=spreadsheet_id,
+                tab_name=tab_name,
+                required_rows=1,
+                required_columns=len(header),
+            )
             service.spreadsheets().values().update(
                 spreadsheetId=spreadsheet_id,
                 range=f"{tab_name}!1:1",
@@ -146,11 +158,71 @@ class GoogleSheetsExporter:
             ).execute()
             start_row = len(existing.get("values", [])) + 1
 
+        max_columns = max((len(row) for row in rows), default=1)
+        self._ensure_grid_capacity(
+            spreadsheet_id=spreadsheet_id,
+            tab_name=tab_name,
+            required_rows=start_row + len(rows) - 1,
+            required_columns=max_columns,
+        )
+
         service.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
             range=f"{tab_name}!A{start_row}",
             valueInputOption="USER_ENTERED",
             body={"values": rows},
+        ).execute()
+
+    def _ensure_grid_capacity(
+        self,
+        spreadsheet_id: str,
+        tab_name: str,
+        required_rows: int,
+        required_columns: int,
+    ) -> None:
+        service = self._get_service()
+        sheet_properties = self._get_sheet_properties_by_title(
+            spreadsheet_id=spreadsheet_id,
+            tab_name=tab_name,
+        )
+
+        sheet_id = int(sheet_properties.get("sheetId"))
+        grid = sheet_properties.get("gridProperties", {})
+        current_rows = int(grid.get("rowCount") or 0)
+        current_columns = int(grid.get("columnCount") or 0)
+
+        target_rows = max(1, required_rows)
+        target_columns = max(1, required_columns)
+
+        requests: list[dict[str, Any]] = []
+        if target_rows > current_rows:
+            requests.append(
+                {
+                    "appendDimension": {
+                        "sheetId": sheet_id,
+                        "dimension": "ROWS",
+                        "length": target_rows - current_rows,
+                    }
+                }
+            )
+
+        if target_columns > current_columns:
+            requests.append(
+                {
+                    "appendDimension": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "length": target_columns - current_columns,
+                    }
+                }
+            )
+
+        if not requests:
+            return
+
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={"requests": requests},
         ).execute()
 
     def _get_service(self):
@@ -186,6 +258,26 @@ class GoogleSheetsExporter:
                 return resolved_title
 
         raise ValueError(f"gid {target_tab.gid} nao encontrado na planilha {spreadsheet_id}.")
+
+    def _get_sheet_properties_by_title(self, spreadsheet_id: str, tab_name: str) -> dict[str, Any]:
+        metadata = (
+            self._get_service()
+            .spreadsheets()
+            .get(
+                spreadsheetId=spreadsheet_id,
+                fields="sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))",
+            )
+            .execute()
+        )
+
+        normalized_title = tab_name.strip()
+        for sheet in metadata.get("sheets", []):
+            properties = sheet.get("properties", {})
+            title = str(properties.get("title", "")).strip()
+            if title == normalized_title:
+                return properties
+
+        raise ValueError(f"Aba '{tab_name}' nao encontrada na planilha {spreadsheet_id}.")
 
     @staticmethod
     def _map_to_sheet_columns(resource: ResourceConfig, row: RawRecord) -> dict[str, object]:

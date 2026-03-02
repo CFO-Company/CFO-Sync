@@ -19,9 +19,7 @@ if str(SRC_DIR) not in sys.path:
 from cfo_sync.core.config_loader import load_app_config
 from cfo_sync.core.models import ResourceConfig
 from cfo_sync.core.pipeline import SyncPipeline
-from cfo_sync.platforms.meta_ads.credentials import MetaAdsCredentialsStore
-from cfo_sync.platforms.yampi.api import fetch_orders_by_number
-from cfo_sync.platforms.yampi.credentials import YampiCredentialsStore
+from cfo_sync.platforms.ui_registry import build_platform_ui_registry
 
 
 ALL_SUB_CLIENTS = "Todos"
@@ -66,13 +64,7 @@ class CFODesktopApp:
 
         self.config = load_app_config(PROJECT_DIR / "secrets" / "app_config.json")
         self.pipeline = SyncPipeline(self.config)
-
-        self.yampi_store = YampiCredentialsStore.from_file(
-            self.config.credentials_dir / self.config.yampi.credentials_file
-        )
-        self.meta_ads_store = MetaAdsCredentialsStore.from_file(
-            self.config.credentials_dir / self.config.meta_ads.credentials_file
-        )
+        self.platform_ui_registry = build_platform_ui_registry(self.config)
 
         self.platform_choices = self._build_platform_choices()
         self.choice_by_label = {choice.label: choice for choice in self.platform_choices}
@@ -366,9 +358,10 @@ class CFODesktopApp:
         for platform in self.config.platforms:
             if not self._clients_for_platform(platform.key):
                 continue
+            platform_behavior = self.platform_ui_registry.get(platform.key)
             for resource in platform.resources:
-                if platform.key == "yampi" and resource.name == "sku":
-                    # SKU usa aba dedicada e exportacao propria; nao aparece no seletor principal.
+                if platform_behavior and platform_behavior.uses_dedicated_resource_tab(resource.name):
+                    # Recursos dedicados usam aba propria e exportacao especifica.
                     continue
                 label = self._platform_resource_label(platform.key, platform.label, resource.name)
                 choices.append(
@@ -377,12 +370,13 @@ class CFODesktopApp:
         return choices
 
     def _clients_for_platform(self, platform_key: str) -> list[str]:
-        key = platform_key.lower()
-        if key == "yampi":
-            return self.yampi_store.companies()
-        if key == "meta_ads":
-            return self.meta_ads_store.companies()
-        return []
+        platform = next((item for item in self.config.platforms if item.key == platform_key), None)
+        configured_clients = list(platform.clients) if platform is not None else []
+
+        behavior = self.platform_ui_registry.get(platform_key)
+        if behavior is None:
+            return configured_clients
+        return behavior.companies(configured_clients)
 
     @staticmethod
     def _platform_resource_label(platform_key: str, platform_label: str, resource_name: str) -> str:
@@ -867,8 +861,9 @@ class CFODesktopApp:
         self.btn_select_all_sub_clients.configure(state=controls_state)
         self.btn_clear_sub_clients.configure(state=controls_state)
         self.sub_client_listbox.configure(state=controls_state)
-        self.btn_search_sku.configure(state=tk.NORMAL)
-        self.sku_order_entry.configure(state=tk.NORMAL)
+        sku_state = tk.NORMAL if self._platform_supports_sku_workflow() else tk.DISABLED
+        self.btn_search_sku.configure(state=sku_state)
+        self.sku_order_entry.configure(state=sku_state)
 
     def _run_task(self, action_name: str, target) -> None:
         if self.busy:
@@ -894,12 +889,28 @@ class CFODesktopApp:
             return
         self._update_export_sku_button_state()
 
+    def _platform_supports_sku_workflow(self) -> bool:
+        choice = self.choice_by_label.get(self.platform_var.get())
+        if choice is None:
+            return False
+        behavior = self.platform_ui_registry.get(choice.platform_key)
+        return behavior is not None and behavior.supports_sku_workflow
+
     def _is_sku_tab_active(self) -> bool:
         selected_tab_id = self.tabs.select()
         return selected_tab_id == str(self.sku_tab)
 
     def _update_export_sku_button_state(self) -> None:
-        if self._is_sku_tab_active():
+        try:
+            choice = self._get_current_choice()
+        except ValueError:
+            self.btn_export_sku.configure(state=tk.DISABLED, cursor="no")
+            return
+
+        behavior = self.platform_ui_registry.get(choice.platform_key)
+        can_use_sku = behavior is not None and behavior.supports_sku_workflow
+
+        if self._is_sku_tab_active() and can_use_sku:
             self.btn_export_sku.configure(state=tk.NORMAL, cursor="hand2")
             return
         self.btn_export_sku.configure(state=tk.DISABLED, cursor="no")
@@ -930,105 +941,6 @@ class CFODesktopApp:
             raise ValueError(f"Recurso nao encontrado: {platform_key}/{resource_name}")
         return resource
 
-    @staticmethod
-    def _to_sku_price_cost(raw_item: dict[str, object], raw_sku: dict[str, object]) -> float:
-        for raw_value in (raw_item.get("price_cost"), raw_sku.get("price_cost"), raw_item.get("price")):
-            if raw_value in (None, ""):
-                continue
-            try:
-                return float(raw_value)  # type: ignore[arg-type]
-            except (TypeError, ValueError):
-                continue
-        return 0.0
-
-    @staticmethod
-    def _format_to_ddmmyyyy(raw_value: object) -> str:
-        if raw_value in (None, ""):
-            return ""
-
-        text = str(raw_value).strip()
-        if not text:
-            return ""
-
-        normalized = text.replace("Z", "+00:00")
-        try:
-            return datetime.fromisoformat(normalized).strftime("%d/%m/%Y")
-        except ValueError:
-            pass
-
-        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-            try:
-                return datetime.strptime(text, fmt).strftime("%d/%m/%Y")
-            except ValueError:
-                continue
-
-        return text
-
-    @staticmethod
-    def _to_order_created_at(order: dict[str, object]) -> str:
-        raw_created_at = order.get("created_at")
-        if isinstance(raw_created_at, dict):
-            raw_date = raw_created_at.get("date")
-            if raw_date not in (None, ""):
-                return CFODesktopApp._format_to_ddmmyyyy(raw_date)
-            return ""
-        if raw_created_at in (None, ""):
-            return ""
-        return CFODesktopApp._format_to_ddmmyyyy(raw_created_at)
-
-    @staticmethod
-    def _extract_items_from_order(order: dict[str, object]) -> list[dict[str, object]]:
-        items = order.get("items")
-        if isinstance(items, dict):
-            data = items.get("data")
-            if isinstance(data, list):
-                return [item for item in data if isinstance(item, dict)]
-        if isinstance(items, list):
-            return [item for item in items if isinstance(item, dict)]
-        return []
-
-    def _build_sku_preview_rows(self, order: dict[str, object]) -> list[dict[str, object]]:
-        order_number = str(order.get("number") or order.get("id") or "").strip()
-        created_at = self._to_order_created_at(order)
-        rows: list[dict[str, object]] = []
-        for raw_item in self._extract_items_from_order(order):
-            raw_sku_wrapper = raw_item.get("sku")
-            raw_sku: dict[str, object] = {}
-            if isinstance(raw_sku_wrapper, dict):
-                nested = raw_sku_wrapper.get("data")
-                if isinstance(nested, dict):
-                    raw_sku = nested
-
-            sku_id = raw_item.get("sku_id") or raw_sku.get("id")
-            item_sku = raw_item.get("item_sku") or raw_sku.get("sku")
-            quantity = raw_item.get("quantity") or 0
-            price_cost = self._to_sku_price_cost(raw_item, raw_sku)
-
-            rows.append(
-                {
-                    "number": order_number,
-                    "created_at": created_at,
-                    "sku_id": str(sku_id or "").strip(),
-                    "item_sku": str(item_sku or "").strip(),
-                    "quantity": int(quantity) if str(quantity).isdigit() else quantity,
-                    "price_cost": round(float(price_cost), 2),
-                }
-            )
-
-        unique: dict[tuple[str, str, str, str, str, float], dict[str, object]] = {}
-        for row in rows:
-            key = (
-                str(row["number"]),
-                str(row["created_at"]),
-                str(row["sku_id"]),
-                str(row["item_sku"]),
-                str(row["quantity"]),
-                float(row["price_cost"]),
-            )
-            if key not in unique:
-                unique[key] = row
-        return list(unique.values())
-
     def _render_sku_preview(self) -> None:
         self.sku_tree.delete(*self.sku_tree.get_children())
         for row in self.sku_preview_rows:
@@ -1049,20 +961,12 @@ class CFODesktopApp:
         self.sku_preview_rows = []
         self._render_sku_preview()
 
-    @staticmethod
-    def _order_matches_number(order: dict[str, object], order_number: str) -> bool:
-        candidate_number = str(order.get("number") or "").strip()
-        candidate_id = str(order.get("id") or "").strip()
-        number = order_number.strip()
-        if not number:
-            return False
-        return candidate_number == number or candidate_id == number
-
     def search_sku(self) -> None:
         def task() -> None:
             choice = self._get_current_choice()
-            if choice.platform_key != "yampi":
-                raise ValueError("Busca SKU disponivel apenas para Yampi no momento.")
+            behavior = self.platform_ui_registry.get(choice.platform_key)
+            if behavior is None or not behavior.supports_sku_workflow:
+                raise ValueError(f"Busca SKU nao disponivel para plataforma: {choice.platform_key}")
 
             client = self.client_var.get().strip()
             if not client:
@@ -1073,48 +977,16 @@ class CFODesktopApp:
                 raise ValueError("Informe o numero do pedido para buscar SKU.")
 
             selected_alias_names = self._selected_sub_clients()
-            alias_credentials = self.yampi_store.aliases_for_company(client)
-            if selected_alias_names:
-                selected_set = {name.strip() for name in selected_alias_names if name.strip()}
-                alias_credentials = [
-                    credential for credential in alias_credentials if credential.alias in selected_set
-                ]
-
-            if not alias_credentials:
-                raise ValueError("Nenhum alias selecionado para buscar SKU.")
-
-            found_orders: list[dict[str, object]] = []
-            found_aliases: list[str] = []
-            for credential in alias_credentials:
-                orders = fetch_orders_by_number(credential=credential, order_number=order_number)
-                matched_orders = [order for order in orders if self._order_matches_number(order, order_number)]
-                if matched_orders:
-                    found_orders.extend(matched_orders)
-                    found_aliases.append(credential.alias)
-
-            if not found_orders:
+            rows, found_aliases = behavior.search_sku_rows(
+                company_name=client,
+                order_number=order_number,
+                selected_sub_clients=selected_alias_names,
+            )
+            if not rows:
                 self.root.after(0, self._clear_sku_preview)
                 raise ValueError(f"Pedido {order_number} nao encontrado nos aliases selecionados.")
 
-            rows: list[dict[str, object]] = []
-            for order in found_orders:
-                rows.extend(self._build_sku_preview_rows(order))
-
-            # Evita duplicidade quando o mesmo pedido aparece em mais de uma tentativa.
-            unique_rows: dict[tuple[str, str, str, str, str, float], dict[str, object]] = {}
-            for row in rows:
-                key = (
-                    str(row.get("number", "")),
-                    str(row.get("created_at", "")),
-                    str(row.get("sku_id", "")),
-                    str(row.get("item_sku", "")),
-                    str(row.get("quantity", "")),
-                    float(row.get("price_cost", 0.0)),
-                )
-                if key not in unique_rows:
-                    unique_rows[key] = row
-
-            self.sku_preview_rows = list(unique_rows.values())
+            self.sku_preview_rows = rows
             self.root.after(0, self._render_sku_preview)
             self.log(
                 f"SKU encontrado: pedido={order_number} | linhas={len(self.sku_preview_rows)} | "
@@ -1160,24 +1032,21 @@ class CFODesktopApp:
 
         raise ValueError("Data invalida. Use o formato DD/MM/AAAA (ex.: 27/02/2026).")
 
-    @staticmethod
-    def _normalize_monthly_period(choice: PlatformChoice, start_date: date, end_date: date) -> tuple[date, date]:
-        if choice.platform_key != "yampi" or choice.resource_name != "financeiro":
+    def _normalize_monthly_period(
+        self,
+        choice: PlatformChoice,
+        start_date: date,
+        end_date: date,
+    ) -> tuple[date, date]:
+        behavior = self.platform_ui_registry.get(choice.platform_key)
+        if behavior is None:
             return start_date, end_date
-
-        # Financeiro e mensal. Quando inicio/fim estao no dia 1, consideramos o mes inteiro.
-        if start_date.day != 1 or end_date.day != 1:
-            return start_date, end_date
-
-        if start_date > end_date:
-            return start_date, end_date
-
-        today = date.today()
-        if end_date.year == today.year and end_date.month == today.month:
-            return start_date, today
-
-        next_month = date(end_date.year + (1 if end_date.month == 12 else 0), (end_date.month % 12) + 1, 1)
-        return start_date, next_month - timedelta(days=1)
+        return behavior.normalize_period(
+            resource_name=choice.resource_name,
+            start_date=start_date,
+            end_date=end_date,
+            today=date.today(),
+        )
 
     def on_platform_change(self) -> None:
         choice = self.choice_by_label[self.platform_var.get()]
@@ -1191,6 +1060,11 @@ class CFODesktopApp:
             self.client_var.set("")
             self._set_sub_client_options([])
             self.log("Nenhum cliente configurado para esta plataforma.")
+        self._update_export_sku_button_state()
+        if not self.busy:
+            sku_state = tk.NORMAL if self._platform_supports_sku_workflow() else tk.DISABLED
+            self.btn_search_sku.configure(state=sku_state)
+            self.sku_order_entry.configure(state=sku_state)
 
     def on_client_change(self) -> None:
         choice = self.choice_by_label[self.platform_var.get()]
@@ -1199,14 +1073,14 @@ class CFODesktopApp:
         self._clear_sku_preview()
 
         try:
-            if choice.platform_key == "yampi":
-                options.extend(self.yampi_store.alias_names_for_company(client))
-            elif choice.platform_key == "meta_ads":
-                options.extend(self.meta_ads_store.ad_account_names_for_company(client))
+            behavior = self.platform_ui_registry.get(choice.platform_key)
+            if behavior is not None:
+                options.extend(behavior.sub_client_names(client))
         except Exception as error:  # noqa: BLE001
             self.log(f"Aviso ao carregar filiais/aliases: {error}")
 
         self._set_sub_client_options(options)
+        self._update_export_sku_button_state()
 
     def _set_sub_client_options(self, options: list[str]) -> None:
         self.sub_client_options = options
@@ -1356,14 +1230,15 @@ class CFODesktopApp:
                 raise ValueError("Nenhum SKU carregado. Clique em Buscar SKU antes de exportar.")
 
             choice = self._get_current_choice()
-            if choice.platform_key != "yampi":
-                raise ValueError("Exportacao SKU disponivel apenas para Yampi no momento.")
+            behavior = self.platform_ui_registry.get(choice.platform_key)
+            if behavior is None or not behavior.supports_sku_workflow:
+                raise ValueError(f"Exportacao SKU nao disponivel para plataforma: {choice.platform_key}")
 
             client = self.client_var.get().strip()
             if not client:
                 raise ValueError("Selecione um cliente para exportar SKU.")
 
-            sku_resource = self._resolve_resource_by_name(platform_key="yampi", resource_name="sku")
+            sku_resource = self._resolve_resource_by_name(platform_key=choice.platform_key, resource_name="sku")
 
             exported = self.pipeline.exporter.export(
                 client=client,
