@@ -628,21 +628,25 @@ class CFODesktopApp:
         sku_table_frame.columnconfigure(0, weight=1)
         sku_table_frame.rowconfigure(0, weight=1)
 
-        sku_columns = ("sku_id", "item_sku", "price_cost", "quantity")
+        sku_columns = ("number", "created_at", "sku_id", "item_sku", "quantity", "price_cost")
         self.sku_tree = ttk.Treeview(
             sku_table_frame,
             columns=sku_columns,
             show="headings",
             style="Dark.Treeview",
         )
-        self.sku_tree.heading("sku_id", text="SKU_ID")
-        self.sku_tree.heading("item_sku", text="ITEM_SKU")
-        self.sku_tree.heading("price_cost", text="PRICE_COST")
-        self.sku_tree.heading("quantity", text="QUANTITY")
+        self.sku_tree.heading("number", text="NUMBER", anchor=tk.CENTER)
+        self.sku_tree.heading("created_at", text="CREATED_AT", anchor=tk.CENTER)
+        self.sku_tree.heading("sku_id", text="SKU_ID", anchor=tk.CENTER)
+        self.sku_tree.heading("item_sku", text="ITEM_SKU", anchor=tk.CENTER)
+        self.sku_tree.heading("quantity", text="QUANTITY", anchor=tk.CENTER)
+        self.sku_tree.heading("price_cost", text="PRICE_COST", anchor=tk.CENTER)
+        self.sku_tree.column("number", anchor=tk.CENTER, stretch=False)
+        self.sku_tree.column("created_at", anchor=tk.CENTER, stretch=False)
         self.sku_tree.column("sku_id", anchor=tk.CENTER, stretch=False)
-        self.sku_tree.column("item_sku", anchor=tk.W, stretch=False)
-        self.sku_tree.column("price_cost", anchor=tk.E, stretch=False)
+        self.sku_tree.column("item_sku", anchor=tk.CENTER, stretch=False)
         self.sku_tree.column("quantity", anchor=tk.CENTER, stretch=False)
+        self.sku_tree.column("price_cost", anchor=tk.CENTER, stretch=False)
         self.sku_tree.grid(row=0, column=0, sticky=tk.NSEW)
 
         sku_scroll = ttk.Scrollbar(
@@ -689,7 +693,17 @@ class CFODesktopApp:
 
         log_card = ttk.Frame(right_panel, style="Card.TFrame", padding=16)
         log_card.grid(row=1, column=0, sticky=tk.NSEW)
-        ttk.Label(log_card, text="Log", style="CardTitle.TLabel").pack(anchor=tk.W, pady=(0, 10))
+
+        log_header = ttk.Frame(log_card, style="Card.TFrame")
+        log_header.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(log_header, text="Log", style="CardTitle.TLabel").pack(side=tk.LEFT, anchor=tk.W)
+        self.btn_clear_log = ttk.Button(
+            log_header,
+            text="Limpar log",
+            style="Secondary.TButton",
+            command=self.clear_log,
+        )
+        self.btn_clear_log.pack(side=tk.RIGHT)
 
         self.log_box = tk.Text(
             log_card,
@@ -722,21 +736,23 @@ class CFODesktopApp:
 
         available = max(total_width - 4, 200)
         ratios = [
-            ("sku_id", 0.18),
-            ("item_sku", 0.46),
-            ("price_cost", 0.20),
-            ("quantity", 0.16),
+            ("number", 0.11),
+            ("created_at", 0.25),
+            ("sku_id", 0.14),
+            ("item_sku", 0.30),
+            ("quantity", 0.10),
+            ("price_cost", 0.10),
         ]
 
         used = 0
         for column_name, ratio in ratios[:-1]:
             col_width = int(available * ratio)
-            self.sku_tree.column(column_name, width=col_width)
+            self.sku_tree.column(column_name, width=col_width, anchor=tk.CENTER)
             used += col_width
 
         # Ajusta a ultima coluna com a sobra para ocupar 100% da largura visivel.
         last_column = ratios[-1][0]
-        self.sku_tree.column(last_column, width=max(20, available - used))
+        self.sku_tree.column(last_column, width=max(20, available - used), anchor=tk.CENTER)
 
     def _bind_events(self) -> None:
         self.platform_combo.bind("<<ComboboxSelected>>", lambda _event: self.on_platform_change())
@@ -756,6 +772,17 @@ class CFODesktopApp:
 
     def log(self, message: str) -> None:
         self.log_queue.put(message)
+
+    def clear_log(self) -> None:
+        while True:
+            try:
+                self.log_queue.get_nowait()
+            except queue.Empty:
+                break
+
+        self.log_box.configure(state=tk.NORMAL)
+        self.log_box.delete("1.0", tk.END)
+        self.log_box.configure(state=tk.DISABLED)
 
     def _poll_logs(self) -> None:
         try:
@@ -915,6 +942,41 @@ class CFODesktopApp:
         return 0.0
 
     @staticmethod
+    def _format_to_ddmmyyyy(raw_value: object) -> str:
+        if raw_value in (None, ""):
+            return ""
+
+        text = str(raw_value).strip()
+        if not text:
+            return ""
+
+        normalized = text.replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(normalized).strftime("%d/%m/%Y")
+        except ValueError:
+            pass
+
+        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(text, fmt).strftime("%d/%m/%Y")
+            except ValueError:
+                continue
+
+        return text
+
+    @staticmethod
+    def _to_order_created_at(order: dict[str, object]) -> str:
+        raw_created_at = order.get("created_at")
+        if isinstance(raw_created_at, dict):
+            raw_date = raw_created_at.get("date")
+            if raw_date not in (None, ""):
+                return CFODesktopApp._format_to_ddmmyyyy(raw_date)
+            return ""
+        if raw_created_at in (None, ""):
+            return ""
+        return CFODesktopApp._format_to_ddmmyyyy(raw_created_at)
+
+    @staticmethod
     def _extract_items_from_order(order: dict[str, object]) -> list[dict[str, object]]:
         items = order.get("items")
         if isinstance(items, dict):
@@ -926,6 +988,8 @@ class CFODesktopApp:
         return []
 
     def _build_sku_preview_rows(self, order: dict[str, object]) -> list[dict[str, object]]:
+        order_number = str(order.get("number") or order.get("id") or "").strip()
+        created_at = self._to_order_created_at(order)
         rows: list[dict[str, object]] = []
         for raw_item in self._extract_items_from_order(order):
             raw_sku_wrapper = raw_item.get("sku")
@@ -942,20 +1006,24 @@ class CFODesktopApp:
 
             rows.append(
                 {
+                    "number": order_number,
+                    "created_at": created_at,
                     "sku_id": str(sku_id or "").strip(),
                     "item_sku": str(item_sku or "").strip(),
-                    "price_cost": round(float(price_cost), 2),
                     "quantity": int(quantity) if str(quantity).isdigit() else quantity,
+                    "price_cost": round(float(price_cost), 2),
                 }
             )
 
-        unique: dict[tuple[str, str, float, str], dict[str, object]] = {}
+        unique: dict[tuple[str, str, str, str, str, float], dict[str, object]] = {}
         for row in rows:
             key = (
+                str(row["number"]),
+                str(row["created_at"]),
                 str(row["sku_id"]),
                 str(row["item_sku"]),
-                float(row["price_cost"]),
                 str(row["quantity"]),
+                float(row["price_cost"]),
             )
             if key not in unique:
                 unique[key] = row
@@ -968,10 +1036,12 @@ class CFODesktopApp:
                 "",
                 tk.END,
                 values=(
+                    row.get("number", ""),
+                    row.get("created_at", ""),
                     row.get("sku_id", ""),
                     row.get("item_sku", ""),
-                    f"{float(row.get('price_cost', 0.0)):.2f}",
                     row.get("quantity", 0),
+                    f"{float(row.get('price_cost', 0.0)):.2f}",
                 ),
             )
 
@@ -1031,13 +1101,15 @@ class CFODesktopApp:
                 rows.extend(self._build_sku_preview_rows(order))
 
             # Evita duplicidade quando o mesmo pedido aparece em mais de uma tentativa.
-            unique_rows: dict[tuple[str, str, float, str], dict[str, object]] = {}
+            unique_rows: dict[tuple[str, str, str, str, str, float], dict[str, object]] = {}
             for row in rows:
                 key = (
+                    str(row.get("number", "")),
+                    str(row.get("created_at", "")),
                     str(row.get("sku_id", "")),
                     str(row.get("item_sku", "")),
-                    float(row.get("price_cost", 0.0)),
                     str(row.get("quantity", "")),
+                    float(row.get("price_cost", 0.0)),
                 )
                 if key not in unique_rows:
                     unique_rows[key] = row
