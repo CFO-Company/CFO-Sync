@@ -135,7 +135,7 @@ class GoogleSheetsExporter:
                 spreadsheet_id=spreadsheet_id,
                 tab_name=tab_name,
                 rows=appends,
-                start_row=len(existing_values) + 1,
+                start_row=self._next_row_index(existing_values, anchor_column_index=0),
             )
 
         return len(rows)
@@ -154,9 +154,9 @@ class GoogleSheetsExporter:
         if start_row is None:
             existing = service.spreadsheets().values().get(
                 spreadsheetId=spreadsheet_id,
-                range=f"{tab_name}!A:Z",
+                range=f"{tab_name}!A:A",
             ).execute()
-            start_row = len(existing.get("values", [])) + 1
+            start_row = self._next_row_index(existing.get("values", []), anchor_column_index=0)
 
         max_columns = max((len(row) for row in rows), default=1)
         self._ensure_grid_capacity(
@@ -320,3 +320,14 @@ class GoogleSheetsExporter:
         if index is None or index >= len(values):
             return ""
         return str(values[index]).strip()
+
+    @staticmethod
+    def _next_row_index(
+        existing_values: list[list[object]],
+        anchor_column_index: int = 0,
+    ) -> int:
+        last_non_empty_row = 0
+        for row_number, row_values in enumerate(existing_values, start=1):
+            if anchor_column_index < len(row_values) and str(row_values[anchor_column_index]).strip():
+                last_non_empty_row = row_number
+        return last_non_empty_row + 1

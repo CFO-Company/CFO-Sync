@@ -76,6 +76,9 @@ def _aggregate_monthly(
                 current = date(current.year, current.month + 1, 1)
 
     for order in orders:
+        if not _should_include_order(order):
+            continue
+
         created = _extract_order_date(order.get("created_at"))
         if created is None:
             continue
@@ -130,6 +133,62 @@ def _extract_order_date(raw_created_at: Any) -> date | None:
         return date.fromisoformat(text)
     except ValueError:
         return None
+
+
+def _should_include_order(order: dict[str, Any]) -> bool:
+    payment_values = _collect_order_field_values(order, "payment_date")
+    has_payment_date = any(not _is_empty_field(value) for value in payment_values)
+    if not has_payment_date:
+        return False
+
+    cancelled_values = _collect_order_field_values(order, "cancelled_date")
+    has_cancelled_date = any(not _is_empty_field(value) for value in cancelled_values)
+    if has_cancelled_date:
+        return False
+
+    return True
+
+
+def _collect_order_field_values(order: dict[str, Any], field_name: str) -> list[Any]:
+    values: list[Any] = []
+
+    if field_name in order:
+        values.append(order.get(field_name))
+
+    spreadsheet = order.get("spreadsheet")
+    if isinstance(spreadsheet, dict):
+        spreadsheet_rows = spreadsheet.get("data")
+        if isinstance(spreadsheet_rows, list):
+            for row in spreadsheet_rows:
+                if isinstance(row, dict) and field_name in row:
+                    values.append(row.get(field_name))
+
+    if not values:
+        values.append(None)
+
+    return values
+
+
+def _is_empty_field(value: Any) -> bool:
+    if value is None:
+        return True
+
+    if isinstance(value, dict):
+        if not value:
+            return True
+        if "date" in value:
+            return _is_empty_field(value.get("date"))
+        return False
+
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"", "null", "none"}:
+            return True
+        if normalized.startswith("0000-00-00"):
+            return True
+        return False
+
+    return False
 
 
 def _to_float(value: Any) -> float:
