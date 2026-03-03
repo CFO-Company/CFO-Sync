@@ -35,6 +35,7 @@ def load_app_config(config_path: Path) -> AppConfig:
                 client_name: SheetTabTarget(
                     tab_name=tab_data.get("tab_name", ""),
                     gid=str(tab_data["gid"]),
+                    spreadsheet_id=tab_data.get("spreadsheet_id"),
                 )
                 for client_name, tab_data in item["client_tabs"].items()
             }

@@ -24,12 +24,13 @@ class GoogleSheetsExporter:
         if not rows:
             return 0
 
-        tab_name = self._resolve_tab_name(resource.spreadsheet_id, target_tab)
+        spreadsheet_id = target_tab.spreadsheet_id or resource.spreadsheet_id
+        tab_name = self._resolve_tab_name(spreadsheet_id, target_tab)
         mapped_rows = [self._map_to_sheet_columns(resource, row) for row in rows]
 
         if platform_key == "yampi" and resource.name == "financeiro":
             return self._upsert_by_keys(
-                spreadsheet_id=resource.spreadsheet_id,
+                spreadsheet_id=spreadsheet_id,
                 tab_name=tab_name,
                 rows=mapped_rows,
                 ordered_columns=list(resource.field_map.values()),
@@ -38,7 +39,7 @@ class GoogleSheetsExporter:
 
         values = [self._to_sheet_row(row, ordered_columns=list(resource.field_map.values())) for row in mapped_rows]
         self._append_rows(
-            spreadsheet_id=resource.spreadsheet_id,
+            spreadsheet_id=spreadsheet_id,
             tab_name=tab_name,
             rows=values,
         )

@@ -24,6 +24,7 @@ class MetaAdsConfig:
 class SheetTabTarget:
     gid: str
     tab_name: str = ""
+    spreadsheet_id: str | None = None
 
 
 @dataclass(frozen=True)
