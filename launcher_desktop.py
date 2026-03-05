@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import json
 import queue
 import sys
 import threading
@@ -23,6 +24,9 @@ from cfo_sync.platforms.ui_registry import build_platform_ui_registry
 
 
 ALL_SUB_CLIENTS = "Todos"
+NO_NOTIFICATION_SOUND = "Sem som"
+DESKTOP_SETTINGS_PATH = PROJECT_DIR / "secrets" / "desktop_settings.json"
+SOUNDS_DIR = PROJECT_DIR / "sounds"
 
 COLOR_BG = "#0B0D10"
 COLOR_SURFACE = "#14181D"
@@ -78,6 +82,8 @@ class CFODesktopApp:
         self.sku_order_number_var = tk.StringVar()
         self.status_var = tk.StringVar(value="Pronto")
         self.sku_preview_rows: list[dict[str, object]] = []
+        self.notification_sound_var = tk.StringVar(value=NO_NOTIFICATION_SOUND)
+        self.notification_sound_options: list[str] = [NO_NOTIFICATION_SOUND]
 
         self.style = ttk.Style(self.root)
         self._apply_theme()
@@ -579,6 +585,37 @@ class CFODesktopApp:
         )
         previous_month_btn.pack(side=tk.LEFT)
 
+        ttk.Label(config_tab, text="Som de notificação", style="Field.TLabel").grid(
+            row=7, column=0, sticky=tk.W, padx=(0, 10), pady=6
+        )
+        sound_actions = ttk.Frame(config_tab, style="Card.TFrame")
+        sound_actions.grid(row=7, column=1, sticky=tk.EW, pady=6)
+        sound_actions.columnconfigure(0, weight=1)
+
+        self.notification_sound_combo = ttk.Combobox(
+            sound_actions,
+            textvariable=self.notification_sound_var,
+            state="readonly",
+            values=self.notification_sound_options,
+            style="Dark.TCombobox",
+            width=30,
+        )
+        self.notification_sound_combo.grid(row=0, column=0, sticky=tk.EW)
+
+        self.btn_refresh_sounds = ttk.Button(
+            sound_actions,
+            text="Atualizar sons",
+            style="Secondary.TButton",
+            command=self._refresh_notification_sounds,
+        )
+        self.btn_refresh_sounds.grid(row=0, column=1, sticky=tk.E, padx=(8, 0))
+
+        ttk.Label(
+            config_tab,
+            text="Adicione arquivos .mp3 na pasta sounds para novos sons.",
+            style="Field.TLabel",
+        ).grid(row=8, column=1, sticky=tk.W, pady=(0, 8))
+
         config_tab.rowconfigure(3, weight=1)
         config_tab.columnconfigure(1, weight=1)
 
@@ -752,6 +789,10 @@ class CFODesktopApp:
         self.platform_combo.bind("<<ComboboxSelected>>", lambda _event: self.on_platform_change())
         self.client_combo.bind("<<ComboboxSelected>>", lambda _event: self.on_client_change())
         self.sub_client_listbox.bind("<<ListboxSelect>>", lambda _event: self._update_sub_client_summary())
+        self.notification_sound_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._on_notification_sound_change(),
+        )
         self.tabs.bind("<<NotebookTabChanged>>", lambda _event: self._on_tab_changed())
         self.sku_order_entry.bind("<Return>", lambda _event: self.search_sku())
 
@@ -762,7 +803,136 @@ class CFODesktopApp:
         first = self.platform_choices[0]
         self.platform_var.set(first.label)
         self.on_platform_change()
+        self._refresh_notification_sounds(preserve_current=False)
         self._update_export_sku_button_state()
+
+    def _ensure_sounds_directory(self) -> None:
+        try:
+            SOUNDS_DIR.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            self.log(f"Aviso: nao foi possivel preparar a pasta de sons ({error}).")
+
+    def _load_desktop_settings(self) -> dict[str, object]:
+        if not DESKTOP_SETTINGS_PATH.exists():
+            return {}
+
+        try:
+            raw = DESKTOP_SETTINGS_PATH.read_text(encoding="utf-8")
+            loaded = json.loads(raw)
+        except (OSError, json.JSONDecodeError) as error:
+            self.log(f"Aviso: nao foi possivel ler desktop_settings.json ({error}).")
+            return {}
+
+        if not isinstance(loaded, dict):
+            self.log("Aviso: desktop_settings.json invalido. Recriando configuracao padrao.")
+            return {}
+        return loaded
+
+    def _save_desktop_settings(self, settings: dict[str, object]) -> None:
+        try:
+            DESKTOP_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            payload = json.dumps(settings, indent=2, sort_keys=True)
+            DESKTOP_SETTINGS_PATH.write_text(payload, encoding="utf-8")
+        except OSError as error:
+            self.log(f"Aviso: nao foi possivel salvar desktop_settings.json ({error}).")
+
+    def _saved_notification_sound(self) -> str:
+        settings = self._load_desktop_settings()
+        value = settings.get("notification_sound")
+        if not isinstance(value, str):
+            return NO_NOTIFICATION_SOUND
+        cleaned = value.strip()
+        return cleaned if cleaned else NO_NOTIFICATION_SOUND
+
+    def _persist_notification_sound(self, sound_name: str) -> None:
+        settings = self._load_desktop_settings()
+        settings["notification_sound"] = "" if sound_name == NO_NOTIFICATION_SOUND else sound_name
+        self._save_desktop_settings(settings)
+
+    def _refresh_notification_sounds(self, preserve_current: bool = True) -> None:
+        self._ensure_sounds_directory()
+
+        current_choice = self.notification_sound_var.get().strip()
+        available = sorted(
+            path.name
+            for path in SOUNDS_DIR.glob("*.mp3")
+            if path.is_file()
+        )
+        options = [NO_NOTIFICATION_SOUND, *available]
+        self.notification_sound_options = options
+        self.notification_sound_combo.configure(values=options)
+
+        if preserve_current and current_choice in options:
+            selected = current_choice
+        else:
+            selected = self._saved_notification_sound()
+            if selected not in options:
+                selected = NO_NOTIFICATION_SOUND
+
+        self.notification_sound_var.set(selected)
+        self._persist_notification_sound(selected)
+
+    def _on_notification_sound_change(self) -> None:
+        selected = self.notification_sound_var.get().strip()
+        if selected not in self.notification_sound_options:
+            selected = NO_NOTIFICATION_SOUND
+            self.notification_sound_var.set(selected)
+
+        self._persist_notification_sound(selected)
+        if selected == NO_NOTIFICATION_SOUND:
+            self.log("Som de notificacao desativado.")
+        else:
+            self.log(f"Som de notificacao selecionado: {selected}")
+
+    @staticmethod
+    def _mci_error_message(error_code: int) -> str:
+        if sys.platform != "win32":
+            return f"codigo={error_code}"
+
+        buffer = ctypes.create_unicode_buffer(256)
+        result = ctypes.windll.winmm.mciGetErrorStringW(error_code, buffer, len(buffer))
+        if result:
+            return buffer.value
+        return f"codigo={error_code}"
+
+    def _play_notification_sound(self) -> None:
+        selected = self.notification_sound_var.get().strip()
+        if not selected or selected == NO_NOTIFICATION_SOUND:
+            return
+
+        sound_path = (SOUNDS_DIR / selected).resolve()
+        if not sound_path.is_file():
+            self.log(f"Aviso: som selecionado nao encontrado ({sound_path}).")
+            return
+        if sys.platform != "win32":
+            self.log("Aviso: reproducao de mp3 no launcher esta disponivel apenas no Windows.")
+            return
+
+        try:
+            alias = "cfo_sync_notify"
+            ctypes.windll.winmm.mciSendStringW(f"close {alias}", None, 0, 0)
+
+            open_error = ctypes.windll.winmm.mciSendStringW(
+                f'open "{sound_path}" type mpegvideo alias {alias}',
+                None,
+                0,
+                0,
+            )
+            if open_error:
+                self.log(
+                    "Aviso: nao foi possivel abrir som de notificacao "
+                    f"({self._mci_error_message(open_error)})."
+                )
+                return
+
+            play_error = ctypes.windll.winmm.mciSendStringW(f"play {alias} from 0", None, 0, 0)
+            if play_error:
+                self.log(
+                    "Aviso: nao foi possivel reproduzir som de notificacao "
+                    f"({self._mci_error_message(play_error)})."
+                )
+        except Exception as error:  # noqa: BLE001
+            self.log(f"Aviso: erro ao reproduzir som de notificacao ({error}).")
 
     def log(self, message: str) -> None:
         self.log_queue.put(message)
@@ -848,6 +1018,8 @@ class CFODesktopApp:
             self.btn_select_all_sub_clients.configure(state=tk.DISABLED)
             self.btn_clear_sub_clients.configure(state=tk.DISABLED)
             self.sub_client_listbox.configure(state=tk.DISABLED)
+            self.notification_sound_combo.configure(state=tk.DISABLED)
+            self.btn_refresh_sounds.configure(state=tk.DISABLED)
             self.btn_search_sku.configure(state=tk.DISABLED)
             self.sku_order_entry.configure(state=tk.DISABLED)
             return
@@ -861,6 +1033,8 @@ class CFODesktopApp:
         self.btn_select_all_sub_clients.configure(state=controls_state)
         self.btn_clear_sub_clients.configure(state=controls_state)
         self.sub_client_listbox.configure(state=controls_state)
+        self.notification_sound_combo.configure(state="readonly")
+        self.btn_refresh_sounds.configure(state=tk.NORMAL)
         sku_state = tk.NORMAL if self._platform_supports_sku_workflow() else tk.DISABLED
         self.btn_search_sku.configure(state=sku_state)
         self.sku_order_entry.configure(state=sku_state)
@@ -1232,6 +1406,7 @@ class CFODesktopApp:
                 f"{count} registros | {choice.label} | Cliente={client} | Filial/Alias={scope} | "
                 f"Periodo={start_date}..{end_date} | Meses={months}"
             )
+            self._play_notification_sound()
 
         self._run_task("Exportacao", task)
 
@@ -1264,6 +1439,7 @@ class CFODesktopApp:
                 f"Exportacao SKU concluida: {exported} linhas | Cliente={client} | "
                 f"Pedido={self.sku_order_number_var.get().strip()}"
             )
+            self._play_notification_sound()
 
         self._run_task("Exportar SKU", task)
 
