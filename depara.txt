@@ -1,0 +1,55 @@
+----------------------- Meli Ads -----------------------
+Anulación del cargo por campaña de publicidad - Display	= Meli Ads
+Campañas de publicidad - Display Ads =  Meli Ads
+Campanhas de publicidade - Product Ads	= Meli Ads
+Cancelamento da tarifa por campanha de publicidade - Brand Ads = Meli Ads
+Cancelamento da tarifa por campanha de publicidade - Product Ads = Meli Ads
+Tarifa por campanha de publicidade - Brand Ads = Meli Ads
+Tarifa por campanha de publicidade - Display Ads = Meli Ads
+Tarifa por campanha de publicidade - Display programático = Meli Ads
+Tarifa por campanha de publicidade - Product Ads = Meli Ads
+Campanhas de publicidade - Display = Meli Ads
+----------------------- Mercadorias vendidas -----------------------
+Cancelamento da tarifa de devolução por envio externo ou intermunicipal	= Transporte - Mercadorias vendidas
+Cancelamento da tarifa de devolução por envio interno no município	= Transporte - Mercadorias vendidas
+Cancelamento da tarifa de envio extra ou intermunicipal	= Transporte - Mercadorias vendidas
+Cancelamento da tarifa por envio interno ao município = Transporte - Mercadorias vendidas
+Cancelamento da tarifa por envios no Mercado Livre = Transporte - Mercadorias vendidas
+Tarifa de devolução por envio externo ou intermunicipal = Transporte - Mercadorias vendidas
+Tarifa de devolução por envio interno no município = Transporte - Mercadorias vendidas
+Tarifa de envio extra ou intermunicipal	= Transporte - Mercadorias vendidas
+Tarifa do Mercado Envios = Transporte - Mercadorias vendidas
+Tarifa por envio interno ao município = Transporte - Mercadorias vendidas
+----------------------- Tarifas de Marketplace -----------------------
+Cancelamento da tarifa de manutenção da Minha página = Tarifas de Marketplace
+Cancelamento do Taxa de parcelamento = Tarifas de Marketplace
+Custo por vender no Mercado Livre = Tarifas de Marketplace
+Estorno do custo de gestão da venda = Tarifas de Marketplace
+Estorno da tarifa de venda = Tarifas de Marketplace
+Cancelamento da tarifa por devolução = Tarifas de Marketplace
+Cancelamento da Taxa de parcelamento (equivalente ao acréscimo no preço pago pelo comprador) = Tarifas de Marketplace
+Cancelamento do Custo por cobrar no Mercado Pago = Tarifas de Marketplace
+Cancelamento do Custo por vender no Mercado Livre = Tarifas de Marketplace
+Custo de gestão da venda = Tarifas de Marketplace
+Custo por cobrar no Mercado Pago = Tarifas de Marketplace
+Tarifa de devolução = Tarifas de Marketplace
+Tarifa de manutenção da Minha página = Tarifas de Marketplace
+Tarifa de venda	= Tarifas de Marketplace
+Tarifa por assessoria comercial = Tarifas de Marketplace
+Taxa de parcelamento = Tarifas de Marketplace
+Taxa de parcelamento (equivalente ao acréscimo no preço pago pelo comprador) = Tarifas de Marketplace
+Tarifa de venda com afiliados = Tarifas de Marketplace
+Tarifa de processamento = Tarifas de Marketplace
+Cancelamento da tarifa de processamento	= Tarifas de Marketplace
+Cancelamento da taxa de parcelamento = Tarifas de Marketplace
+Taxa debitada do dinheiro como garantia do Programa decola = Tarifas de Marketplace
+Tarifa por diferenças nas medidas e no peso do pacote = Tarifas de Marketplace
+Cobrança do diferencial de alíquota interestadual (ICMS-DIFAL) = Tarifas de Marketplace
+Taxa debitada do dinheiro como garantia do programa Benefício de Reputação = Tarifas de Marketplace
+----------------------- Fulfillment -----------------------
+Cancelamento da tarifa por serviço de coleta Full = Fulfillment
+Custo do serviço de coleta Full = Fulfillment
+Custo por inconformidade no Envios Full = Fulfillment
+Custo por retirada de estoque Full = Fulfillment
+Tarifa pelo serviço de armazenamento Full = Fulfillment
+Tarifa por estoque antigo no Full = Fulfillment

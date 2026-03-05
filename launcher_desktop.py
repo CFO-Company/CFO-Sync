@@ -1080,10 +1080,17 @@ class CFODesktopApp:
             self.log(f"Aviso ao carregar filiais/aliases: {error}")
 
         self._set_sub_client_options(options)
+        if options:
+            self.log(f"Filiais/Aliases carregadas para {client}: {', '.join(options)}")
+        else:
+            self.log(f"Nenhuma filial/alias cadastrada para {client}.")
         self._update_export_sku_button_state()
 
     def _set_sub_client_options(self, options: list[str]) -> None:
         self.sub_client_options = options
+        # Permite atualizar os itens mesmo quando o listbox estava desabilitado
+        # pelo cliente anterior sem aliases.
+        self.sub_client_listbox.configure(state=tk.NORMAL)
         self.sub_client_listbox.delete(0, tk.END)
         for option in options:
             self.sub_client_listbox.insert(tk.END, option)
@@ -1135,6 +1142,13 @@ class CFODesktopApp:
         selected_indexes = list(self.sub_client_listbox.curselection())
         selected_count = len(selected_indexes)
         total = len(self.sub_client_options)
+
+        if total == 1:
+            if selected_count == 0:
+                self.sub_client_summary_var.set("Nenhuma selecionada")
+                return
+            self.sub_client_summary_var.set(self.sub_client_options[0])
+            return
 
         if selected_count == 0:
             self.sub_client_summary_var.set("Nenhuma selecionada")

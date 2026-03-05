@@ -37,6 +37,15 @@ class GoogleSheetsExporter:
                 key_columns=("Data", "Alias"),
             )
 
+        if platform_key == "mercado_livre" and resource.name == "vendas":
+            return self._upsert_by_keys(
+                spreadsheet_id=spreadsheet_id,
+                tab_name=tab_name,
+                rows=mapped_rows,
+                ordered_columns=list(resource.field_map.values()),
+                key_columns=("Mês/Ano", "Conta"),
+            )
+
         values = [self._to_sheet_row(row, ordered_columns=list(resource.field_map.values())) for row in mapped_rows]
         self._append_rows(
             spreadsheet_id=spreadsheet_id,

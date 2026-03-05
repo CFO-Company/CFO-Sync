@@ -7,6 +7,7 @@ import streamlit as st
 
 from cfo_sync.core.config_loader import load_app_config
 from cfo_sync.core.pipeline import SyncPipeline
+from cfo_sync.platforms.ui_registry import build_platform_ui_registry
 
 
 def run_dashboard() -> None:
@@ -16,12 +17,31 @@ def run_dashboard() -> None:
 
     config = load_app_config(Path("secrets/app_config.json"))
     pipeline = SyncPipeline(config)
+    ui_registry = build_platform_ui_registry(config)
 
     platforms = {p.key: p for p in config.platforms}
     platform_key = st.selectbox("Plataforma", list(platforms.keys()), index=0)
     selected_platform = platforms[platform_key]
+    platform_behavior = ui_registry[platform_key]
 
-    client = st.selectbox("Cliente", selected_platform.clients, index=0)
+    client_options = platform_behavior.companies(selected_platform.clients)
+    if not client_options:
+        st.warning("Nenhum cliente disponivel para esta plataforma.")
+        return
+    client = st.selectbox("Cliente", client_options, index=0)
+
+    selected_sub_clients: list[str] | None = None
+    sub_client_options = platform_behavior.sub_client_names(client)
+    if sub_client_options:
+        sub_client_label = "Alias / Filial" if platform_key == "mercado_livre" else "Subcliente / Conta"
+        default_selected = sub_client_options if len(sub_client_options) == 1 else []
+        selected_sub_clients = st.multiselect(
+            sub_client_label,
+            options=sub_client_options,
+            default=default_selected,
+            placeholder="Selecione um ou mais itens",
+        )
+
     available_resources = [resource.name for resource in selected_platform.resources]
     if not available_resources:
         st.warning("Nenhum recurso configurado para esta plataforma.")
@@ -55,6 +75,7 @@ def run_dashboard() -> None:
                 start_date=start_date_str,
                 end_date=end_date_str,
                 resource_names=[selected_resource],
+                sub_clients=selected_sub_clients,
             )
             st.success(f"{count} registros coletados e salvos localmente.")
 
@@ -66,6 +87,7 @@ def run_dashboard() -> None:
                 start_date=start_date_str,
                 end_date=end_date_str,
                 resource_names=[selected_resource],
+                sub_clients=selected_sub_clients,
             )
             st.success(f"{count} registros enviados para exportacao.")
 

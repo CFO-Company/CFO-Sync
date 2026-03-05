@@ -35,6 +35,7 @@ def fetch_insights(
             params={
                 "fields": INSIGHTS_FIELDS,
                 "level": "ad",
+                "time_increment": "1",
                 "time_range": time_range,
                 "limit": "500",
             },
@@ -54,9 +55,13 @@ def _to_business_row(
     resource_name: str,
 ) -> RawRecord | None:
     ad_name = str(raw.get("ad_name") or "").strip()
+    ad_id = str(raw.get("ad_id") or "").strip()
     campaign_name = str(raw.get("campaign_name") or "").strip()
     date_raw = str(raw.get("date_start") or "").strip()
     spend_raw = raw.get("spend")
+
+    if not ad_name and ad_id:
+        ad_name = f"AD {ad_id}"
 
     if not ad_name or not date_raw:
         return None

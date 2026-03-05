@@ -1,11 +1,16 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+
+from pathlib import Path
 
 from cfo_sync.core.models import RawRecord, ResourceConfig
-from cfo_sync.platforms.mercado_livre.vendas import fetch_vendas_stub
+from cfo_sync.platforms.mercado_livre.vendas import fetch_vendas
 
 
 class MercadoLivreConnector:
     platform_key = "mercado_livre"
+
+    def __init__(self, credentials_path: Path | None = None) -> None:
+        self.credentials_path = credentials_path or Path("secrets/mercado_livre_credentials.json")
 
     def fetch(
         self,
@@ -16,5 +21,17 @@ class MercadoLivreConnector:
         sub_clients: list[str] | None = None,
     ) -> list[RawRecord]:
         if resource.name == "vendas":
-            return fetch_vendas_stub(client, resource)
+            account_label_override = None
+            if sub_clients:
+                selected = [name.strip() for name in sub_clients if str(name).strip()]
+                if selected:
+                    account_label_override = selected[0]
+            return fetch_vendas(
+                client=client,
+                resource=resource,
+                credentials_path=self.credentials_path,
+                start_date=start_date,
+                end_date=end_date,
+                account_label_override=account_label_override,
+            )
         return []
