@@ -934,6 +934,109 @@ class CFODesktopApp:
         except Exception as error:  # noqa: BLE001
             self.log(f"Aviso: erro ao reproduzir som de notificacao ({error}).")
 
+    @staticmethod
+    def _flashwindowinfo_struct():
+        class FLASHWINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", ctypes.c_uint),
+                ("hwnd", ctypes.c_void_p),
+                ("dwFlags", ctypes.c_uint),
+                ("uCount", ctypes.c_uint),
+                ("dwTimeout", ctypes.c_uint),
+            ]
+
+        return FLASHWINFO
+
+    def _get_main_window_handle(self) -> int:
+        if sys.platform != "win32":
+            return 0
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = int(self.root.winfo_id())
+            GA_ROOT = 2
+            root_hwnd = int(user32.GetAncestor(hwnd, GA_ROOT))
+            if root_hwnd:
+                return root_hwnd
+            parent_hwnd = int(user32.GetParent(hwnd))
+            if parent_hwnd:
+                return parent_hwnd
+            return hwnd
+        except Exception:
+            return 0
+
+    def _legacy_flash_taskbar_toggle(
+        self,
+        hwnd: int,
+        remaining_toggles: int,
+        interval_ms: int = 350,
+    ) -> None:
+        if sys.platform != "win32" or not hwnd or remaining_toggles <= 0:
+            return
+        try:
+            ctypes.windll.user32.FlashWindow(hwnd, True)
+        except Exception:
+            return
+        self.root.after(
+            max(100, int(interval_ms)),
+            lambda: self._legacy_flash_taskbar_toggle(
+                hwnd=hwnd,
+                remaining_toggles=remaining_toggles - 1,
+                interval_ms=interval_ms,
+            ),
+        )
+
+    def _stop_taskbar_flash(self) -> None:
+        if sys.platform != "win32":
+            return
+        try:
+            FLASHWINFO = self._flashwindowinfo_struct()
+            FLASHW_STOP = 0x00000000
+            hwnd = self._get_main_window_handle()
+            if not hwnd:
+                return
+            stop_info = FLASHWINFO(
+                cbSize=ctypes.sizeof(FLASHWINFO),
+                hwnd=hwnd,
+                dwFlags=FLASHW_STOP,
+                uCount=0,
+                dwTimeout=0,
+            )
+            ctypes.windll.user32.FlashWindowEx(ctypes.byref(stop_info))
+        except Exception:
+            return
+
+    def _flash_taskbar_icon(self, duration_ms: int = 4000) -> None:
+        if sys.platform != "win32":
+            return
+
+        try:
+            FLASHWINFO = self._flashwindowinfo_struct()
+            FLASHW_TRAY = 0x00000002
+            FLASHW_TIMERNOFG = 0x0000000C
+            hwnd = self._get_main_window_handle()
+            if not hwnd:
+                self.log("Aviso: HWND principal nao encontrado para piscar taskbar.")
+                return
+
+            flash_info = FLASHWINFO(
+                cbSize=ctypes.sizeof(FLASHWINFO),
+                hwnd=hwnd,
+                dwFlags=FLASHW_TRAY | FLASHW_TIMERNOFG,
+                uCount=0,
+                dwTimeout=0,
+            )
+            started = bool(ctypes.windll.user32.FlashWindowEx(ctypes.byref(flash_info)))
+            if not started:
+                self.log("Aviso: FlashWindowEx nao iniciou; aplicando fallback de flash.")
+            self._legacy_flash_taskbar_toggle(hwnd=hwnd, remaining_toggles=8, interval_ms=350)
+            self.root.after(max(800, int(duration_ms)), self._stop_taskbar_flash)
+        except Exception as error:  # noqa: BLE001
+            self.log(f"Aviso: nao foi possivel piscar icone na barra de tarefas ({error}).")
+
+    def _notify_export_completion(self) -> None:
+        self.root.after(0, self._play_notification_sound)
+        self.root.after(0, self._flash_taskbar_icon)
+
     def log(self, message: str) -> None:
         self.log_queue.put(message)
 
@@ -1406,7 +1509,7 @@ class CFODesktopApp:
                 f"{count} registros | {choice.label} | Cliente={client} | Filial/Alias={scope} | "
                 f"Periodo={start_date}..{end_date} | Meses={months}"
             )
-            self._play_notification_sound()
+            self._notify_export_completion()
 
         self._run_task("Exportacao", task)
 
@@ -1439,7 +1542,7 @@ class CFODesktopApp:
                 f"Exportacao SKU concluida: {exported} linhas | Cliente={client} | "
                 f"Pedido={self.sku_order_number_var.get().strip()}"
             )
-            self._play_notification_sound()
+            self._notify_export_completion()
 
         self._run_task("Exportar SKU", task)
 
