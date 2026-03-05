@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import re
 import socket
 import time
+import unicodedata
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -20,7 +22,7 @@ BILLING_PAGE_SIZE = 1000
 MAX_PAGES_SAFETY = 5000
 RETRY_BACKOFF_SECONDS = (1.0, 3.0, 8.0)
 BILLING_DOCUMENT_TYPE = "BILL"
-DEPARA_PATH = Path(__file__).resolve().parents[4] / "depara.txt"
+TRANSACTION_DETAIL_MAP_PATH = Path(__file__).with_name("transaction_detail_map.json")
 
 BILLING_CATEGORY_TO_FIELD = {
     "Meli Ads": "meli_ads",
@@ -104,7 +106,8 @@ def fetch_vendas(
 
     for detail in sorted(unknown_transaction_details):
         print(
-            "AVISO Mercado Livre: transaction_detail sem de/para em depara.txt: "
+            "AVISO Mercado Livre: transaction_detail sem mapeamento em "
+            f"{TRANSACTION_DETAIL_MAP_PATH.name}: "
             f"'{detail}'. Aplicado fallback para 'Tarifas de Marketplace'."
         )
 
@@ -320,22 +323,47 @@ def _load_transaction_detail_map() -> dict[str, str]:
         return _TRANSACTION_DETAIL_TO_FIELD
 
     detail_map: dict[str, str] = {}
-    if not DEPARA_PATH.exists():
+    if not TRANSACTION_DETAIL_MAP_PATH.exists():
         _TRANSACTION_DETAIL_TO_FIELD = detail_map
         return detail_map
 
-    content = DEPARA_PATH.read_text(encoding="utf-8-sig")
-    for raw_line in content.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("-") or "=" not in line:
-            continue
+    try:
+        raw_mapping = json.loads(TRANSACTION_DETAIL_MAP_PATH.read_text(encoding="utf-8-sig"))
+    except json.JSONDecodeError:
+        print(
+            "AVISO Mercado Livre: arquivo de mapeamento invalido em "
+            f"{TRANSACTION_DETAIL_MAP_PATH}."
+        )
+        _TRANSACTION_DETAIL_TO_FIELD = detail_map
+        return detail_map
 
-        transaction_detail_text, target_column_text = line.split("=", maxsplit=1)
+    if not isinstance(raw_mapping, dict):
+        print(
+            "AVISO Mercado Livre: arquivo de mapeamento deve ser um objeto JSON em "
+            f"{TRANSACTION_DETAIL_MAP_PATH}."
+        )
+        _TRANSACTION_DETAIL_TO_FIELD = detail_map
+        return detail_map
+
+    invalid_categories: set[str] = set()
+    for transaction_detail_text, mapped_value in raw_mapping.items():
         normalized_detail = _normalize_text(transaction_detail_text)
-        target_column = str(target_column_text).strip()
-        field_name = BILLING_CATEGORY_TO_FIELD.get(target_column)
+        category_name = str(mapped_value).strip()
+        field_name = BILLING_CATEGORY_TO_FIELD.get(category_name)
+        if field_name is None and category_name in BILLING_CATEGORY_TO_FIELD.values():
+            field_name = category_name
+
         if normalized_detail and field_name:
             detail_map[normalized_detail] = field_name
+        elif normalized_detail:
+            invalid_categories.add(category_name or "<vazio>")
+
+    if invalid_categories:
+        ordered_invalid = ", ".join(sorted(invalid_categories))
+        print(
+            "AVISO Mercado Livre: categorias invalidas em "
+            f"{TRANSACTION_DETAIL_MAP_PATH.name}: {ordered_invalid}."
+        )
 
     _TRANSACTION_DETAIL_TO_FIELD = detail_map
     return detail_map
@@ -347,7 +375,12 @@ def _normalize_text(value: Any) -> str:
     text = str(value).strip()
     if not text:
         return ""
-    return " ".join(text.split()).casefold()
+    # Normaliza variacoes comuns da API (acentos, pontuacao e espacos),
+    # para tornar o de/para robusto a pequenas diferencas de escrita.
+    normalized = unicodedata.normalize("NFKD", text)
+    without_accents = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    alnum_spaces = re.sub(r"[^0-9A-Za-z]+", " ", without_accents)
+    return " ".join(alnum_spaces.split()).casefold()
 
 
 def _request_json(path: str, access_token: str, params: dict[str, str]) -> dict[str, Any]:
