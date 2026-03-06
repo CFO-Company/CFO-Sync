@@ -20,7 +20,9 @@ def run_dashboard() -> None:
     ui_registry = build_platform_ui_registry(config)
 
     platforms = {p.key: p for p in config.platforms}
-    platform_key = st.selectbox("Plataforma", list(platforms.keys()), index=0)
+    platform_labels = {p.label: p.key for p in config.platforms}
+    selected_platform_label = st.selectbox("Plataforma", list(platform_labels.keys()), index=0)
+    platform_key = platform_labels[selected_platform_label]
     selected_platform = platforms[platform_key]
     platform_behavior = ui_registry[platform_key]
 
@@ -33,7 +35,12 @@ def run_dashboard() -> None:
     selected_sub_clients: list[str] | None = None
     sub_client_options = platform_behavior.sub_client_names(client)
     if sub_client_options:
-        sub_client_label = "Alias / Filial" if platform_key == "mercado_livre" else "Subcliente / Conta"
+        if platform_key == "omie":
+            sub_client_label = "Filiais / Alias"
+        elif platform_key == "mercado_livre":
+            sub_client_label = "Alias / Filial"
+        else:
+            sub_client_label = "Subcliente / Conta"
         default_selected = sub_client_options if len(sub_client_options) == 1 else []
         selected_sub_clients = st.multiselect(
             sub_client_label,

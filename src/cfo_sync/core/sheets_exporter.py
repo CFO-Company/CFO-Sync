@@ -21,12 +21,21 @@ class GoogleSheetsExporter:
                 f"Cliente '{client}' nao configurado em {platform_key}/{resource.name} para exportacao."
             )
 
-        if not rows:
-            return 0
-
         spreadsheet_id = target_tab.spreadsheet_id or resource.spreadsheet_id
         tab_name = self._resolve_tab_name(spreadsheet_id, target_tab)
         mapped_rows = [self._map_to_sheet_columns(resource, row) for row in rows]
+
+        if platform_key == "omie" and resource.name == "financeiro":
+            return self._upsert_by_keys(
+                spreadsheet_id=spreadsheet_id,
+                tab_name=tab_name,
+                rows=mapped_rows,
+                ordered_columns=list(resource.field_map.values()),
+                key_columns=tuple(resource.field_map.values()),
+            )
+
+        if not rows:
+            return 0
 
         if platform_key == "yampi" and resource.name == "financeiro":
             return self._upsert_by_keys(
@@ -61,7 +70,7 @@ class GoogleSheetsExporter:
         tab_name: str,
         rows: list[dict[str, object]],
         ordered_columns: list[str],
-        key_columns: tuple[str, str],
+        key_columns: tuple[str, ...],
     ) -> int:
         service = self._get_service()
         read_response = service.spreadsheets().values().get(
@@ -108,7 +117,7 @@ class GoogleSheetsExporter:
             ).execute()
 
         header_index = {column: index for index, column in enumerate(header)}
-        key_to_row: dict[tuple[str, str], int] = {}
+        key_to_row: dict[tuple[str, ...], int] = {}
         for row_number, existing_row in enumerate(existing_values[1:], start=2):
             row_key = self._row_key_from_values(existing_row, header_index, key_columns)
             if row_key is not None:
@@ -304,26 +313,22 @@ class GoogleSheetsExporter:
     def _row_key_from_values(
         values: list[object],
         header_index: dict[str, int],
-        key_columns: tuple[str, str],
-    ) -> tuple[str, str] | None:
-        first_key = GoogleSheetsExporter._safe_get(values, header_index.get(key_columns[0]))
-        second_key = GoogleSheetsExporter._safe_get(values, header_index.get(key_columns[1]))
-
-        if not first_key or not second_key:
+        key_columns: tuple[str, ...],
+    ) -> tuple[str, ...] | None:
+        parts = [GoogleSheetsExporter._safe_get(values, header_index.get(column)) for column in key_columns]
+        if any(not part for part in parts):
             return None
-
-        return (first_key, second_key)
+        return tuple(parts)
 
     @staticmethod
     def _row_key_from_mapping(
         mapped_row: dict[str, object],
-        key_columns: tuple[str, str],
-    ) -> tuple[str, str] | None:
-        first_key = str(mapped_row.get(key_columns[0], "")).strip()
-        second_key = str(mapped_row.get(key_columns[1], "")).strip()
-        if not first_key or not second_key:
+        key_columns: tuple[str, ...],
+    ) -> tuple[str, ...] | None:
+        parts = [str(mapped_row.get(column, "")).strip() for column in key_columns]
+        if any(not part for part in parts):
             return None
-        return (first_key, second_key)
+        return tuple(parts)
 
     @staticmethod
     def _safe_get(values: list[object], index: int | None) -> str:

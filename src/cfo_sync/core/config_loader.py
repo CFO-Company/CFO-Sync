@@ -13,6 +13,7 @@ from cfo_sync.core.models import (
     SheetTabTarget,
     YampiConfig,
 )
+from cfo_sync.platforms.omie.credentials import OMIE_CREDENTIALS_PATH, build_omie_platform_config
 
 
 def _extract_spreadsheet_id(spreadsheet_url: str) -> str:
@@ -59,6 +60,11 @@ def load_app_config(config_path: Path) -> AppConfig:
                 resources=resources,
             )
         )
+
+    platforms = [platform for platform in platforms if platform.key != "omie"]
+    omie_platform = build_omie_platform_config(OMIE_CREDENTIALS_PATH)
+    if omie_platform is not None:
+        platforms.append(omie_platform)
 
     return AppConfig(
         database_path=Path(data["database_path"]),

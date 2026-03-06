@@ -388,6 +388,8 @@ class CFODesktopApp:
     def _platform_resource_label(platform_key: str, platform_label: str, resource_name: str) -> str:
         key = platform_key.lower()
         resource = resource_name.lower()
+        if key == "omie":
+            return "Omie"
         if key == "yampi" and resource == "financeiro":
             return "Yampi Financeiro"
         if key == "yampi" and resource == "estoque":
@@ -480,7 +482,7 @@ class CFODesktopApp:
         )
         self.client_combo.grid(row=2, column=1, sticky=tk.EW, pady=6)
 
-        ttk.Label(config_tab, text="Filial / Alias", style="Field.TLabel").grid(
+        ttk.Label(config_tab, text="Filiais / Alias", style="Field.TLabel").grid(
             row=3, column=0, sticky=tk.W, padx=(0, 10), pady=6
         )
         sub_client_panel = ttk.Frame(config_tab, style="Card.TFrame")
