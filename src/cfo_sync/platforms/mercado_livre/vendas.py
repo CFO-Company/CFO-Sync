@@ -88,21 +88,27 @@ def fetch_vendas(
 
     month_boundaries = _iter_month_boundaries(period_start, period_end)
     unknown_transaction_details: set[str] = set()
-    for month_start, month_end in month_boundaries:
-        key = _month_key(month_start)
-        row = monthly_rows.get(key)
-        if row is None:
-            continue
-        billing_totals = _billing_fee_totals_by_field(
+    seen_billing_detail_ids: set[str] = set()
+    billing_window_start = _month_first_day(period_start)
+    billing_window_end = _next_month_first_day(_month_first_day(period_end))
+    for billing_month_start, _billing_month_end in _iter_month_boundaries(
+        billing_window_start,
+        billing_window_end,
+    ):
+        billing_totals_by_month = _billing_fee_totals_by_month_and_field(
             access_token=auth.access_token,
-            month_start=month_start,
-            month_end=month_end,
+            billing_month_start=billing_month_start,
             period_start=period_start,
             period_end=period_end,
+            seen_detail_ids=seen_billing_detail_ids,
             unknown_transaction_details=unknown_transaction_details,
         )
-        for field_name, total_value in billing_totals.items():
-            row[field_name] = float(row[field_name]) + total_value
+        for month_key, billing_totals in billing_totals_by_month.items():
+            row = monthly_rows.get(month_key)
+            if row is None:
+                continue
+            for field_name, total_value in billing_totals.items():
+                row[field_name] = float(row[field_name]) + total_value
 
     for detail in sorted(unknown_transaction_details):
         print(
@@ -221,24 +227,18 @@ def _iter_orders(
     return rows
 
 
-def _billing_fee_totals_by_field(
+def _billing_fee_totals_by_month_and_field(
     access_token: str,
-    month_start: date,
-    month_end: date,
+    billing_month_start: date,
     period_start: date,
     period_end: date,
+    seen_detail_ids: set[str],
     unknown_transaction_details: set[str] | None = None,
-) -> dict[str, float]:
-    path = f"/billing/integration/periods/key/{month_start.isoformat()}/group/ML/details"
+) -> dict[str, dict[str, float]]:
+    path = f"/billing/integration/periods/key/{billing_month_start.isoformat()}/group/ML/details"
     from_id = 0
     page = 0
-    seen_ids: set[str] = set()
-    totals: dict[str, float] = {
-        "meli_ads": 0.0,
-        "transporte_mercadorias_vendidas": 0.0,
-        "tarifas_marketplace": 0.0,
-        "fulfillment": 0.0,
-    }
+    totals_by_month: dict[str, dict[str, float]] = {}
 
     while page < MAX_PAGES_SAFETY:
         payload = _request_json(
@@ -265,17 +265,25 @@ def _billing_fee_totals_by_field(
 
             raw_id = charge_info.get("detail_id")
             detail_id = str(raw_id).strip() if raw_id is not None else ""
-            if detail_id and detail_id in seen_ids:
+            if detail_id and detail_id in seen_detail_ids:
                 continue
             if detail_id:
-                seen_ids.add(detail_id)
+                seen_detail_ids.add(detail_id)
 
-            created_at = _to_date(charge_info.get("creation_date_time"))
-            if created_at is not None:
-                if created_at < month_start or created_at > month_end:
-                    continue
-                if created_at < period_start or created_at > period_end:
-                    continue
+            created_at = _to_date(charge_info.get("creation_date_time")) or billing_month_start
+            if created_at < period_start or created_at > period_end:
+                continue
+
+            month_key = _month_key(created_at)
+            totals = totals_by_month.setdefault(
+                month_key,
+                {
+                    "meli_ads": 0.0,
+                    "transporte_mercadorias_vendidas": 0.0,
+                    "tarifas_marketplace": 0.0,
+                    "fulfillment": 0.0,
+                },
+            )
 
             target_field = _billing_target_field(
                 charge_info.get("transaction_detail"),
@@ -283,7 +291,9 @@ def _billing_fee_totals_by_field(
             )
             signed_amount = _billing_signed_detail_amount(
                 detail_amount=charge_info.get("detail_amount"),
+                detail_type=charge_info.get("detail_type"),
                 charge_bonified_id=charge_info.get("charge_bonified_id"),
+                transaction_detail=charge_info.get("transaction_detail"),
             )
             totals[target_field] = float(totals[target_field]) + signed_amount
 
@@ -293,7 +303,7 @@ def _billing_fee_totals_by_field(
         from_id = _to_int(last_id, default=from_id)
         page += 1
 
-    return totals
+    return totals_by_month
 
 
 def _billing_target_field(
@@ -311,10 +321,35 @@ def _billing_target_field(
     return "tarifas_marketplace"
 
 
-def _billing_signed_detail_amount(detail_amount: Any, charge_bonified_id: Any) -> float:
-    magnitude = abs(_to_float(detail_amount))
+def _billing_signed_detail_amount(
+    detail_amount: Any,
+    detail_type: Any,
+    charge_bonified_id: Any,
+    transaction_detail: Any,
+) -> float:
+    amount = _to_float(detail_amount)
+    magnitude = abs(amount)
+    normalized_detail_type = str(detail_type or "").strip().upper()
+
+    if normalized_detail_type == "CHARGE":
+        return magnitude
+    if normalized_detail_type == "BONUS":
+        return -magnitude
+    if amount < 0:
+        return amount
+
+    if _is_billing_reversal_detail(transaction_detail):
+        return -magnitude
+
     has_charge_bonified = charge_bonified_id is not None and str(charge_bonified_id).strip() != ""
     return -magnitude if has_charge_bonified else magnitude
+
+
+def _is_billing_reversal_detail(transaction_detail: Any) -> bool:
+    normalized = _normalize_text(transaction_detail)
+    if not normalized:
+        return False
+    return normalized.startswith(("cancelamento ", "estorno ", "anulacion ", "cancelacion "))
 
 
 def _load_transaction_detail_map() -> dict[str, str]:
@@ -502,6 +537,16 @@ def _iter_month_boundaries(start_date: date, end_date: date) -> list[tuple[date,
         else:
             current = date(current.year, current.month + 1, 1)
     return boundaries
+
+
+def _month_first_day(day: date) -> date:
+    return date(day.year, day.month, 1)
+
+
+def _next_month_first_day(day: date) -> date:
+    if day.month == 12:
+        return date(day.year + 1, 1, 1)
+    return date(day.year, day.month + 1, 1)
 
 
 def _month_last_day(day: date) -> date:
