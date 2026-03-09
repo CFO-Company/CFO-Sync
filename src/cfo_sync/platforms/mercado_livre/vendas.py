@@ -5,7 +5,7 @@ import re
 import socket
 import time
 import unicodedata
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -186,6 +186,61 @@ def _iter_orders(
     period_start: date,
     period_end: date,
 ) -> list[dict[str, Any]]:
+    try:
+        return _iter_orders_no_split(
+            endpoint=endpoint,
+            access_token=access_token,
+            seller_id=seller_id,
+            period_start=period_start,
+            period_end=period_end,
+        )
+    except MercadoLivreAPIError as error:
+        if not _is_limit_maximum_exceeded(error):
+            raise
+
+    if period_start >= period_end:
+        raise MercadoLivreAPIError(
+            "Limite de paginação do Mercado Livre excedido mesmo em janela minima "
+            f"({period_start.isoformat()})."
+        )
+
+    midpoint = period_start + (period_end - period_start) // 2
+    left_orders = _iter_orders(
+        endpoint=endpoint,
+        access_token=access_token,
+        seller_id=seller_id,
+        period_start=period_start,
+        period_end=midpoint,
+    )
+    right_orders = _iter_orders(
+        endpoint=endpoint,
+        access_token=access_token,
+        seller_id=seller_id,
+        period_start=midpoint + timedelta(days=1),
+        period_end=period_end,
+    )
+
+    unique_orders: dict[str, dict[str, Any]] = {}
+    merged_orders: list[dict[str, Any]] = []
+    for order in (*left_orders, *right_orders):
+        order_id = str(order.get("id") or "").strip()
+        if not order_id:
+            merged_orders.append(order)
+            continue
+        if order_id in unique_orders:
+            continue
+        unique_orders[order_id] = order
+        merged_orders.append(order)
+    return merged_orders
+
+
+def _iter_orders_no_split(
+    endpoint: str,
+    access_token: str,
+    seller_id: str,
+    period_start: date,
+    period_end: date,
+) -> list[dict[str, Any]]:
     path = endpoint.strip() or "/orders/search"
     if not path.startswith("/"):
         path = f"/{path}"
@@ -225,6 +280,13 @@ def _iter_orders(
         page += 1
 
     return rows
+
+
+def _is_limit_maximum_exceeded(error: MercadoLivreAPIError) -> bool:
+    text = str(error).casefold()
+    return "limit.maximum_exceeded" in text or (
+        "limit must be a lower or equal than 10000" in text
+    )
 
 
 def _billing_fee_totals_by_month_and_field(
