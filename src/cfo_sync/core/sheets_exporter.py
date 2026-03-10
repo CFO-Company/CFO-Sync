@@ -1,5 +1,8 @@
 ﻿from __future__ import annotations
 
+import re
+import unicodedata
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -15,10 +18,12 @@ class GoogleSheetsExporter:
         self._service = None
 
     def export(self, client: str, platform_key: str, resource: ResourceConfig, rows: list[RawRecord]) -> int:
-        target_tab = resource.client_tabs.get(client)
+        target_tab = self._resolve_client_tab(resource=resource, client=client)
         if target_tab is None:
+            available_clients = ", ".join(sorted(resource.client_tabs.keys()))
             raise ValueError(
-                f"Cliente '{client}' nao configurado em {platform_key}/{resource.name} para exportacao."
+                f"Cliente '{client}' nao configurado em {platform_key}/{resource.name} para exportacao. "
+                f"Clientes disponiveis: {available_clients}."
             )
 
         spreadsheet_id = target_tab.spreadsheet_id or resource.spreadsheet_id
@@ -346,3 +351,58 @@ class GoogleSheetsExporter:
             if anchor_column_index < len(row_values) and str(row_values[anchor_column_index]).strip():
                 last_non_empty_row = row_number
         return last_non_empty_row + 1
+
+    @classmethod
+    def _resolve_client_tab(cls, resource: ResourceConfig, client: str) -> SheetTabTarget | None:
+        direct_match = resource.client_tabs.get(client)
+        if direct_match is not None:
+            return direct_match
+
+        normalized_client = cls._normalize_client_name(client)
+        normalized_matches = [
+            tab
+            for configured_client, tab in resource.client_tabs.items()
+            if cls._normalize_client_name(configured_client) == normalized_client
+        ]
+        if len(normalized_matches) == 1:
+            return normalized_matches[0]
+        if len(normalized_matches) > 1:
+            return None
+
+        best_candidate: tuple[float, SheetTabTarget] | None = None
+        second_best_score = 0.0
+        for configured_client, tab in resource.client_tabs.items():
+            score = SequenceMatcher(
+                None,
+                normalized_client,
+                cls._normalize_client_name(configured_client),
+            ).ratio()
+            if best_candidate is None or score > best_candidate[0]:
+                if best_candidate is not None:
+                    second_best_score = best_candidate[0]
+                best_candidate = (score, tab)
+            elif score > second_best_score:
+                second_best_score = score
+
+        if best_candidate is None:
+            return None
+
+        best_score = best_candidate[0]
+        if best_score < 0.86:
+            return None
+
+        if best_score - second_best_score < 0.03:
+            return None
+
+        return best_candidate[1]
+
+    @staticmethod
+    def _normalize_client_name(value: str) -> str:
+        without_diacritics = "".join(
+            char
+            for char in unicodedata.normalize("NFKD", value)
+            if not unicodedata.combining(char)
+        )
+        normalized = without_diacritics.casefold().replace("?", "")
+        normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+        return re.sub(r"\s+", " ", normalized).strip()
