@@ -43,7 +43,7 @@ def _find_header_line(lines: list[str], version: str) -> int | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Extrai secao de uma versao do CHANGELOG.md")
-    parser.add_argument("--version", required=True, help="Versao alvo, ex: 1.0.0 ou v1.0.0")
+    parser.add_argument("--version", required=True, help="Versao alvo, ex: 1.0.1 ou v1.0.1")
     parser.add_argument(
         "--changelog",
         default="CHANGELOG.md",
