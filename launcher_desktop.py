@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import calendar
 import json
 import os
 import queue
@@ -60,6 +61,21 @@ COLOR_HEADER_BORDER = "#2D353F"
 COLOR_SCROLLBAR_THUMB = "#333C47"
 COLOR_SCROLLBAR_THUMB_HOVER = "#44505E"
 
+PT_BR_MONTH_NAMES = (
+    "Janeiro",
+    "Fevereiro",
+    "Marco",
+    "Abril",
+    "Maio",
+    "Junho",
+    "Julho",
+    "Agosto",
+    "Setembro",
+    "Outubro",
+    "Novembro",
+    "Dezembro",
+)
+PT_BR_WEEKDAY_ABBR = ("Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom")
 
 @dataclass(frozen=True)
 class PlatformChoice:
@@ -98,6 +114,13 @@ class CFODesktopApp:
         self.sku_preview_rows: list[dict[str, object]] = []
         self.notification_sound_var = tk.StringVar(value=NO_NOTIFICATION_SOUND)
         self.notification_sound_options: list[str] = [NO_NOTIFICATION_SOUND]
+        self._date_picker_window: tk.Toplevel | None = None
+        self._date_picker_month_label_var = tk.StringVar()
+        self._date_picker_hint_var = tk.StringVar()
+        self._date_picker_grid_frame: ttk.Frame | None = None
+        self._date_picker_month = date.today().replace(day=1)
+        self._date_picker_selection_start: date | None = None
+        self._date_picker_selection_end: date | None = None
 
         self.style = ttk.Style(self.root)
         self._apply_theme()
@@ -570,6 +593,7 @@ class CFODesktopApp:
             textvariable=self.start_date_var,
             width=32,
             style="Dark.TEntry",
+            state="readonly",
         )
         self.start_entry.grid(row=4, column=1, sticky=tk.EW, pady=6)
 
@@ -581,9 +605,17 @@ class CFODesktopApp:
             textvariable=self.end_date_var,
             width=32,
             style="Dark.TEntry",
+            state="readonly",
         )
         self.end_entry.grid(row=5, column=1, sticky=tk.EW, pady=6)
 
+        self.btn_pick_period = ttk.Button(
+            config_tab,
+            text="Selecionar no calendario",
+            style="Secondary.TButton",
+            command=self._open_date_range_picker,
+        )
+        self.btn_pick_period.grid(row=4, column=2, rowspan=2, sticky=tk.NS, padx=(10, 0), pady=6)
         period_actions = ttk.Frame(config_tab, style="Card.TFrame")
         period_actions.grid(row=6, column=1, sticky=tk.W, pady=(8, 10))
 
@@ -840,12 +872,363 @@ class CFODesktopApp:
         self.platform_combo.bind("<<ComboboxSelected>>", lambda _event: self.on_platform_change())
         self.client_combo.bind("<<ComboboxSelected>>", lambda _event: self.on_client_change())
         self.sub_client_listbox.bind("<<ListboxSelect>>", lambda _event: self._update_sub_client_summary())
+        self.start_entry.bind("<Button-1>", self._on_date_entry_click)
+        self.end_entry.bind("<Button-1>", self._on_date_entry_click)
         self.notification_sound_combo.bind(
             "<<ComboboxSelected>>",
             lambda _event: self._on_notification_sound_change(),
         )
         self.tabs.bind("<<NotebookTabChanged>>", lambda _event: self._on_tab_changed())
         self.sku_order_entry.bind("<Return>", lambda _event: self.search_sku())
+
+    def _on_date_entry_click(self, _event: tk.Event) -> str:
+        self._open_date_range_picker()
+        return "break"
+
+    def _open_date_range_picker(self) -> None:
+        try:
+            start = self._parse_ui_date(self.start_date_var.get().strip())
+            end = self._parse_ui_date(self.end_date_var.get().strip())
+        except ValueError:
+            today = date.today()
+            start = today.replace(day=1)
+            end = today
+
+        if start > end:
+            start, end = end, start
+
+        self._date_picker_selection_start = start
+        self._date_picker_selection_end = end
+        self._date_picker_month = start.replace(day=1)
+
+        if self._date_picker_window is not None and self._date_picker_window.winfo_exists():
+            self._refresh_date_picker_grid()
+            self._date_picker_window.deiconify()
+            self._date_picker_window.lift()
+            self._date_picker_window.focus_force()
+            self._center_date_picker_window()
+            return
+
+        popup = tk.Toplevel(self.root)
+        self._date_picker_window = popup
+        popup.title("Selecionar periodo")
+        popup.resizable(False, False)
+        popup.transient(self.root)
+        popup.configure(bg=COLOR_SURFACE)
+        popup.protocol("WM_DELETE_WINDOW", self._close_date_range_picker)
+        popup.grab_set()
+        popup.bind("<Escape>", lambda _event: self._close_date_range_picker())
+        popup.bind("<Return>", lambda _event: self._apply_date_range_picker_selection())
+        popup.bind("<MouseWheel>", self._on_date_picker_mouse_wheel)
+        popup.bind("<Button-4>", lambda _event: self._change_date_picker_month(-1))
+        popup.bind("<Button-5>", lambda _event: self._change_date_picker_month(1))
+
+        container = ttk.Frame(popup, style="Card.TFrame", padding=12)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        header = ttk.Frame(container, style="Card.TFrame")
+        header.pack(fill=tk.X)
+
+        ttk.Button(
+            header,
+            text="<",
+            style="Secondary.TButton",
+            command=lambda: self._change_date_picker_month(-1),
+            width=3,
+        ).pack(side=tk.LEFT)
+
+        ttk.Label(
+            header,
+            textvariable=self._date_picker_month_label_var,
+            style="CardTitle.TLabel",
+            anchor=tk.CENTER,
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
+
+        ttk.Button(
+            header,
+            text=">",
+            style="Secondary.TButton",
+            command=lambda: self._change_date_picker_month(1),
+            width=3,
+        ).pack(side=tk.RIGHT)
+
+        quick_actions = ttk.Frame(container, style="Card.TFrame")
+        quick_actions.pack(fill=tk.X, pady=(10, 0))
+        for column in range(6):
+            quick_actions.columnconfigure(column, weight=1)
+
+        quick_buttons = [
+            ("Hoje", "today"),
+            ("Ontem", "yesterday"),
+            ("7 dias", "last7"),
+            ("30 dias", "last30"),
+            ("Mês atual", "current_month"),
+            ("Mês anterior", "previous_month"),
+        ]
+        for index, (label, preset) in enumerate(quick_buttons):
+            ttk.Button(
+                quick_actions,
+                text=label,
+                style="Secondary.TButton",
+                command=lambda selected_preset=preset: self._date_picker_apply_preset(selected_preset),
+            ).grid(row=0, column=index, padx=(0 if index == 0 else 6, 0), sticky=tk.EW)
+
+        self._date_picker_grid_frame = ttk.Frame(container, style="Card.TFrame")
+        self._date_picker_grid_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 8))
+
+        ttk.Label(
+            container,
+            textvariable=self._date_picker_hint_var,
+            style="Field.TLabel",
+        ).pack(fill=tk.X)
+
+        actions = ttk.Frame(container, style="Card.TFrame")
+        actions.pack(fill=tk.X, pady=(10, 0))
+        actions.columnconfigure(0, weight=1)
+
+        ttk.Button(
+            actions,
+            text="Cancelar",
+            style="Secondary.TButton",
+            command=self._close_date_range_picker,
+        ).grid(row=0, column=1, padx=(0, 8))
+        ttk.Button(
+            actions,
+            text="Limpar",
+            style="Secondary.TButton",
+            command=self._clear_date_picker_selection,
+        ).grid(row=0, column=2, padx=(0, 8))
+        ttk.Button(
+            actions,
+            text="Aplicar periodo",
+            style="Primary.TButton",
+            command=self._apply_date_range_picker_selection,
+        ).grid(row=0, column=3)
+
+        self._refresh_date_picker_grid()
+        self._center_date_picker_window()
+
+    def _center_date_picker_window(self) -> None:
+        if self._date_picker_window is None or not self._date_picker_window.winfo_exists():
+            return
+        self._date_picker_window.update_idletasks()
+        popup_width = self._date_picker_window.winfo_width()
+        popup_height = self._date_picker_window.winfo_height()
+        root_x = self.root.winfo_rootx()
+        root_y = self.root.winfo_rooty()
+        root_width = self.root.winfo_width()
+        root_height = self.root.winfo_height()
+        x = root_x + max((root_width - popup_width) // 2, 0)
+        y = root_y + max((root_height - popup_height) // 2, 0)
+        self._date_picker_window.geometry(f"+{x}+{y}")
+
+    def _close_date_range_picker(self) -> None:
+        if self._date_picker_window is None:
+            return
+        try:
+            self._date_picker_window.grab_release()
+        except tk.TclError:
+            pass
+        self._date_picker_window.destroy()
+        self._date_picker_window = None
+        self._date_picker_grid_frame = None
+
+    def _change_date_picker_month(self, offset: int) -> None:
+        month_index = self._date_picker_month.month + offset
+        year = self._date_picker_month.year + (month_index - 1) // 12
+        month = (month_index - 1) % 12 + 1
+        self._date_picker_month = date(year, month, 1)
+        self._refresh_date_picker_grid()
+
+    def _on_date_picker_mouse_wheel(self, event: tk.Event) -> str:
+        delta = getattr(event, "delta", 0)
+        if delta > 0:
+            self._change_date_picker_month(-1)
+        elif delta < 0:
+            self._change_date_picker_month(1)
+        return "break"
+
+    def _date_picker_apply_preset(self, preset: str) -> None:
+        today = date.today()
+        if preset == "today":
+            start = today
+            end = today
+        elif preset == "yesterday":
+            start = today - timedelta(days=1)
+            end = start
+        elif preset == "last7":
+            start = today - timedelta(days=6)
+            end = today
+        elif preset == "last30":
+            start = today - timedelta(days=29)
+            end = today
+        elif preset == "current_month":
+            start = today.replace(day=1)
+            end = today
+        elif preset == "previous_month":
+            first_day_current_month = today.replace(day=1)
+            end = first_day_current_month - timedelta(days=1)
+            start = end.replace(day=1)
+        else:
+            return
+
+        self._date_picker_selection_start = start
+        self._date_picker_selection_end = end
+        self._date_picker_month = start.replace(day=1)
+        self._refresh_date_picker_grid()
+
+    def _clear_date_picker_selection(self) -> None:
+        self._date_picker_selection_start = None
+        self._date_picker_selection_end = None
+        self._refresh_date_picker_grid()
+
+    def _apply_date_range_picker_selection(self) -> None:
+        start = self._date_picker_selection_start
+        end = self._date_picker_selection_end
+        if start is None and end is None:
+            messagebox.showwarning("Periodo", "Selecione ao menos uma data no calendario.")
+            return
+
+        if start is None and end is not None:
+            start = end
+        if end is None and start is not None:
+            end = start
+
+        if start is None or end is None:
+            messagebox.showwarning("Periodo", "Nao foi possivel determinar o periodo selecionado.")
+            return
+
+        self._set_period_dates(start, end)
+        self._close_date_range_picker()
+
+    def _refresh_date_picker_grid(self) -> None:
+        if self._date_picker_window is None or self._date_picker_grid_frame is None:
+            return
+
+        year = self._date_picker_month.year
+        month = self._date_picker_month.month
+        month_name = PT_BR_MONTH_NAMES[month - 1]
+        self._date_picker_month_label_var.set(f"{month_name} {year}")
+
+        for child in self._date_picker_grid_frame.winfo_children():
+            child.destroy()
+
+        for index, weekday_name in enumerate(PT_BR_WEEKDAY_ABBR):
+            label = tk.Label(
+                self._date_picker_grid_frame,
+                text=weekday_name,
+                bg=COLOR_SURFACE,
+                fg=COLOR_MUTED,
+                font=("Segoe UI Semibold", 9),
+                width=4,
+            )
+            label.grid(row=0, column=index, padx=1, pady=(0, 4))
+
+        month_grid = calendar.Calendar(firstweekday=0).monthdatescalendar(year, month)
+        today = date.today()
+        start = self._date_picker_selection_start
+        end = self._date_picker_selection_end
+        has_range = start is not None and end is not None
+        if has_range and start > end:
+            start, end = end, start
+
+        for row_index, week in enumerate(month_grid, start=1):
+            for col_index, day in enumerate(week):
+                in_current_month = day.month == month
+                is_endpoint = has_range and day in (start, end)
+                in_range = has_range and start is not None and end is not None and start <= day <= end
+
+                button_bg = COLOR_SURFACE_ALT if in_current_month else COLOR_SURFACE
+                button_fg = COLOR_TEXT if in_current_month else COLOR_MUTED
+                if in_range:
+                    button_bg = COLOR_BUTTON_ALT_HOVER
+                if is_endpoint:
+                    button_bg = COLOR_ACCENT
+                    button_fg = COLOR_BG
+
+                border_color = COLOR_ACCENT if day == today else COLOR_BORDER
+
+                btn = tk.Button(
+                    self._date_picker_grid_frame,
+                    text=str(day.day),
+                    command=lambda selected_day=day: self._on_date_picker_day_click(selected_day),
+                    bg=button_bg,
+                    fg=button_fg,
+                    activebackground=COLOR_BUTTON_ALT_HOVER,
+                    activeforeground=COLOR_TEXT,
+                    disabledforeground=COLOR_MUTED,
+                    relief=tk.FLAT,
+                    borderwidth=0,
+                    highlightthickness=1,
+                    highlightbackground=border_color,
+                    highlightcolor=border_color,
+                    width=4,
+                    pady=6,
+                    cursor="hand2",
+                    font=("Segoe UI", 9),
+                )
+                btn.grid(row=row_index, column=col_index, padx=1, pady=1)
+
+        self._update_date_picker_hint()
+
+    def _on_date_picker_day_click(self, selected_day: date) -> None:
+        if selected_day.month != self._date_picker_month.month or selected_day.year != self._date_picker_month.year:
+            self._date_picker_month = selected_day.replace(day=1)
+
+        start = self._date_picker_selection_start
+        end = self._date_picker_selection_end
+
+        if start is None or end is not None:
+            self._date_picker_selection_start = selected_day
+            self._date_picker_selection_end = None
+            self._refresh_date_picker_grid()
+            return
+
+        if selected_day < start:
+            self._date_picker_selection_start = selected_day
+            self._date_picker_selection_end = start
+        else:
+            self._date_picker_selection_end = selected_day
+        self._refresh_date_picker_grid()
+
+    def _update_date_picker_hint(self) -> None:
+        start = self._date_picker_selection_start
+        end = self._date_picker_selection_end
+
+        if start is None:
+            self._date_picker_hint_var.set(
+                "Clique na data inicial e depois na data final. Enter aplica, Esc cancela."
+            )
+            return
+
+        if end is None:
+            start_text = start.strftime("%d/%m/%Y")
+            self._date_picker_hint_var.set(
+                f"Data inicial: {start_text}. Agora selecione a data final. Enter aplica."
+            )
+            return
+
+        if end < start:
+            start, end = end, start
+        start_text = start.strftime("%d/%m/%Y")
+        end_text = end.strftime("%d/%m/%Y")
+        total_days = (end - start).days + 1
+        self._date_picker_hint_var.set(
+            f"Periodo selecionado: {start_text} a {end_text} ({total_days} dia(s)). Enter aplica."
+        )
+
+    def _set_period_dates(self, start: date, end: date) -> None:
+        if start > end:
+            start, end = end, start
+
+        self.start_date_var.set(start.strftime("%d/%m/%Y"))
+        self.end_date_var.set(end.strftime("%d/%m/%Y"))
+
+        if self._date_picker_window is not None and self._date_picker_window.winfo_exists():
+            self._date_picker_selection_start = start
+            self._date_picker_selection_end = end
+            self._date_picker_month = start.replace(day=1)
+            self._refresh_date_picker_grid()
 
     def _load_initial_values(self) -> None:
         if not self.platform_choices:
@@ -1192,6 +1575,7 @@ class CFODesktopApp:
             self.btn_refresh_sounds.configure(state=tk.DISABLED)
             self.btn_search_sku.configure(state=tk.DISABLED)
             self.sku_order_entry.configure(state=tk.DISABLED)
+            self.btn_pick_period.configure(state=tk.DISABLED)
             return
 
         self.btn_collect.configure(state=tk.NORMAL)
@@ -1211,6 +1595,7 @@ class CFODesktopApp:
         sku_state = tk.NORMAL if self._platform_supports_sku_workflow() else tk.DISABLED
         self.btn_search_sku.configure(state=sku_state)
         self.sku_order_entry.configure(state=sku_state)
+        self.btn_pick_period.configure(state=tk.NORMAL)
 
     def _run_task(self, action_name: str, target) -> None:
         if self.busy:
@@ -1514,8 +1899,7 @@ class CFODesktopApp:
 
     def _set_default_dates_current_month(self) -> None:
         today = date.today()
-        self.start_date_var.set(today.replace(day=1).strftime("%d/%m/%Y"))
-        self.end_date_var.set(today.strftime("%d/%m/%Y"))
+        self._set_period_dates(today.replace(day=1), today)
 
     def _set_previous_month_period_based_on_today(self) -> None:
         today = date.today()
@@ -1523,8 +1907,7 @@ class CFODesktopApp:
         last_day_previous_month = first_day_current_month - timedelta(days=1)
         first_day_previous_month = last_day_previous_month.replace(day=1)
 
-        self.start_date_var.set(first_day_previous_month.strftime("%d/%m/%Y"))
-        self.end_date_var.set(last_day_previous_month.strftime("%d/%m/%Y"))
+        self._set_period_dates(first_day_previous_month, last_day_previous_month)
 
     @staticmethod
     def _count_months_covered(start_date_iso: str, end_date_iso: str) -> int:
