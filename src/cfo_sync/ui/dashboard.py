@@ -1,12 +1,12 @@
 ﻿from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
 
 import streamlit as st
 
 from cfo_sync.core.config_loader import load_app_config
 from cfo_sync.core.pipeline import SyncPipeline
+from cfo_sync.core.runtime_paths import app_config_path, ensure_runtime_layout
 from cfo_sync.platforms.ui_registry import build_platform_ui_registry
 
 
@@ -15,7 +15,8 @@ def run_dashboard() -> None:
     st.title("CFO Sync")
     st.caption("Coleta de APIs por plataforma e exportacao para Google Sheets")
 
-    config = load_app_config(Path("secrets/app_config.json"))
+    ensure_runtime_layout()
+    config = load_app_config(app_config_path())
     pipeline = SyncPipeline(config)
     ui_registry = build_platform_ui_registry(config)
 
@@ -102,4 +103,4 @@ def run_dashboard() -> None:
     st.subheader("Arquitetura aplicada")
     st.write("- UI unica em `src/cfo_sync/ui`")
     st.write("- Conector separado por plataforma em `src/cfo_sync/platforms`")
-    st.write("- Config central para clientes/plataformas em `secrets/app_config.json`")
+    st.write(f"- Config central para clientes/plataformas em `{app_config_path()}`")

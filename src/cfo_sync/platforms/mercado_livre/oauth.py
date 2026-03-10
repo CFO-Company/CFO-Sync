@@ -10,6 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from cfo_sync.core.runtime_paths import default_mercado_livre_credentials_path
 from cfo_sync.platforms.mercado_livre.credentials import MercadoLivreAuth, MercadoLivreCredentialsStore
 
 
@@ -127,7 +128,7 @@ def _main() -> int:
     parser = argparse.ArgumentParser(description="Renova e persiste o token do Mercado Livre.")
     parser.add_argument(
         "--credentials",
-        default="secrets/mercado_livre_credentials.json",
+        default=str(default_mercado_livre_credentials_path()),
         help="Caminho do JSON de credenciais do Mercado Livre.",
     )
     parser.add_argument(

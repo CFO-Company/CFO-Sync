@@ -13,7 +13,7 @@ from cfo_sync.core.models import (
     SheetTabTarget,
     YampiConfig,
 )
-from cfo_sync.platforms.omie.credentials import OMIE_CREDENTIALS_PATH, build_omie_platform_config
+from cfo_sync.platforms.omie.credentials import build_omie_platform_config
 
 
 def _extract_spreadsheet_id(spreadsheet_url: str) -> str:
@@ -25,6 +25,8 @@ def _extract_spreadsheet_id(spreadsheet_url: str) -> str:
 
 def load_app_config(config_path: Path) -> AppConfig:
     data = json.loads(config_path.read_text(encoding="utf-8-sig"))
+    app_root = _resolve_app_root(config_path)
+    credentials_dir = _resolve_path(data["credentials_dir"], app_root)
 
     platforms: list[PlatformConfig] = []
     for platform_data in data["platforms"]:
@@ -62,13 +64,13 @@ def load_app_config(config_path: Path) -> AppConfig:
         )
 
     platforms = [platform for platform in platforms if platform.key != "omie"]
-    omie_platform = build_omie_platform_config(OMIE_CREDENTIALS_PATH)
+    omie_platform = build_omie_platform_config(credentials_dir / "omie_credentials.json")
     if omie_platform is not None:
         platforms.append(omie_platform)
 
     return AppConfig(
-        database_path=Path(data["database_path"]),
-        credentials_dir=Path(data["credentials_dir"]),
+        database_path=_resolve_path(data["database_path"], app_root),
+        credentials_dir=credentials_dir,
         google_sheets=GoogleSheetsConfig(
             credentials_file=data["google_sheets"]["credentials_file"],
         ),
@@ -80,3 +82,16 @@ def load_app_config(config_path: Path) -> AppConfig:
         ),
         platforms=platforms,
     )
+
+
+def _resolve_app_root(config_path: Path) -> Path:
+    if config_path.parent.name.lower() == "secrets":
+        return config_path.parent.parent
+    return config_path.parent
+
+
+def _resolve_path(raw_path: str, root: Path) -> Path:
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path
+    return (root / path).resolve()

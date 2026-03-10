@@ -1,7 +1,9 @@
 ﻿from __future__ import annotations
 
 import json
+import os
 import queue
+import subprocess
 import sys
 import threading
 import ctypes
@@ -20,13 +22,24 @@ if str(SRC_DIR) not in sys.path:
 from cfo_sync.core.config_loader import load_app_config
 from cfo_sync.core.models import ResourceConfig
 from cfo_sync.core.pipeline import SyncPipeline
+from cfo_sync.core.runtime_paths import (
+    app_config_path,
+    available_sound_dirs,
+    custom_sounds_dir,
+    desktop_settings_path,
+    ensure_runtime_layout,
+    secrets_dir,
+    update_config_path,
+)
+from cfo_sync.core.updater import check_for_updates, download_and_launch_update, get_releases_page_url
 from cfo_sync.platforms.ui_registry import build_platform_ui_registry
+from cfo_sync.version import __version__
 
 
 ALL_SUB_CLIENTS = "Todos"
 NO_NOTIFICATION_SOUND = "Sem som"
-DESKTOP_SETTINGS_PATH = PROJECT_DIR / "secrets" / "desktop_settings.json"
-SOUNDS_DIR = PROJECT_DIR / "sounds"
+DESKTOP_SETTINGS_PATH = desktop_settings_path()
+SOUNDS_DIR = custom_sounds_dir()
 
 COLOR_BG = "#0B0D10"
 COLOR_SURFACE = "#14181D"
@@ -58,7 +71,7 @@ class PlatformChoice:
 class CFODesktopApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("CFO Sync")
+        self.root.title(f"CFO Sync v{__version__}")
         self.root.geometry("1240x760")
         self.root.minsize(1120, 680)
         self.root.resizable(True, True)
@@ -66,7 +79,8 @@ class CFODesktopApp:
         self.log_queue: queue.Queue[str] = queue.Queue()
         self.busy = False
 
-        self.config = load_app_config(PROJECT_DIR / "secrets" / "app_config.json")
+        ensure_runtime_layout()
+        self.config = load_app_config(app_config_path())
         self.pipeline = SyncPipeline(self.config)
         self.platform_ui_registry = build_platform_ui_registry(self.config)
 
@@ -419,7 +433,7 @@ class CFODesktopApp:
         ttk.Label(header_left, text="Painel de Sincronização", style="Title.TLabel").pack(anchor=tk.W)
         ttk.Label(
             header_left,
-            text="Selecione plataforma, cliente e filial/alias para coletar e exportar.",
+            text=f"Versao {__version__} | Selecione plataforma, cliente e filial/alias para coletar e exportar.",
             style="Subtitle.TLabel",
         ).pack(anchor=tk.W, pady=(2, 0))
 
@@ -722,7 +736,31 @@ class CFODesktopApp:
             command=self.export_sku,
             cursor="no",
         )
-        self.btn_export_sku.pack(fill=tk.X)
+        self.btn_export_sku.pack(fill=tk.X, pady=(0, 8))
+
+        self.btn_update_app = ttk.Button(
+            buttons,
+            text="Atualizar app",
+            style="Secondary.TButton",
+            command=self.update_app,
+        )
+        self.btn_update_app.pack(fill=tk.X, pady=(0, 8))
+
+        self.btn_open_changelog = ttk.Button(
+            buttons,
+            text="Ver changelog",
+            style="Secondary.TButton",
+            command=self.open_changelog,
+        )
+        self.btn_open_changelog.pack(fill=tk.X, pady=(0, 8))
+
+        self.btn_open_secrets = ttk.Button(
+            buttons,
+            text="Abrir pasta de config",
+            style="Secondary.TButton",
+            command=self.open_secrets_folder,
+        )
+        self.btn_open_secrets.pack(fill=tk.X)
 
         log_card = ttk.Frame(right_panel, style="Card.TFrame", padding=16)
         log_card.grid(row=1, column=0, sticky=tk.NSEW)
@@ -800,7 +838,9 @@ class CFODesktopApp:
 
     def _load_initial_values(self) -> None:
         if not self.platform_choices:
-            raise RuntimeError("Nenhuma plataforma/recurso configurado em secrets/app_config.json")
+            self.status_var.set("Sem plataformas configuradas")
+            self.log(f"Nenhuma plataforma/recurso configurado em {app_config_path()}")
+            return
 
         first = self.platform_choices[0]
         self.platform_var.set(first.label)
@@ -855,11 +895,14 @@ class CFODesktopApp:
         self._ensure_sounds_directory()
 
         current_choice = self.notification_sound_var.get().strip()
-        available = sorted(
-            path.name
-            for path in SOUNDS_DIR.glob("*.mp3")
-            if path.is_file()
-        )
+        available_names: set[str] = set()
+        for sound_dir in available_sound_dirs():
+            if not sound_dir.exists():
+                continue
+            for path in sound_dir.glob("*.mp3"):
+                if path.is_file():
+                    available_names.add(path.name)
+        available = sorted(available_names)
         options = [NO_NOTIFICATION_SOUND, *available]
         self.notification_sound_options = options
         self.notification_sound_combo.configure(values=options)
@@ -902,9 +945,9 @@ class CFODesktopApp:
         if not selected or selected == NO_NOTIFICATION_SOUND:
             return
 
-        sound_path = (SOUNDS_DIR / selected).resolve()
-        if not sound_path.is_file():
-            self.log(f"Aviso: som selecionado nao encontrado ({sound_path}).")
+        sound_path = self._resolve_sound_file(selected)
+        if sound_path is None:
+            self.log(f"Aviso: som selecionado nao encontrado ({selected}).")
             return
         if sys.platform != "win32":
             self.log("Aviso: reproducao de mp3 no launcher esta disponivel apenas no Windows.")
@@ -935,6 +978,14 @@ class CFODesktopApp:
                 )
         except Exception as error:  # noqa: BLE001
             self.log(f"Aviso: erro ao reproduzir som de notificacao ({error}).")
+
+    @staticmethod
+    def _resolve_sound_file(sound_name: str) -> Path | None:
+        for sound_dir in available_sound_dirs():
+            candidate = (sound_dir / sound_name).resolve()
+            if candidate.is_file():
+                return candidate
+        return None
 
     @staticmethod
     def _flashwindowinfo_struct():
@@ -1120,6 +1171,9 @@ class CFODesktopApp:
             self.btn_collect.configure(state=tk.DISABLED)
             self.btn_export.configure(state=tk.DISABLED)
             self.btn_export_sku.configure(state=tk.DISABLED, cursor="no")
+            self.btn_update_app.configure(state=tk.DISABLED)
+            self.btn_open_changelog.configure(state=tk.DISABLED)
+            self.btn_open_secrets.configure(state=tk.DISABLED)
             self.btn_select_all_sub_clients.configure(state=tk.DISABLED)
             self.btn_clear_sub_clients.configure(state=tk.DISABLED)
             self.sub_client_listbox.configure(state=tk.DISABLED)
@@ -1132,6 +1186,9 @@ class CFODesktopApp:
         self.btn_collect.configure(state=tk.NORMAL)
         self.btn_export.configure(state=tk.NORMAL)
         self._update_export_sku_button_state()
+        self.btn_update_app.configure(state=tk.NORMAL)
+        self.btn_open_changelog.configure(state=tk.NORMAL)
+        self.btn_open_secrets.configure(state=tk.NORMAL)
 
         has_sub_clients = bool(self.sub_client_options)
         controls_state = tk.NORMAL if has_sub_clients else tk.DISABLED
@@ -1472,6 +1529,91 @@ class CFODesktopApp:
             return ", ".join(sub_clients)
         return f"{len(sub_clients)} selecionadas"
 
+    def open_secrets_folder(self) -> None:
+        target = secrets_dir()
+        target.mkdir(parents=True, exist_ok=True)
+        try:
+            self._open_path(target)
+            self.log(f"Pasta de configuracao aberta: {target}")
+        except Exception as error:  # noqa: BLE001
+            messagebox.showerror("Erro", f"Nao foi possivel abrir a pasta de configuracao.\n\n{error}")
+
+    def open_changelog(self) -> None:
+        releases_url = get_releases_page_url(update_config_path())
+        if not releases_url:
+            messagebox.showwarning(
+                "Changelog",
+                "Configure github_repo em update_config.json para abrir o changelog.",
+            )
+            return
+        try:
+            self._open_path(releases_url)
+            self.log(f"Abrindo changelog: {releases_url}")
+        except Exception as error:  # noqa: BLE001
+            messagebox.showerror("Erro", f"Nao foi possivel abrir o changelog.\n\n{error}")
+
+    @staticmethod
+    def _open_path(path: Path | str) -> None:
+        target = str(path)
+        if sys.platform == "win32":
+            os.startfile(target)  # type: ignore[attr-defined]
+            return
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", target])
+            return
+        subprocess.Popen(["xdg-open", target])
+
+    def update_app(self) -> None:
+        def task() -> None:
+            self.log("Verificando atualizacao no GitHub Releases...")
+            result = check_for_updates(update_config_path())
+            if result.status == "disabled":
+                self.log(result.message)
+                self.root.after(0, lambda: messagebox.showinfo("Atualizacao", result.message))
+                return
+            if result.status == "misconfigured":
+                self.log(result.message)
+                self.root.after(0, lambda: messagebox.showwarning("Atualizacao", result.message))
+                return
+            if result.status == "up_to_date":
+                self.log(result.message)
+                self.root.after(0, lambda: messagebox.showinfo("Atualizacao", result.message))
+                return
+            if result.status == "no_asset":
+                message = (
+                    "Nova versao encontrada, mas sem instalador compativel para este sistema "
+                    "na release mais recente."
+                )
+                self.log(message)
+                self.root.after(0, lambda: messagebox.showwarning("Atualizacao", message))
+                return
+            if result.status == "error":
+                self.log(result.message)
+                self.root.after(0, lambda: messagebox.showerror("Atualizacao", result.message))
+                return
+
+            self.log(
+                f"Baixando instalador da versao {result.latest_version} "
+                f"({result.asset_name})..."
+            )
+            launch_result = download_and_launch_update(update_config_path())
+            if launch_result.status != "installer_started":
+                self.log(launch_result.message)
+                self.root.after(0, lambda: messagebox.showerror("Atualizacao", launch_result.message))
+                return
+
+            self.log("Instalador iniciado com sucesso. Fechando app para atualizar.")
+            self.root.after(
+                0,
+                lambda: messagebox.showinfo(
+                    "Atualizacao",
+                    "Instalador iniciado. O app sera fechado para concluir a atualizacao.",
+                ),
+            )
+            self.root.after(500, self.root.destroy)
+
+        self._run_task("Atualizacao", task)
+
     def collect_data(self) -> None:
         def task() -> None:
             choice, client, sub_clients, start_date, end_date = self._current_selection()
@@ -1551,7 +1693,18 @@ class CFODesktopApp:
 
 def main() -> None:
     root = tk.Tk()
-    app = CFODesktopApp(root)
+    try:
+        app = CFODesktopApp(root)
+    except Exception as error:  # noqa: BLE001
+        root.withdraw()
+        messagebox.showerror(
+            "Erro ao iniciar CFO Sync",
+            "Falha ao carregar configuracao/credenciais.\n\n"
+            f"Arquivo principal esperado: {app_config_path()}\n\n"
+            f"Detalhe tecnico: {error}",
+        )
+        root.destroy()
+        return
     app.log("App pronto.")
     root.mainloop()
 

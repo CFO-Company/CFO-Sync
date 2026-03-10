@@ -15,9 +15,13 @@ class SyncPipeline:
         self.exporter = GoogleSheetsExporter(credentials_path=credentials_path)
         yampi_credentials_path = config.credentials_dir / config.yampi.credentials_file
         meta_ads_credentials_path = config.credentials_dir / config.meta_ads.credentials_file
+        omie_credentials_path = config.credentials_dir / "omie_credentials.json"
+        mercado_livre_credentials_path = config.credentials_dir / "mercado_livre_credentials.json"
         self.connectors = build_platform_registry(
             yampi_credentials_path=yampi_credentials_path,
             meta_ads_credentials_path=meta_ads_credentials_path,
+            omie_credentials_path=omie_credentials_path,
+            mercado_livre_credentials_path=mercado_livre_credentials_path,
         )
 
     def collect(

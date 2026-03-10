@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cfo_sync.core.models import RawRecord, ResourceConfig
+from cfo_sync.core.runtime_paths import default_mercado_livre_credentials_path
 from cfo_sync.platforms.mercado_livre.vendas import fetch_vendas
 
 
@@ -10,7 +11,7 @@ class MercadoLivreConnector:
     platform_key = "mercado_livre"
 
     def __init__(self, credentials_path: Path | None = None) -> None:
-        self.credentials_path = credentials_path or Path("secrets/mercado_livre_credentials.json")
+        self.credentials_path = credentials_path or default_mercado_livre_credentials_path()
 
     def fetch(
         self,

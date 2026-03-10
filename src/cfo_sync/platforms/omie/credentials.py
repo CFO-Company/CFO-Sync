@@ -7,10 +7,11 @@ from pathlib import Path
 from unicodedata import normalize
 
 from cfo_sync.core.models import PlatformConfig, ResourceConfig, SheetTabTarget
+from cfo_sync.core.runtime_paths import default_omie_credentials_path
 
 
 OMIE_DEFAULT_SPREADSHEET_ID = "14W1swSXAdvOzz1A8DwZug02aKRQnhROQyaqr1D2Mq-E"
-OMIE_CREDENTIALS_PATH = Path("secrets/omie_credentials.json")
+OMIE_CREDENTIALS_PATH = default_omie_credentials_path()
 
 OMIE_FIELD_MAP = {
     "origem": "Origem",
@@ -119,7 +120,10 @@ def build_omie_platform_config(credentials_path: Path = OMIE_CREDENTIALS_PATH) -
     if resolved_path is None:
         return None
 
-    store = OmieCredentialsStore.from_file(resolved_path)
+    try:
+        store = OmieCredentialsStore.from_file(resolved_path)
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return None
     spreadsheet_id = store.spreadsheet_id or OMIE_DEFAULT_SPREADSHEET_ID
     spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
     client_tabs = {
@@ -146,6 +150,8 @@ def build_omie_platform_config(credentials_path: Path = OMIE_CREDENTIALS_PATH) -
         clients=store.companies(),
         resources=[resource],
     )
+
+
 def _parse_yes_no(raw_value: str) -> bool:
     normalized = normalize("NFKD", str(raw_value or "").strip()).encode("ascii", "ignore").decode("ascii")
     normalized = normalized.upper()
