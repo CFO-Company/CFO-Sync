@@ -34,7 +34,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-packages
-          path: dist/installer/*
+          path: dist/installer/CFO-Sync-Setup.exe
           if-no-files-found: error
 
   build-macos:
@@ -59,7 +59,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-packages
-          path: dist/installer/*
+          path: dist/installer/CFO-Sync-macOS.dmg
           if-no-files-found: error
 
   publish-release:

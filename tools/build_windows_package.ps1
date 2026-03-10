@@ -44,11 +44,6 @@ if (-not (Test-Path $distDir)) {
 }
 
 Write-Host "==> Executavel pronto em: $distDir"
-Write-Host "==> Gerando pacote zip portavel..."
-$portableZipPath = Join-Path $installerOutDir "CFO-Sync-Windows.zip"
-if (Test-Path $portableZipPath) { Remove-Item $portableZipPath -Force }
-Compress-Archive -Path (Join-Path $distDir "*") -DestinationPath $portableZipPath
-Write-Host "==> Zip portavel pronto em: $portableZipPath"
 
 if ($SkipInstaller) {
     Write-Host "==> Instalador pulado (flag -SkipInstaller)."
@@ -69,12 +64,5 @@ if (-not (Test-Path $issPath)) {
 
 Write-Host "==> Gerando instalador com Inno Setup..."
 & $iscc.Source "/DMyAppVersion=$appVersion" $issPath
-
-$defaultSetup = Join-Path $installerOutDir "CFO-Sync-Setup.exe"
-if (Test-Path $defaultSetup) {
-    $versionedSetup = Join-Path $installerOutDir "CFO-Sync-Setup-v$appVersion.exe"
-    Copy-Item -Force $defaultSetup $versionedSetup
-    Write-Host "==> Copia versionada do instalador: $versionedSetup"
-}
 
 Write-Host "==> Instalador pronto em dist\\installer"

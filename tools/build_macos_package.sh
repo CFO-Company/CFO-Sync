@@ -10,29 +10,10 @@ if [[ ! -x "$PYTHON_EXE" ]]; then
   exit 1
 fi
 
-APP_VERSION="$(
-  awk -F'"' '
-    /^[[:space:]]*version[[:space:]]*=[[:space:]]*"/ {
-      print $2
-      exit
-    }
-  ' pyproject.toml
-)"
-if [[ -z "$APP_VERSION" ]]; then
-  echo "Nao foi possivel ler a versao do pyproject.toml." >&2
-  exit 1
-fi
-if [[ ! "$APP_VERSION" =~ ^[0-9]+(\.[0-9]+){2}([.-][0-9A-Za-z]+)?$ ]]; then
-  echo "Versao invalida lida do pyproject.toml: '$APP_VERSION'" >&2
-  exit 1
-fi
-
 APP_NAME="CFO-Sync"
 DIST_APP="dist/${APP_NAME}.app"
 INSTALLER_DIR="dist/installer"
 DMG_PATH="${INSTALLER_DIR}/CFO-Sync-macOS.dmg"
-DMG_VERSIONED_PATH="${INSTALLER_DIR}/CFO-Sync-macOS-v${APP_VERSION}.dmg"
-ZIP_PATH="${INSTALLER_DIR}/CFO-Sync-macOS.zip"
 
 mkdir -p "$INSTALLER_DIR"
 
@@ -58,16 +39,9 @@ if [[ ! -d "$DIST_APP" ]]; then
   exit 1
 fi
 
-echo "==> Gerando zip portavel macOS..."
-rm -f "$ZIP_PATH"
-ditto -c -k --sequesterRsrc --keepParent "$DIST_APP" "$ZIP_PATH"
-
 echo "==> Gerando DMG..."
-rm -f "$DMG_PATH" "$DMG_VERSIONED_PATH"
+rm -f "$DMG_PATH"
 hdiutil create -volname "CFO Sync" -srcfolder "$DIST_APP" -ov -format UDZO "$DMG_PATH"
-cp "$DMG_PATH" "$DMG_VERSIONED_PATH"
 
-echo "==> Pacotes prontos:"
-echo "    $ZIP_PATH"
+echo "==> Pacote pronto:"
 echo "    $DMG_PATH"
-echo "    $DMG_VERSIONED_PATH"

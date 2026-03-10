@@ -80,8 +80,6 @@ Comando:
 Saídas:
 
 - `dist\installer\CFO-Sync-Setup.exe`
-- `dist\installer\CFO-Sync-Setup-vX.Y.Z.exe`
-- `dist\installer\CFO-Sync-Windows.zip`
 
 ## Build local - macOS
 
@@ -100,8 +98,6 @@ PYTHON_EXE=.venv/bin/python ./tools/build_macos_package.sh
 Saídas:
 
 - `dist/installer/CFO-Sync-macOS.dmg`
-- `dist/installer/CFO-Sync-macOS-vX.Y.Z.dmg`
-- `dist/installer/CFO-Sync-macOS.zip`
 
 ## Pipeline de release no GitHub
 
