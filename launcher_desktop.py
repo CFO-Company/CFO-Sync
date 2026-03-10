@@ -463,9 +463,11 @@ class CFODesktopApp:
 
         config_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
         self.sku_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
+        self.settings_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
 
         self.tabs.add(config_tab, text="Pedidos")
         self.tabs.add(self.sku_tab, text="SKU")
+        self.tabs.add(self.settings_tab, text="Configurações")
 
         ttk.Label(config_tab, text="Pedidos", style="CardTitle.TLabel").grid(
             row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 12)
@@ -601,37 +603,6 @@ class CFODesktopApp:
         )
         previous_month_btn.pack(side=tk.LEFT)
 
-        ttk.Label(config_tab, text="Som de notificação", style="Field.TLabel").grid(
-            row=7, column=0, sticky=tk.W, padx=(0, 10), pady=6
-        )
-        sound_actions = ttk.Frame(config_tab, style="Card.TFrame")
-        sound_actions.grid(row=7, column=1, sticky=tk.EW, pady=6)
-        sound_actions.columnconfigure(0, weight=1)
-
-        self.notification_sound_combo = ttk.Combobox(
-            sound_actions,
-            textvariable=self.notification_sound_var,
-            state="readonly",
-            values=self.notification_sound_options,
-            style="Dark.TCombobox",
-            width=30,
-        )
-        self.notification_sound_combo.grid(row=0, column=0, sticky=tk.EW)
-
-        self.btn_refresh_sounds = ttk.Button(
-            sound_actions,
-            text="Atualizar sons",
-            style="Secondary.TButton",
-            command=self._refresh_notification_sounds,
-        )
-        self.btn_refresh_sounds.grid(row=0, column=1, sticky=tk.E, padx=(8, 0))
-
-        ttk.Label(
-            config_tab,
-            text="Adicione arquivos .mp3 na pasta sounds para novos sons.",
-            style="Field.TLabel",
-        ).grid(row=8, column=1, sticky=tk.W, pady=(0, 8))
-
         config_tab.rowconfigure(3, weight=1)
         config_tab.columnconfigure(1, weight=1)
 
@@ -706,6 +677,70 @@ class CFODesktopApp:
         self.sku_tree.configure(yscrollcommand=sku_scroll.set)
         self.sku_tree.bind("<Configure>", lambda event: self._resize_sku_columns(event.width))
 
+        self.settings_tab.columnconfigure(1, weight=1)
+
+        ttk.Label(self.settings_tab, text="Configurações", style="CardTitle.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 12)
+        )
+
+        ttk.Label(self.settings_tab, text="Som de notificação", style="Field.TLabel").grid(
+            row=1, column=0, sticky=tk.W, padx=(0, 10), pady=6
+        )
+        sound_actions = ttk.Frame(self.settings_tab, style="Card.TFrame")
+        sound_actions.grid(row=1, column=1, sticky=tk.EW, pady=6)
+        sound_actions.columnconfigure(0, weight=1)
+
+        self.notification_sound_combo = ttk.Combobox(
+            sound_actions,
+            textvariable=self.notification_sound_var,
+            state="readonly",
+            values=self.notification_sound_options,
+            style="Dark.TCombobox",
+            width=30,
+        )
+        self.notification_sound_combo.grid(row=0, column=0, sticky=tk.EW)
+
+        self.btn_refresh_sounds = ttk.Button(
+            sound_actions,
+            text="Atualizar sons",
+            style="Secondary.TButton",
+            command=self._refresh_notification_sounds,
+        )
+        self.btn_refresh_sounds.grid(row=0, column=1, sticky=tk.E, padx=(8, 0))
+
+        ttk.Label(
+            self.settings_tab,
+            text="Adicione arquivos .mp3 na pasta sounds para novos sons.",
+            style="Field.TLabel",
+        ).grid(row=2, column=1, sticky=tk.W, pady=(0, 10))
+
+        app_actions = ttk.Frame(self.settings_tab, style="Card.TFrame")
+        app_actions.grid(row=3, column=1, sticky=tk.W, pady=(8, 0))
+
+        self.btn_update_app = ttk.Button(
+            app_actions,
+            text="Atualizar app",
+            style="Secondary.TButton",
+            command=self.update_app,
+        )
+        self.btn_update_app.pack(fill=tk.X, pady=(0, 8))
+
+        self.btn_open_changelog = ttk.Button(
+            app_actions,
+            text="Ver changelog",
+            style="Secondary.TButton",
+            command=self.open_changelog,
+        )
+        self.btn_open_changelog.pack(fill=tk.X, pady=(0, 8))
+
+        self.btn_open_secrets = ttk.Button(
+            app_actions,
+            text="Abrir pasta de config",
+            style="Secondary.TButton",
+            command=self.open_secrets_folder,
+        )
+        self.btn_open_secrets.pack(fill=tk.X)
+
         actions_card = ttk.Frame(right_panel, style="Card.TFrame", padding=16)
         actions_card.grid(row=0, column=0, sticky=tk.EW, pady=(0, 10))
         ttk.Label(actions_card, text="Ações", style="CardTitle.TLabel").pack(anchor=tk.W, pady=(0, 10))
@@ -736,31 +771,7 @@ class CFODesktopApp:
             command=self.export_sku,
             cursor="no",
         )
-        self.btn_export_sku.pack(fill=tk.X, pady=(0, 8))
-
-        self.btn_update_app = ttk.Button(
-            buttons,
-            text="Atualizar app",
-            style="Secondary.TButton",
-            command=self.update_app,
-        )
-        self.btn_update_app.pack(fill=tk.X, pady=(0, 8))
-
-        self.btn_open_changelog = ttk.Button(
-            buttons,
-            text="Ver changelog",
-            style="Secondary.TButton",
-            command=self.open_changelog,
-        )
-        self.btn_open_changelog.pack(fill=tk.X, pady=(0, 8))
-
-        self.btn_open_secrets = ttk.Button(
-            buttons,
-            text="Abrir pasta de config",
-            style="Secondary.TButton",
-            command=self.open_secrets_folder,
-        )
-        self.btn_open_secrets.pack(fill=tk.X)
+        self.btn_export_sku.pack(fill=tk.X)
 
         log_card = ttk.Frame(right_panel, style="Card.TFrame", padding=16)
         log_card.grid(row=1, column=0, sticky=tk.NSEW)
