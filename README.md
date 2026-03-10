@@ -109,7 +109,7 @@ Arquivo:
 
 - `.github/workflows/release.yml`
 
-Ao criar tag `vX.Y.Z`, o workflow:
+Ao criar tag `X.Y.Z`, o workflow:
 
 - builda Windows + macOS
 - gera pacotes em `dist/installer`
@@ -136,7 +136,7 @@ python tools/changelog_extract.py --version 1.0.0
 Para cada nova release:
 
 1. Atualize `CHANGELOG.md` com a secao da nova versao.
-2. Crie a tag `vX.Y.Z`.
+2. Crie a tag `X.Y.Z`.
 3. O workflow publica a release usando essa secao como release notes.
 
 ## Fluxo sugerido para analistas
