@@ -10,9 +10,20 @@ if [[ ! -x "$PYTHON_EXE" ]]; then
   exit 1
 fi
 
-APP_VERSION="$(grep -E '^version\s*=\s*".+"' pyproject.toml | head -n1 | sed -E 's/^version\s*=\s*"([^"]+)".*$/\1/')"
+APP_VERSION="$(
+  awk -F'"' '
+    /^[[:space:]]*version[[:space:]]*=[[:space:]]*"/ {
+      print $2
+      exit
+    }
+  ' pyproject.toml
+)"
 if [[ -z "$APP_VERSION" ]]; then
   echo "Nao foi possivel ler a versao do pyproject.toml." >&2
+  exit 1
+fi
+if [[ ! "$APP_VERSION" =~ ^[0-9]+(\.[0-9]+){2}([.-][0-9A-Za-z]+)?$ ]]; then
+  echo "Versao invalida lida do pyproject.toml: '$APP_VERSION'" >&2
   exit 1
 fi
 
