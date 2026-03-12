@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import Any
 
 from cfo_sync.core.models import RawRecord, ResourceConfig
-from cfo_sync.platforms.omie.api import call_omie_api
+from cfo_sync.platforms.omie.api import OmieAPIError, call_omie_api
 from cfo_sync.platforms.omie.credentials import OmieCredential
 
 
@@ -34,6 +34,7 @@ def fetch_financeiro(
         lookup_clientes = _fetch_lookup_clientes(credential)
         lookup_categorias = _fetch_lookup_categorias(credential)
         lookup_departamentos = _fetch_lookup_departamentos(credential)
+        lookup_contas_correntes = _fetch_lookup_contas_correntes(credential)
 
         rows.extend(
             _fetch_conta_corrente(
@@ -43,6 +44,7 @@ def fetch_financeiro(
                 lookup_clientes=lookup_clientes,
                 lookup_categorias=lookup_categorias,
                 lookup_departamentos=lookup_departamentos,
+                lookup_contas_correntes=lookup_contas_correntes,
             )
         )
 
@@ -55,6 +57,7 @@ def fetch_financeiro(
                     lookup_clientes=lookup_clientes,
                     lookup_categorias=lookup_categorias,
                     lookup_departamentos=lookup_departamentos,
+                    lookup_contas_correntes=lookup_contas_correntes,
                 )
             )
 
@@ -67,6 +70,7 @@ def fetch_financeiro(
                     lookup_clientes=lookup_clientes,
                     lookup_categorias=lookup_categorias,
                     lookup_departamentos=lookup_departamentos,
+                    lookup_contas_correntes=lookup_contas_correntes,
                 )
             )
 
@@ -132,6 +136,150 @@ def _fetch_lookup_departamentos(credential: OmieCredential) -> dict[str, str]:
     return lookup
 
 
+def _fetch_lookup_contas_correntes(credential: OmieCredential) -> dict[str, str]:
+    call_attempts = (
+        ("ListarContasCorrentes", "financas/contacorrente/", "pagina", "registros_por_pagina"),
+        ("ListarContasCorrentes", "geral/contacorrentes/", "pagina", "registros_por_pagina"),
+        ("ListarContaCorrente", "financas/contacorrente/", "pagina", "registros_por_pagina"),
+        ("ListarContaCorrente", "geral/contacorrentes/", "pagina", "registros_por_pagina"),
+        ("ListarContasCorrentes", "financas/contacorrente/", "nPagina", "nRegPorPagina"),
+        ("ListarContasCorrentes", "geral/contacorrentes/", "nPagina", "nRegPorPagina"),
+    )
+
+    for call, endpoint, page_param, size_param in call_attempts:
+        lookup: dict[str, str] = {}
+        page = 1
+        total_pages = 1
+        try:
+            while page <= total_pages:
+                params = {
+                    page_param: page,
+                    size_param: 500,
+                }
+                response = call_omie_api(
+                    credential=credential,
+                    call=call,
+                    endpoint=endpoint,
+                    params=params,
+                )
+                if not response:
+                    break
+
+                lookup.update(_extract_conta_corrente_lookup(response))
+                total_pages = _extract_total_pages(response)
+                page += 1
+        except OmieAPIError:
+            continue
+
+        if lookup:
+            return lookup
+
+    return {}
+
+
+def _extract_total_pages(response: dict[str, Any]) -> int:
+    for field in (
+        "nTotPaginas",
+        "total_de_paginas",
+        "total_paginas",
+        "totalPaginas",
+        "totalPages",
+    ):
+        raw_value = response.get(field)
+        if raw_value in (None, ""):
+            continue
+        try:
+            parsed = int(raw_value)
+        except (TypeError, ValueError):
+            continue
+        if parsed >= 1:
+            return parsed
+    return 1
+
+
+def _extract_conta_corrente_lookup(payload: Any) -> dict[str, str]:
+    code_fields = (
+        "nCodCC",
+        "id_conta_corrente",
+        "codigo_conta_corrente",
+        "codigo",
+        "codcontacorrente",
+    )
+    description_fields = (
+        "descricao",
+        "descricao_conta_corrente",
+        "nome_conta_corrente",
+        "nome",
+        "cDescCC",
+    )
+
+    lookup: dict[str, str] = {}
+
+    def visit(node: Any) -> None:
+        if isinstance(node, dict):
+            raw_code = _first_non_empty(node, code_fields)
+            raw_description = _first_non_empty(node, description_fields)
+            if raw_code and raw_description:
+                code = _normalize_conta_corrente_code(raw_code)
+                description = str(raw_description).strip()
+                if code and description:
+                    lookup[code] = description
+                    lookup[str(raw_code).strip()] = description
+
+            for value in node.values():
+                visit(value)
+            return
+
+        if isinstance(node, list):
+            for item in node:
+                visit(item)
+
+    visit(payload)
+    return lookup
+
+
+def _first_non_empty(payload: dict[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
+def _normalize_conta_corrente_code(raw_value: Any) -> str:
+    text = str(raw_value or "").strip()
+    if not text:
+        return ""
+    if text.endswith(".0"):
+        text = text[:-2]
+    try:
+        return str(int(text))
+    except (TypeError, ValueError):
+        return text
+
+
+def _resolve_conta_corrente_descricao(
+    conta_corrente_codigo: str,
+    lookup_contas_correntes: dict[str, str],
+    fallback_descricao: str = "",
+) -> str:
+    fallback = str(fallback_descricao or "").strip()
+    if fallback:
+        return fallback
+
+    normalized_code = _normalize_conta_corrente_code(conta_corrente_codigo)
+    if not normalized_code:
+        return ""
+    return (
+        lookup_contas_correntes.get(normalized_code)
+        or lookup_contas_correntes.get(str(conta_corrente_codigo).strip())
+        or ""
+    )
+
+
 def _fetch_conta_corrente(
     credential: OmieCredential,
     period_start: date,
@@ -139,6 +287,7 @@ def _fetch_conta_corrente(
     lookup_clientes: dict[str, str],
     lookup_categorias: dict[str, str],
     lookup_departamentos: dict[str, str],
+    lookup_contas_correntes: dict[str, str],
 ) -> list[RawRecord]:
     rows: list[RawRecord] = []
     page = 1
@@ -172,6 +321,15 @@ def _fetch_conta_corrente(
 
             valor_total = _to_float(cabecalho.get("nValorLanc"))
             natureza = str(diversos.get("cNatureza") or "").strip().upper() or "P"
+            conta_corrente_codigo = str(cabecalho.get("nCodCC") or "").strip()
+            conta_corrente_descricao = _resolve_conta_corrente_descricao(
+                conta_corrente_codigo,
+                lookup_contas_correntes,
+                fallback_descricao=_first_non_empty(
+                    cabecalho,
+                    ("cDescCC", "descricao", "descricao_conta_corrente", "nome_conta_corrente"),
+                ),
+            )
             lancamento_id = str(
                 lancamento.get("nCodLanc") or lancamento.get("cCodIntLanc") or ""
             ).strip()
@@ -201,7 +359,7 @@ def _fetch_conta_corrente(
                         origem=credential.app_name,
                         fonte="Recebido" if natureza == "R" else "Pago",
                         data=data_lancamento,
-                        conta_corrente=str(cabecalho.get("nCodCC") or "").strip(),
+                        conta_corrente=conta_corrente_descricao,
                         valor_lancamento=valor_rateado,
                         departamento=lookup_departamentos.get(departamento_code, ""),
                         categoria=lookup_categorias.get(categoria_code, ""),
@@ -216,7 +374,7 @@ def _fetch_conta_corrente(
                                 _normalize_origin(credential.app_name),
                                 "CC",
                                 lancamento_id,
-                                str(cabecalho.get("nCodCC") or "").strip(),
+                                conta_corrente_codigo,
                                 data_lancamento,
                                 _stringify_number(valor_total),
                                 cliente_code,
@@ -238,6 +396,7 @@ def _fetch_contas_a_pagar(
     lookup_clientes: dict[str, str],
     lookup_categorias: dict[str, str],
     lookup_departamentos: dict[str, str],
+    lookup_contas_correntes: dict[str, str],
 ) -> list[RawRecord]:
     rows: list[RawRecord] = []
 
@@ -270,6 +429,15 @@ def _fetch_contas_a_pagar(
                     cadastro.get("codigo_lancamento_omie") or cadastro.get("codigo_lancamento_integracao") or ""
                 ).strip()
                 cliente_code = str(cadastro.get("codigo_cliente_fornecedor") or "").strip()
+                conta_corrente_codigo = str(cadastro.get("id_conta_corrente") or "").strip()
+                conta_corrente_descricao = _resolve_conta_corrente_descricao(
+                    conta_corrente_codigo,
+                    lookup_contas_correntes,
+                    fallback_descricao=_first_non_empty(
+                        cadastro,
+                        ("cDescCC", "descricao", "descricao_conta_corrente", "nome_conta_corrente"),
+                    ),
+                )
                 categorias = cadastro.get("categorias") or [
                     {"codigo_categoria": cadastro.get("codigo_categoria") or "", "percentual": 100}
                 ]
@@ -293,7 +461,7 @@ def _fetch_contas_a_pagar(
                             origem=credential.app_name,
                             fonte="Pago" if status == "PAGO" else "A pagar",
                             data=data_previsao,
-                            conta_corrente=str(cadastro.get("id_conta_corrente") or "").strip(),
+                            conta_corrente=conta_corrente_descricao,
                             valor_lancamento=valor_documento,
                             departamento=lookup_departamentos.get(departamento_code, ""),
                             categoria=lookup_categorias.get(categoria_code, ""),
@@ -308,7 +476,7 @@ def _fetch_contas_a_pagar(
                                     _normalize_origin(credential.app_name),
                                     "CAP",
                                     lancamento_id,
-                                    str(cadastro.get("id_conta_corrente") or "").strip(),
+                                    conta_corrente_codigo,
                                     data_previsao,
                                     _stringify_number(valor_documento),
                                     cliente_code,
@@ -331,6 +499,7 @@ def _fetch_contas_a_receber(
     lookup_clientes: dict[str, str],
     lookup_categorias: dict[str, str],
     lookup_departamentos: dict[str, str],
+    lookup_contas_correntes: dict[str, str],
 ) -> list[RawRecord]:
     rows: list[RawRecord] = []
 
@@ -363,6 +532,15 @@ def _fetch_contas_a_receber(
                     cadastro.get("codigo_lancamento_omie") or cadastro.get("codigo_lancamento_integracao") or ""
                 ).strip()
                 cliente_code = str(cadastro.get("codigo_cliente_fornecedor") or "").strip()
+                conta_corrente_codigo = str(cadastro.get("id_conta_corrente") or "").strip()
+                conta_corrente_descricao = _resolve_conta_corrente_descricao(
+                    conta_corrente_codigo,
+                    lookup_contas_correntes,
+                    fallback_descricao=_first_non_empty(
+                        cadastro,
+                        ("cDescCC", "descricao", "descricao_conta_corrente", "nome_conta_corrente"),
+                    ),
+                )
                 categorias = cadastro.get("categorias") or [
                     {"codigo_categoria": cadastro.get("codigo_categoria") or "", "percentual": 100}
                 ]
@@ -386,7 +564,7 @@ def _fetch_contas_a_receber(
                             origem=credential.app_name,
                             fonte="Recebido" if status == "PAGO" else "A receber",
                             data=data_lancamento,
-                            conta_corrente=str(cadastro.get("id_conta_corrente") or "").strip(),
+                            conta_corrente=conta_corrente_descricao,
                             valor_lancamento=valor_documento,
                             departamento=lookup_departamentos.get(departamento_code, ""),
                             categoria=lookup_categorias.get(categoria_code, ""),
@@ -401,7 +579,7 @@ def _fetch_contas_a_receber(
                                     _normalize_origin(credential.app_name),
                                     "CAR",
                                     lancamento_id,
-                                    str(cadastro.get("id_conta_corrente") or "").strip(),
+                                    conta_corrente_codigo,
                                     data_lancamento,
                                     _stringify_number(valor_documento),
                                     cliente_code,
