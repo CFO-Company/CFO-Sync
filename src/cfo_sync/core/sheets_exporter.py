@@ -1,5 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
+from datetime import date, datetime
 import re
 import unicodedata
 from difflib import SequenceMatcher
@@ -17,7 +18,15 @@ class GoogleSheetsExporter:
         self.credentials_path = credentials_path
         self._service = None
 
-    def export(self, client: str, platform_key: str, resource: ResourceConfig, rows: list[RawRecord]) -> int:
+    def export(
+        self,
+        client: str,
+        platform_key: str,
+        resource: ResourceConfig,
+        rows: list[RawRecord],
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> int:
         target_tab = self._resolve_client_tab(resource=resource, client=client)
         if target_tab is None:
             available_clients = ", ".join(sorted(resource.client_tabs.keys()))
@@ -29,13 +38,27 @@ class GoogleSheetsExporter:
         spreadsheet_id = target_tab.spreadsheet_id or resource.spreadsheet_id
         tab_name = self._resolve_tab_name(spreadsheet_id, target_tab)
         mapped_rows = [self._map_to_sheet_columns(resource, row) for row in rows]
+        ordered_columns = list(resource.field_map.values())
+
+        period_column = resource.field_map.get("mes_ano") or resource.field_map.get("data")
+        replaced_by_period = self._replace_month_period_rows(
+            spreadsheet_id=spreadsheet_id,
+            tab_name=tab_name,
+            rows=mapped_rows,
+            ordered_columns=ordered_columns,
+            period_column=period_column,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        if replaced_by_period:
+            return len(mapped_rows)
 
         if platform_key == "omie" and resource.name == "financeiro":
             return self._upsert_by_keys(
                 spreadsheet_id=spreadsheet_id,
                 tab_name=tab_name,
                 rows=mapped_rows,
-                ordered_columns=list(resource.field_map.values()),
+                ordered_columns=ordered_columns,
                 key_columns=tuple(resource.field_map.values()),
             )
 
@@ -47,7 +70,7 @@ class GoogleSheetsExporter:
                 spreadsheet_id=spreadsheet_id,
                 tab_name=tab_name,
                 rows=mapped_rows,
-                ordered_columns=list(resource.field_map.values()),
+                ordered_columns=ordered_columns,
                 key_columns=("Data", "Alias"),
             )
 
@@ -56,11 +79,11 @@ class GoogleSheetsExporter:
                 spreadsheet_id=spreadsheet_id,
                 tab_name=tab_name,
                 rows=mapped_rows,
-                ordered_columns=list(resource.field_map.values()),
+                ordered_columns=ordered_columns,
                 key_columns=("Mês/Ano", "Conta"),
             )
 
-        values = [self._to_sheet_row(row, ordered_columns=list(resource.field_map.values())) for row in mapped_rows]
+        values = [self._to_sheet_row(row, ordered_columns=ordered_columns) for row in mapped_rows]
         self._append_rows(
             spreadsheet_id=spreadsheet_id,
             tab_name=tab_name,
@@ -68,6 +91,193 @@ class GoogleSheetsExporter:
         )
 
         return len(values)
+
+    def _replace_month_period_rows(
+        self,
+        spreadsheet_id: str,
+        tab_name: str,
+        rows: list[dict[str, object]],
+        ordered_columns: list[str],
+        period_column: str | None,
+        start_date: str | None,
+        end_date: str | None,
+    ) -> bool:
+        if not period_column or not start_date or not end_date:
+            return False
+
+        target_month_years = self._month_years_in_period(start_date=start_date, end_date=end_date)
+        if not target_month_years:
+            return False
+
+        service = self._get_service()
+        read_response = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id,
+            range=f"{tab_name}!A:ZZ",
+        ).execute()
+        existing_values = read_response.get("values", [])
+
+        if not existing_values:
+            if not rows:
+                return True
+            all_values = [ordered_columns] + [self._to_sheet_row(row, ordered_columns) for row in rows]
+            self._ensure_grid_capacity(
+                spreadsheet_id=spreadsheet_id,
+                tab_name=tab_name,
+                required_rows=len(all_values),
+                required_columns=len(ordered_columns),
+            )
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f"{tab_name}!A1",
+                valueInputOption="USER_ENTERED",
+                body={"values": all_values},
+            ).execute()
+            return True
+
+        header = [str(value) for value in existing_values[0]]
+        if period_column not in header and len(existing_values) > 1:
+            return False
+        header_changed = False
+        for column in ordered_columns:
+            if column not in header:
+                header.append(column)
+                header_changed = True
+
+        if header_changed:
+            self._ensure_grid_capacity(
+                spreadsheet_id=spreadsheet_id,
+                tab_name=tab_name,
+                required_rows=1,
+                required_columns=len(header),
+            )
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f"{tab_name}!1:1",
+                valueInputOption="USER_ENTERED",
+                body={"values": [header]},
+            ).execute()
+
+        if period_column not in header:
+            return False
+
+        period_column_index = header.index(period_column)
+        rows_to_delete: list[int] = []
+        for row_number, existing_row in enumerate(existing_values[1:], start=2):
+            raw_value = self._safe_get(existing_row, period_column_index)
+            month_year = self._extract_month_year(raw_value)
+            if month_year is None:
+                continue
+            if month_year in target_month_years:
+                rows_to_delete.append(row_number)
+
+        if rows_to_delete:
+            self._delete_rows_by_numbers(
+                spreadsheet_id=spreadsheet_id,
+                tab_name=tab_name,
+                row_numbers=rows_to_delete,
+            )
+
+        if rows:
+            appends = [self._to_sheet_row(mapped_row, ordered_columns=header) for mapped_row in rows]
+            self._append_rows(
+                spreadsheet_id=spreadsheet_id,
+                tab_name=tab_name,
+                rows=appends,
+            )
+
+        return True
+
+    def _delete_rows_by_numbers(
+        self,
+        spreadsheet_id: str,
+        tab_name: str,
+        row_numbers: list[int],
+    ) -> None:
+        if not row_numbers:
+            return
+
+        sheet_properties = self._get_sheet_properties_by_title(
+            spreadsheet_id=spreadsheet_id,
+            tab_name=tab_name,
+        )
+        sheet_id = int(sheet_properties.get("sheetId"))
+        requests = [
+            {
+                "deleteDimension": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "ROWS",
+                        "startIndex": row_number - 1,
+                        "endIndex": row_number,
+                    }
+                }
+            }
+            for row_number in sorted(set(row_numbers), reverse=True)
+            if row_number > 1
+        ]
+
+        if not requests:
+            return
+
+        self._get_service().spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={"requests": requests},
+        ).execute()
+
+    @staticmethod
+    def _month_years_in_period(start_date: str, end_date: str) -> set[tuple[int, int]]:
+        try:
+            start = date.fromisoformat(start_date)
+            end = date.fromisoformat(end_date)
+        except ValueError:
+            return set()
+
+        if start > end:
+            return set()
+
+        month_years: set[tuple[int, int]] = set()
+        current = date(start.year, start.month, 1)
+        last = date(end.year, end.month, 1)
+        while current <= last:
+            month_years.add((current.month, current.year))
+            if current.month == 12:
+                current = date(current.year + 1, 1, 1)
+            else:
+                current = date(current.year, current.month + 1, 1)
+        return month_years
+
+    @staticmethod
+    def _extract_month_year(raw_value: str) -> tuple[int, int] | None:
+        text = str(raw_value or "").strip()
+        if not text:
+            return None
+
+        month_year_match = re.fullmatch(r"(\d{1,2})/(\d{4})", text)
+        if month_year_match:
+            month = int(month_year_match.group(1))
+            year = int(month_year_match.group(2))
+            if 1 <= month <= 12:
+                return month, year
+
+        br_date_match = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", text)
+        if br_date_match:
+            month = int(br_date_match.group(2))
+            year = int(br_date_match.group(3))
+            if 1 <= month <= 12:
+                return month, year
+
+        iso_date_match = re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})", text)
+        if iso_date_match:
+            year = int(iso_date_match.group(1))
+            month = int(iso_date_match.group(2))
+            if 1 <= month <= 12:
+                return month, year
+
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            return parsed.month, parsed.year
+        except ValueError:
+            return None
 
     def _upsert_by_keys(
         self,

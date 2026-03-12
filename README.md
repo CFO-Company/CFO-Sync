@@ -1,4 +1,4 @@
-# CFO Sync 1.0.1
+# CFO Sync 1.0.2
 
 Aplicativo desktop para sincronizacao de dados de plataformas e exportacao para Google Sheets.
 
@@ -126,7 +126,7 @@ Formato adotado:
 Script utilitario:
 
 ```bash
-python tools/changelog_extract.py --version 1.0.1
+python tools/changelog_extract.py --version 1.0.2
 ```
 
 Para cada nova release:

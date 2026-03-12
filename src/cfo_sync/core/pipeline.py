@@ -79,7 +79,14 @@ class SyncPipeline:
                 end_date=end_date,
                 sub_clients=resolved_sub_clients,
             )
-            exported += self.exporter.export(client, platform_key, resource, rows)
+            exported += self.exporter.export(
+                client=client,
+                platform_key=platform_key,
+                resource=resource,
+                rows=rows,
+                start_date=start_date,
+                end_date=end_date,
+            )
         return exported
 
     @staticmethod

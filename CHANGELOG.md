@@ -1,3 +1,14 @@
+## [1.0.2] - 12-03-2026
+
+### Added
+- 
+
+### Changed
+- Exportacao para Google Sheets passou a substituir os meses selecionados no periodo: remove primeiro os registros existentes desses meses e depois reinsere os dados novos.
+
+### Fixed
+- Regra de comparacao para substituicao mensal padronizada por `mes + ano`, cobrindo selecao de um ou varios meses no app sem manter residuos de periodos anteriores.
+
 ## [1.0.1] - 10-03-2026
 
 ### Added
