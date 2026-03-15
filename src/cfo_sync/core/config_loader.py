@@ -6,6 +6,7 @@ from pathlib import Path
 
 from cfo_sync.core.models import (
     AppConfig,
+    GoogleAdsConfig,
     GoogleSheetsConfig,
     MetaAdsConfig,
     PlatformConfig,
@@ -79,6 +80,12 @@ def load_app_config(config_path: Path) -> AppConfig:
         ),
         meta_ads=MetaAdsConfig(
             credentials_file=data["meta_ads"]["credentials_file"],
+        ),
+        google_ads=GoogleAdsConfig(
+            credentials_file=(data.get("google_ads") or {}).get(
+                "credentials_file",
+                "google_ads_credentials.json",
+            ),
         ),
         platforms=platforms,
     )

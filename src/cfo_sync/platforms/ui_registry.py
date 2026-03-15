@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from cfo_sync.core.models import AppConfig
+from cfo_sync.platforms.google_ads.ui_behavior import GoogleAdsUIBehavior
 from cfo_sync.platforms.mercado_livre.ui_behavior import MercadoLivreUIBehavior
 from cfo_sync.platforms.meta_ads.ui_behavior import MetaAdsUIBehavior
 from cfo_sync.platforms.omie.ui_behavior import OmieUIBehavior
@@ -17,6 +18,9 @@ def build_platform_ui_registry(config: AppConfig) -> dict[str, PlatformUIBehavio
         ),
         "meta_ads": MetaAdsUIBehavior(
             credentials_path=config.credentials_dir / config.meta_ads.credentials_file,
+        ),
+        "google_ads": GoogleAdsUIBehavior(
+            credentials_path=config.credentials_dir / config.google_ads.credentials_file,
         ),
         "mercado_livre": MercadoLivreUIBehavior(
             credentials_path=config.credentials_dir / "mercado_livre_credentials.json",

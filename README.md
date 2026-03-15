@@ -34,6 +34,7 @@ Arquivos relevantes:
 - `google_service_account.json`
 - `yampi_credentials.json`
 - `meta_ads_credentials.json`
+- `google_ads_credentials.json`
 - `omie_credentials.json`
 - `mercado_livre_credentials.json`
 - `update_config.json`

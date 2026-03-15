@@ -437,6 +437,8 @@ class CFODesktopApp:
             return "TikTok ADS"
         if key == "meta_ads":
             return "Meta ADS"
+        if key == "google_ads":
+            return "Google ADS"
         return f"{platform_label} - {resource_name.title()}"
 
     def _build_ui(self) -> None:

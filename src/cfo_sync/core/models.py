@@ -21,6 +21,11 @@ class MetaAdsConfig:
 
 
 @dataclass(frozen=True)
+class GoogleAdsConfig:
+    credentials_file: str
+
+
+@dataclass(frozen=True)
 class SheetTabTarget:
     gid: str
     tab_name: str = ""
@@ -52,6 +57,7 @@ class AppConfig:
     google_sheets: GoogleSheetsConfig
     yampi: YampiConfig
     meta_ads: MetaAdsConfig
+    google_ads: GoogleAdsConfig
     platforms: list[PlatformConfig]
 
 
