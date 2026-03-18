@@ -1,3 +1,23 @@
+## [1.0.7] - 18-03-2026
+
+### Added
+- Runners Python dedicados para automação no servidor em `scripts/task_scheduler`:
+  `omie_2025_ano_completo.py`, `omie_2026_ano_atual.py`, `yampi_mes_atual_3_anteriores.py`,
+  `mercado_livre_mes_atual_3_anteriores.py` e `meta_ads_dia_atual_e_anterior.py`.
+- Novo cliente `Mariana Amaral` no Meta Ads com credenciais e mapeamento de aba/GID para exportação.
+
+### Changed
+- Fluxo de automação orientado para execução por scripts Python por plataforma (Task Scheduler), com logs centralizados em `logs/automation`.
+- Mercado Livre: ajuste de mapeamento de colunas para alinhar nomenclaturas da planilha (`Vendas de Produto`, `Descontos Concedidos`).
+
+### Fixed
+- Exportação para Google Sheets com resolução de colunas mais robusta (normalização de cabeçalhos) para evitar criação de colunas duplicadas por variações de nome.
+- Períodos dinâmicos de coleta alinhados por plataforma:
+  - Omie 2025 ano completo;
+  - Omie 2026 de `01/01/2026` até a data atual;
+  - Yampi e Mercado Livre mês atual + 3 anteriores;
+  - Meta Ads dia atual e dia anterior.
+
 ## [1.0.6] - 18-03-2026
 
 ### Added
