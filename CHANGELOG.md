@@ -1,3 +1,14 @@
+## [1.0.14] - 18-03-2026
+
+### Added
+- Extração da versão da tag no workflow de release adaptada para PowerShell (`GITHUB_REF_NAME`) em runners Windows.
+
+### Changed
+- Etapa `Build Release Notes From CHANGELOG` padronizada para shell PowerShell no pipeline de release.
+
+### Fixed
+- Falha no `changelog_extract.py` por versão vazia (uso de sintaxe bash `${GITHUB_REF_NAME#v}` em runner Windows).
+
 ## [1.0.13] - 18-03-2026
 
 ### Added

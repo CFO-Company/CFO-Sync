@@ -69,8 +69,13 @@ jobs:
           Get-ChildItem -Path dist -Recurse | Select-Object FullName
 
       - name: Build Release Notes From CHANGELOG
+        shell: powershell
         run: |
-          python tools/changelog_extract.py --version "${GITHUB_REF_NAME#v}" --output release-notes.md
+          $version = "${env:GITHUB_REF_NAME}"
+          if ($version.StartsWith("v")) {
+            $version = $version.Substring(1)
+          }
+          python tools/changelog_extract.py --version "$version" --output release-notes.md
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
