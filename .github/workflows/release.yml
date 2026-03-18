@@ -18,7 +18,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.11"
 
       - name: Create Virtual Environment
         shell: powershell
@@ -26,14 +26,26 @@ jobs:
           python -m venv .venv
 
       - name: Install Inno Setup
+        id: inno
         shell: powershell
         run: |
           choco install innosetup --yes --no-progress
-          "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $isccPath = @(
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+            "C:\Program Files\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+          if (-not $isccPath) {
+            throw "ISCC.exe nao encontrado apos instalar Inno Setup."
+          }
+
+          $isccDir = Split-Path -Parent $isccPath
+          "iscc_dir=$isccDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Build Windows Executable And Installer
         shell: powershell
         run: |
+          $env:Path = "$env:Path;${{ steps.inno.outputs.iscc_dir }}"
           .\tools\build_windows_package.ps1
           if (-not (Test-Path "dist\installer\CFO-Sync-Setup.exe")) {
             throw "Installer nao gerado em dist\installer\CFO-Sync-Setup.exe"
@@ -41,6 +53,7 @@ jobs:
           if (-not (Test-Path "dist\CFO-Sync\CFO-Sync.exe")) {
             throw "Executavel nao gerado em dist\CFO-Sync\CFO-Sync.exe"
           }
+          Get-ChildItem -Path dist -Recurse | Select-Object FullName
 
       - name: Build Release Notes From CHANGELOG
         run: |

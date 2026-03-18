@@ -1,3 +1,14 @@
+## [1.0.9] - 18-03-2026
+
+### Added
+- Validação explícita do `ISCC.exe` no pipeline de release para garantir geração do instalador Windows.
+
+### Changed
+- Workflow de release ajustado para Python `3.11` no runner Windows, aumentando compatibilidade de build.
+
+### Fixed
+- Falha da `v1.0.8` na etapa de build do executável/instalador corrigida com detecção robusta do Inno Setup no runner.
+
 ## [1.0.8] - 18-03-2026
 
 ### Added
