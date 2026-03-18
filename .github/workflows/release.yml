@@ -28,7 +28,23 @@ jobs:
       - name: Build Windows Executable
         shell: powershell
         run: |
-          .\tools\build_windows_package.ps1 -SkipInstaller
+          $pythonExe = ".venv\Scripts\python.exe"
+          if (-not (Test-Path $pythonExe)) {
+            throw "Python da venv nao encontrado em $pythonExe"
+          }
+
+          & $pythonExe -V
+          & $pythonExe -m pip install --upgrade pip
+          & $pythonExe -m pip install -r requirements.txt pyinstaller
+          & $pythonExe -m PyInstaller `
+            launcher_desktop.py `
+            --noconfirm `
+            --clean `
+            --windowed `
+            --name CFO-Sync `
+            --paths src `
+            --add-data "sounds;sounds" `
+            --add-data "templates;templates"
 
           if (-not (Test-Path "dist\CFO-Sync\CFO-Sync.exe")) {
             throw "Executavel nao gerado em dist\CFO-Sync\CFO-Sync.exe"

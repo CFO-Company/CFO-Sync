@@ -1,3 +1,14 @@
+## [1.0.12] - 18-03-2026
+
+### Added
+- Build do executável Windows executado diretamente no workflow (`python -m PyInstaller`) com comandos explícitos.
+
+### Changed
+- Pipeline de release deixou de depender da execução do script `tools/build_windows_package.ps1` no GitHub Actions.
+
+### Fixed
+- Falha recorrente na etapa de build em CI por execução indireta via script PowerShell.
+
 ## [1.0.11] - 18-03-2026
 
 ### Added
