@@ -33,18 +33,32 @@ jobs:
             throw "Python da venv nao encontrado em $pythonExe"
           }
 
+          if (-not (Test-Path "templates")) {
+            New-Item -ItemType Directory -Force -Path "templates\secrets" | Out-Null
+          }
+          if (-not (Test-Path "sounds")) {
+            New-Item -ItemType Directory -Force -Path "sounds" | Out-Null
+          }
+
           & $pythonExe -V
           & $pythonExe -m pip install --upgrade pip
           & $pythonExe -m pip install -r requirements.txt pyinstaller
-          & $pythonExe -m PyInstaller `
-            launcher_desktop.py `
-            --noconfirm `
-            --clean `
-            --windowed `
-            --name CFO-Sync `
-            --paths src `
-            --add-data "sounds;sounds" `
-            --add-data "templates;templates"
+          
+          $pyInstallerArgs = @(
+            "launcher_desktop.py",
+            "--noconfirm",
+            "--clean",
+            "--windowed",
+            "--name", "CFO-Sync",
+            "--paths", "src"
+          )
+          if (Test-Path "sounds") {
+            $pyInstallerArgs += @("--add-data", "sounds;sounds")
+          }
+          if (Test-Path "templates") {
+            $pyInstallerArgs += @("--add-data", "templates;templates")
+          }
+          & $pythonExe -m PyInstaller @pyInstallerArgs
 
           if (-not (Test-Path "dist\CFO-Sync\CFO-Sync.exe")) {
             throw "Executavel nao gerado em dist\CFO-Sync\CFO-Sync.exe"

@@ -1,3 +1,14 @@
+## [1.0.13] - 18-03-2026
+
+### Added
+- Criação automática dos diretórios `templates`/`templates/secrets` e `sounds` no CI quando ausentes.
+
+### Changed
+- Build do PyInstaller no workflow passou a montar os argumentos de `--add-data` dinamicamente conforme existência dos diretórios.
+
+### Fixed
+- Erro de build no GitHub Actions por ausência de `templates` no checkout da tag (`Unable to find ...\\templates`).
+
 ## [1.0.12] - 18-03-2026
 
 ### Added
