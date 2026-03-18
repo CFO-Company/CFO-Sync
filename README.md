@@ -82,24 +82,6 @@ Saídas:
 
 - `dist\installer\CFO-Sync-Setup.exe`
 
-## Build local - macOS
-
-Pre-requisitos:
-
-- macOS
-- `.venv` no projeto
-
-Comando:
-
-```bash
-chmod +x ./tools/build_macos_package.sh
-PYTHON_EXE=.venv/bin/python ./tools/build_macos_package.sh
-```
-
-Saídas:
-
-- `dist/installer/CFO-Sync-macOS.dmg`
-
 ## Pipeline de release no GitHub
 
 Arquivo:
@@ -108,7 +90,7 @@ Arquivo:
 
 Ao criar tag `X.Y.Z`, o workflow:
 
-- builda Windows + macOS
+- builda Windows
 - gera pacotes em `dist/installer`
 - publica os assets na release da tag
 - usa a secao da versao no `CHANGELOG.md` como corpo da release
@@ -138,7 +120,7 @@ Para cada nova release:
 
 ## Fluxo sugerido para analistas
 
-1. Instalar via setup do Windows ou DMG no macOS.
+1. Instalar via setup do Windows.
 2. Abrir app.
 3. Clicar em `Abrir pasta de config`.
 4. Colar/preencher os arquivos em `secrets`.

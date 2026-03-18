@@ -1,3 +1,15 @@
+## [1.0.4] - 18-03-2026
+
+### Added
+- 
+
+### Changed
+- Pipeline de release no GitHub ajustado para build e publicação apenas de pacote Windows.
+- Documentação de build/release atualizada para fluxo Windows-only.
+
+### Fixed
+- Falha da release automática em tags novas causada por etapa de build macOS não utilizada.
+
 ## [1.0.3] - 18-03-2026
 
 ### Added
