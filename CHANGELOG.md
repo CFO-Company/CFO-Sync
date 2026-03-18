@@ -1,3 +1,15 @@
+## [1.0.5] - 18-03-2026
+
+### Added
+- 
+
+### Changed
+- Workflow de release ajustado com tentativas de retry no build Windows para reduzir falhas transitórias de ambiente/rede.
+- Build da release no GitHub Actions alinhado para Python `3.14`.
+
+### Fixed
+- Continuidade da publicação automática de release após falha no run da tag `v1.0.4`.
+
 ## [1.0.4] - 18-03-2026
 
 ### Added

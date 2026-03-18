@@ -18,7 +18,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
 
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
@@ -26,9 +26,21 @@ jobs:
       - name: Build Windows Packages
         shell: pwsh
         run: |
-          python -m venv .venv
-          .\.venv\Scripts\python.exe -m pip install --upgrade pip
-          .\tools\build_windows_package.ps1 -PythonExe ".venv\Scripts\python.exe"
+          $maxAttempts = 3
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            try {
+              python -m venv .venv
+              .\.venv\Scripts\python.exe -m pip install --upgrade pip
+              .\tools\build_windows_package.ps1 -PythonExe ".venv\Scripts\python.exe"
+              break
+            } catch {
+              if ($attempt -eq $maxAttempts) {
+                throw
+              }
+              Write-Host "Tentativa $attempt falhou. Repetindo build em 15s..."
+              Start-Sleep -Seconds 15
+            }
+          }
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
