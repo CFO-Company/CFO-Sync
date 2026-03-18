@@ -53,7 +53,7 @@ class GoogleSheetsExporter:
         if replaced_by_period:
             return len(mapped_rows)
 
-        if platform_key == "omie" and resource.name == "financeiro":
+        if platform_key.startswith("omie") and resource.name == "financeiro":
             return self._upsert_by_keys(
                 spreadsheet_id=spreadsheet_id,
                 tab_name=tab_name,

@@ -144,3 +144,13 @@ Para cada nova release:
 4. Colar/preencher os arquivos em `secrets`.
 5. Usar normalmente.
 6. Quando houver release nova, clicar em `Atualizar app`.
+
+## Automacao via Task Scheduler
+
+Scripts de automacao por plataforma:
+
+- `scripts/task_scheduler/`
+
+Documentacao:
+
+- `scripts/task_scheduler/README.md`

@@ -36,7 +36,7 @@ def run_dashboard() -> None:
     selected_sub_clients: list[str] | None = None
     sub_client_options = platform_behavior.sub_client_names(client)
     if sub_client_options:
-        if platform_key == "omie":
+        if platform_key.startswith("omie"):
             sub_client_label = "Filiais / Alias"
         elif platform_key == "mercado_livre":
             sub_client_label = "Alias / Filial"

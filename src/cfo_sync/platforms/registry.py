@@ -23,7 +23,8 @@ def build_platform_registry(
     yampi_credentials_path: Path,
     meta_ads_credentials_path: Path,
     google_ads_credentials_path: Path,
-    omie_credentials_path: Path,
+    omie_2026_credentials_path: Path,
+    omie_2025_credentials_path: Path,
     mercado_livre_credentials_path: Path,
 ) -> dict[str, PlatformConnector]:
     registry: dict[str, PlatformConnector] = {
@@ -32,9 +33,17 @@ def build_platform_registry(
         "google_ads": GoogleAdsConnector(credentials_path=google_ads_credentials_path),
     }
 
-    if omie_credentials_path.exists():
+    if omie_2026_credentials_path.exists():
         try:
-            registry["omie"] = OmieConnector(credentials_path=omie_credentials_path)
+            omie_2026_connector = OmieConnector(credentials_path=omie_2026_credentials_path)
+            registry["omie"] = omie_2026_connector
+            registry["omie_2026"] = omie_2026_connector
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
+    if omie_2025_credentials_path.exists():
+        try:
+            registry["omie_2025"] = OmieConnector(credentials_path=omie_2025_credentials_path)
         except (OSError, ValueError, KeyError, TypeError):
             pass
 

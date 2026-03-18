@@ -115,7 +115,12 @@ class OmieCredentialsStore:
         return counts.most_common(1)[0][0]
 
 
-def build_omie_platform_config(credentials_path: Path = OMIE_CREDENTIALS_PATH) -> PlatformConfig | None:
+def build_omie_platform_config(
+    credentials_path: Path = OMIE_CREDENTIALS_PATH,
+    *,
+    key: str = "omie",
+    label: str = "Omie",
+) -> PlatformConfig | None:
     resolved_path = resolve_omie_credentials_path(credentials_path)
     if resolved_path is None:
         return None
@@ -124,8 +129,10 @@ def build_omie_platform_config(credentials_path: Path = OMIE_CREDENTIALS_PATH) -
         store = OmieCredentialsStore.from_file(resolved_path)
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
         return None
+
     spreadsheet_id = store.spreadsheet_id or OMIE_DEFAULT_SPREADSHEET_ID
     spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+
     client_tabs = {
         company_name: SheetTabTarget(
             gid=store.gid_for_company(company_name),
@@ -145,8 +152,8 @@ def build_omie_platform_config(credentials_path: Path = OMIE_CREDENTIALS_PATH) -
     )
 
     return PlatformConfig(
-        key="omie",
-        label="Omie",
+        key=key,
+        label=label,
         clients=store.companies(),
         resources=[resource],
     )

@@ -1,3 +1,17 @@
+## [1.0.3] - 18-03-2026
+
+### Added
+- Scripts dedicados por plataforma em `scripts/task_scheduler` para execução via Task Scheduler (Omie ano atual/anterior, Yampi, Mercado Livre, Meta Ads e Google Ads).
+- Fluxos agregadores para agendas de execução 3x ao dia e 1x ao dia.
+
+### Changed
+- Cadastro de plataformas separado para `OMIE 2025` e `OMIE 2026`, mantendo a mesma lógica de coleta/exportação e alterando apenas os destinos de planilha.
+- Ajustes de layout no calendário e nos campos de período para melhorar alinhamento e aproveitamento de espaço na tela de Pedidos.
+
+### Fixed
+- Padronização do carregamento de credenciais/segredos no formato JSON conforme o padrão do projeto.
+- Inclusão de logs operacionais para automação (execução, erros, itens não encontrados e tempo).
+
 ## [1.0.2] - 12-03-2026
 
 ### Added

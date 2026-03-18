@@ -1,4 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+
+from pathlib import Path
 
 from cfo_sync.core.db import LocalDatabase
 from cfo_sync.core.models import AppConfig
@@ -7,7 +9,11 @@ from cfo_sync.platforms.registry import build_platform_registry
 
 
 class SyncPipeline:
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        omie_credentials_path: Path | None = None,
+    ) -> None:
         self.config = config
         self.db = LocalDatabase(config.database_path)
         self.db.initialize()
@@ -16,13 +22,17 @@ class SyncPipeline:
         yampi_credentials_path = config.credentials_dir / config.yampi.credentials_file
         meta_ads_credentials_path = config.credentials_dir / config.meta_ads.credentials_file
         google_ads_credentials_path = config.credentials_dir / config.google_ads.credentials_file
-        omie_credentials_path = config.credentials_dir / "omie_credentials.json"
+        resolved_omie_2026_credentials_path = omie_credentials_path or (
+            config.credentials_dir / "omie_credentials.json"
+        )
+        resolved_omie_2025_credentials_path = config.credentials_dir / "omie_2025.json"
         mercado_livre_credentials_path = config.credentials_dir / "mercado_livre_credentials.json"
         self.connectors = build_platform_registry(
             yampi_credentials_path=yampi_credentials_path,
             meta_ads_credentials_path=meta_ads_credentials_path,
             google_ads_credentials_path=google_ads_credentials_path,
-            omie_credentials_path=omie_credentials_path,
+            omie_2026_credentials_path=resolved_omie_2026_credentials_path,
+            omie_2025_credentials_path=resolved_omie_2025_credentials_path,
             mercado_livre_credentials_path=mercado_livre_credentials_path,
         )
 

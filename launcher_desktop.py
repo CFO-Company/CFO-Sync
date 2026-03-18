@@ -425,8 +425,8 @@ class CFODesktopApp:
     def _platform_resource_label(platform_key: str, platform_label: str, resource_name: str) -> str:
         key = platform_key.lower()
         resource = resource_name.lower()
-        if key == "omie":
-            return "Omie"
+        if key.startswith("omie"):
+            return platform_label
         if key == "yampi" and resource == "financeiro":
             return "Yampi Financeiro"
         if key == "yampi" and resource == "estoque":
@@ -498,8 +498,12 @@ class CFODesktopApp:
             row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 12)
         )
 
+        compact_padx = (0, 8)
+        compact_pady = 4
+        field_width = 27
+
         ttk.Label(config_tab, text="Plataforma", style="Field.TLabel").grid(
-            row=1, column=0, sticky=tk.W, padx=(0, 10), pady=6
+            row=1, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
         )
         self.platform_combo = ttk.Combobox(
             config_tab,
@@ -507,36 +511,36 @@ class CFODesktopApp:
             state="readonly",
             values=[choice.label for choice in self.platform_choices],
             style="Dark.TCombobox",
-            width=30,
+            width=field_width,
         )
-        self.platform_combo.grid(row=1, column=1, sticky=tk.EW, pady=6)
+        self.platform_combo.grid(row=1, column=1, sticky=tk.EW, pady=compact_pady)
 
         ttk.Label(config_tab, text="Cliente", style="Field.TLabel").grid(
-            row=2, column=0, sticky=tk.W, padx=(0, 10), pady=6
+            row=2, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
         )
         self.client_combo = ttk.Combobox(
             config_tab,
             textvariable=self.client_var,
             state="readonly",
             style="Dark.TCombobox",
-            width=30,
+            width=field_width,
         )
-        self.client_combo.grid(row=2, column=1, sticky=tk.EW, pady=6)
+        self.client_combo.grid(row=2, column=1, sticky=tk.EW, pady=compact_pady)
 
         ttk.Label(config_tab, text="Filiais / Alias", style="Field.TLabel").grid(
-            row=3, column=0, sticky=tk.W, padx=(0, 10), pady=6
+            row=3, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
         )
         sub_client_panel = ttk.Frame(config_tab, style="Card.TFrame")
-        sub_client_panel.grid(row=3, column=1, sticky=tk.NSEW, pady=6)
+        sub_client_panel.grid(row=3, column=1, sticky=tk.NSEW, pady=compact_pady)
         sub_client_panel.columnconfigure(0, weight=1)
         sub_client_panel.rowconfigure(1, weight=1)
 
         ttk.Label(sub_client_panel, textvariable=self.sub_client_summary_var, style="FieldValue.TLabel").grid(
-            row=0, column=0, sticky=tk.W, pady=(0, 6)
+            row=0, column=0, sticky=tk.W, pady=(0, compact_pady)
         )
 
         sub_client_actions = ttk.Frame(sub_client_panel, style="Card.TFrame")
-        sub_client_actions.grid(row=0, column=1, sticky=tk.E, pady=(0, 6))
+        sub_client_actions.grid(row=0, column=1, sticky=tk.E, pady=(0, compact_pady))
 
         self.btn_select_all_sub_clients = ttk.Button(
             sub_client_actions,
@@ -544,7 +548,7 @@ class CFODesktopApp:
             style="Secondary.TButton",
             command=self._select_all_sub_clients,
         )
-        self.btn_select_all_sub_clients.pack(side=tk.LEFT, padx=(0, 6))
+        self.btn_select_all_sub_clients.pack(side=tk.LEFT, padx=(0, 5))
 
         self.btn_clear_sub_clients = ttk.Button(
             sub_client_actions,
@@ -563,7 +567,7 @@ class CFODesktopApp:
             sub_client_list_frame,
             selectmode=tk.MULTIPLE,
             exportselection=False,
-            height=10,
+            height=9,
             bg=COLOR_SURFACE_ALT,
             fg=COLOR_TEXT,
             selectbackground=COLOR_BUTTON_ALT_HOVER,
@@ -584,42 +588,46 @@ class CFODesktopApp:
             style="Modern.Vertical.TScrollbar",
             command=self.sub_client_listbox.yview,
         )
-        sub_client_scroll.grid(row=0, column=1, sticky=tk.NS, padx=(6, 0))
+        sub_client_scroll.grid(row=0, column=1, sticky=tk.NS, padx=(5, 0))
         self.sub_client_listbox.configure(yscrollcommand=sub_client_scroll.set)
 
-        ttk.Label(config_tab, text="Data inicial (DD/MM/AAAA)", style="Field.TLabel").grid(
-            row=4, column=0, sticky=tk.W, padx=(0, 10), pady=6
+        ttk.Label(config_tab, text="Data inicial", style="Field.TLabel").grid(
+            row=4, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
         )
-        self.start_entry = ttk.Entry(
-            config_tab,
-            textvariable=self.start_date_var,
-            width=32,
-            style="Dark.TEntry",
-            state="readonly",
-        )
-        self.start_entry.grid(row=4, column=1, sticky=tk.EW, pady=6)
+        date_controls = ttk.Frame(config_tab, style="Card.TFrame")
+        date_controls.grid(row=4, column=1, rowspan=2, sticky=tk.EW, pady=compact_pady)
+        date_controls.columnconfigure(0, weight=1)
+        date_controls.columnconfigure(1, weight=0)
 
-        ttk.Label(config_tab, text="Data final (DD/MM/AAAA)", style="Field.TLabel").grid(
-            row=5, column=0, sticky=tk.W, padx=(0, 10), pady=6
+        self.start_entry = ttk.Entry(
+            date_controls,
+            textvariable=self.start_date_var,
+            width=18,
+            style="Dark.TEntry",
+        )
+        self.start_entry.grid(row=0, column=0, sticky=tk.EW, pady=(0, compact_pady))
+
+        ttk.Label(config_tab, text="Data final", style="Field.TLabel").grid(
+            row=5, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
         )
         self.end_entry = ttk.Entry(
-            config_tab,
+            date_controls,
             textvariable=self.end_date_var,
-            width=32,
+            width=18,
             style="Dark.TEntry",
-            state="readonly",
         )
-        self.end_entry.grid(row=5, column=1, sticky=tk.EW, pady=6)
+        self.end_entry.grid(row=1, column=0, sticky=tk.EW)
+
+        period_actions = ttk.Frame(date_controls, style="Card.TFrame")
+        period_actions.grid(row=0, column=1, rowspan=2, sticky=tk.NE, padx=(8, 0))
 
         self.btn_pick_period = ttk.Button(
-            config_tab,
+            period_actions,
             text="Selecionar no calendario",
             style="Secondary.TButton",
             command=self._open_date_range_picker,
         )
-        self.btn_pick_period.grid(row=4, column=2, rowspan=2, sticky=tk.NS, padx=(10, 0), pady=6)
-        period_actions = ttk.Frame(config_tab, style="Card.TFrame")
-        period_actions.grid(row=6, column=1, sticky=tk.W, pady=(8, 10))
+        self.btn_pick_period.grid(row=0, column=0, columnspan=2, sticky=tk.EW, pady=(0, compact_pady))
 
         period_btn = ttk.Button(
             period_actions,
@@ -627,7 +635,7 @@ class CFODesktopApp:
             style="Secondary.TButton",
             command=self._set_default_dates_current_month,
         )
-        period_btn.pack(side=tk.LEFT, padx=(0, 8))
+        period_btn.grid(row=1, column=0, sticky=tk.EW, padx=(0, 5))
 
         previous_month_btn = ttk.Button(
             period_actions,
@@ -635,7 +643,10 @@ class CFODesktopApp:
             style="Secondary.TButton",
             command=self._set_previous_month_period_based_on_today,
         )
-        previous_month_btn.pack(side=tk.LEFT)
+        previous_month_btn.grid(row=1, column=1, sticky=tk.EW)
+
+        period_actions.columnconfigure(0, weight=1)
+        period_actions.columnconfigure(1, weight=1)
 
         config_tab.rowconfigure(3, weight=1)
         config_tab.columnconfigure(1, weight=1)
@@ -874,18 +885,12 @@ class CFODesktopApp:
         self.platform_combo.bind("<<ComboboxSelected>>", lambda _event: self.on_platform_change())
         self.client_combo.bind("<<ComboboxSelected>>", lambda _event: self.on_client_change())
         self.sub_client_listbox.bind("<<ListboxSelect>>", lambda _event: self._update_sub_client_summary())
-        self.start_entry.bind("<Button-1>", self._on_date_entry_click)
-        self.end_entry.bind("<Button-1>", self._on_date_entry_click)
         self.notification_sound_combo.bind(
             "<<ComboboxSelected>>",
             lambda _event: self._on_notification_sound_change(),
         )
         self.tabs.bind("<<NotebookTabChanged>>", lambda _event: self._on_tab_changed())
         self.sku_order_entry.bind("<Return>", lambda _event: self.search_sku())
-
-    def _on_date_entry_click(self, _event: tk.Event) -> str:
-        self._open_date_range_picker()
-        return "break"
 
     def _open_date_range_picker(self) -> None:
         try:
@@ -914,7 +919,7 @@ class CFODesktopApp:
         popup = tk.Toplevel(self.root)
         self._date_picker_window = popup
         popup.title("Selecionar periodo")
-        popup.resizable(False, False)
+        popup.resizable(True, False)
         popup.transient(self.root)
         popup.configure(bg=COLOR_SURFACE)
         popup.protocol("WM_DELETE_WINDOW", self._close_date_range_picker)
@@ -954,10 +959,20 @@ class CFODesktopApp:
             width=3,
         ).pack(side=tk.RIGHT)
 
-        quick_actions = ttk.Frame(container, style="Card.TFrame")
-        quick_actions.pack(fill=tk.X, pady=(10, 0))
-        for column in range(6):
-            quick_actions.columnconfigure(column, weight=1)
+        content = ttk.Frame(container, style="Card.TFrame")
+        content.pack(fill=tk.BOTH, expand=True, pady=(10, 8))
+        content.columnconfigure(0, weight=3)
+        content.columnconfigure(1, weight=1)
+        content.columnconfigure(2, weight=1)
+        content.rowconfigure(0, weight=1)
+
+        calendar_panel = ttk.Frame(content, style="Card.TFrame")
+        calendar_panel.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 10))
+
+        quick_actions_col_1 = ttk.Frame(content, style="Card.TFrame")
+        quick_actions_col_1.grid(row=0, column=1, sticky=tk.NSEW, padx=(0, 6))
+        quick_actions_col_2 = ttk.Frame(content, style="Card.TFrame")
+        quick_actions_col_2.grid(row=0, column=2, sticky=tk.NSEW)
 
         quick_buttons = [
             ("Hoje", "today"),
@@ -966,17 +981,24 @@ class CFODesktopApp:
             ("30 dias", "last30"),
             ("Mês atual", "current_month"),
             ("Mês anterior", "previous_month"),
+            ("Ano atual", "current_year"),
+            ("Ano anterior", "previous_year"),
         ]
         for index, (label, preset) in enumerate(quick_buttons):
+            target_column = quick_actions_col_1 if index % 2 == 0 else quick_actions_col_2
+            row_index = index // 2
             ttk.Button(
-                quick_actions,
+                target_column,
                 text=label,
                 style="Secondary.TButton",
                 command=lambda selected_preset=preset: self._date_picker_apply_preset(selected_preset),
-            ).grid(row=0, column=index, padx=(0 if index == 0 else 6, 0), sticky=tk.EW)
+            ).grid(row=row_index, column=0, sticky=tk.EW, pady=(0 if row_index == 0 else 6, 0))
 
-        self._date_picker_grid_frame = ttk.Frame(container, style="Card.TFrame")
-        self._date_picker_grid_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 8))
+        quick_actions_col_1.columnconfigure(0, weight=1)
+        quick_actions_col_2.columnconfigure(0, weight=1)
+
+        self._date_picker_grid_frame = ttk.Frame(calendar_panel, style="Card.TFrame")
+        self._date_picker_grid_frame.pack(fill=tk.BOTH, expand=True)
 
         ttk.Label(
             container,
@@ -1071,6 +1093,13 @@ class CFODesktopApp:
             first_day_current_month = today.replace(day=1)
             end = first_day_current_month - timedelta(days=1)
             start = end.replace(day=1)
+        elif preset == "current_year":
+            start = date(today.year, 1, 1)
+            end = today
+        elif preset == "previous_year":
+            previous_year = today.year - 1
+            start = date(previous_year, 1, 1)
+            end = date(previous_year, 12, 31)
         else:
             return
 

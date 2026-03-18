@@ -13,3 +13,4 @@ asdas.txt
 build/
 dist/
 *.spec
+logs/

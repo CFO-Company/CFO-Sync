@@ -10,7 +10,8 @@ from cfo_sync.platforms.yampi.ui_behavior import YampiUIBehavior
 
 
 def build_platform_ui_registry(config: AppConfig) -> dict[str, PlatformUIBehavior]:
-    omie_credentials_path = config.credentials_dir / "omie_credentials.json"
+    omie_2026_credentials_path = config.credentials_dir / "omie_credentials.json"
+    omie_2025_credentials_path = config.credentials_dir / "omie_2025.json"
 
     registry: dict[str, PlatformUIBehavior] = {
         "yampi": YampiUIBehavior(
@@ -27,11 +28,25 @@ def build_platform_ui_registry(config: AppConfig) -> dict[str, PlatformUIBehavio
         ),
     }
 
-    if omie_credentials_path.exists():
+    for platform in config.platforms:
+        if not platform.key.startswith("omie"):
+            continue
+
+        if platform.key == "omie_2025":
+            credentials_path = omie_2025_credentials_path
+        else:
+            credentials_path = omie_2026_credentials_path
+
+        if not credentials_path.exists():
+            continue
+
         try:
-            registry["omie"] = OmieUIBehavior(credentials_path=omie_credentials_path)
+            registry[platform.key] = OmieUIBehavior(
+                credentials_path=credentials_path,
+                platform_key=platform.key,
+            )
         except (OSError, ValueError, KeyError, TypeError):
-            pass
+            continue
 
     for platform in config.platforms:
         registry.setdefault(platform.key, PlatformUIBehavior(platform_key=platform.key))
