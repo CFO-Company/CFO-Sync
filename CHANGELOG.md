@@ -1,3 +1,16 @@
+## [1.0.10] - 18-03-2026
+
+### Added
+- Chamada explícita do `ISCC.exe` no workflow de release para gerar `CFO-Sync-Setup.exe` com versão da tag.
+
+### Changed
+- Build Windows da release foi separado em duas etapas:
+  1. `PyInstaller` (`-SkipInstaller`)
+  2. Inno Setup via `ISCC.exe` detectado no runner.
+
+### Fixed
+- Falhas intermitentes na geração do instalador por detecção indireta do Inno Setup no script de build.
+
 ## [1.0.9] - 18-03-2026
 
 ### Added
