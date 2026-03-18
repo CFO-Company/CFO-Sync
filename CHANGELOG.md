@@ -1,3 +1,14 @@
+## [1.0.6] - 18-03-2026
+
+### Added
+- 
+
+### Changed
+- Workflow de release simplificado para publicar release diretamente pela tag, sem etapa de build de artefatos.
+
+### Fixed
+- Publicação de release desbloqueada após falhas recorrentes no job de build Windows.
+
 ## [1.0.5] - 18-03-2026
 
 ### Added

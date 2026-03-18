@@ -90,9 +90,7 @@ Arquivo:
 
 Ao criar tag `X.Y.Z`, o workflow:
 
-- builda Windows
-- gera pacotes em `dist/installer`
-- publica os assets na release da tag
+- publica a release da tag
 - usa a secao da versao no `CHANGELOG.md` como corpo da release
 
 ## Changelog

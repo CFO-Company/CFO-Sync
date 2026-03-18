@@ -9,59 +9,11 @@ permissions:
   contents: write
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-
-      - name: Install Inno Setup
-        run: choco install innosetup --yes --no-progress
-
-      - name: Build Windows Packages
-        shell: pwsh
-        run: |
-          $maxAttempts = 3
-          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-            try {
-              python -m venv .venv
-              .\.venv\Scripts\python.exe -m pip install --upgrade pip
-              .\tools\build_windows_package.ps1 -PythonExe ".venv\Scripts\python.exe"
-              break
-            } catch {
-              if ($attempt -eq $maxAttempts) {
-                throw
-              }
-              Write-Host "Tentativa $attempt falhou. Repetindo build em 15s..."
-              Start-Sleep -Seconds 15
-            }
-          }
-
-      - name: Upload Windows Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-packages
-          path: dist/installer/CFO-Sync-Setup.exe
-          if-no-files-found: error
-
   publish-release:
     runs-on: ubuntu-latest
-    needs:
-      - build-windows
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Download Windows Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-packages
-          path: release-assets
 
       - name: Build Release Notes From CHANGELOG
         run: |
@@ -70,5 +22,4 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/*
           body_path: release-notes.md
