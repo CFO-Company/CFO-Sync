@@ -1,3 +1,15 @@
+## [1.0.11] - 18-03-2026
+
+### Added
+- Release passa a anexar sempre o executável Windows `CFO-Sync.exe`.
+- Asset `CFO-Sync-Setup.exe` gerado automaticamente a partir do executável para manter compatibilidade de atualização.
+
+### Changed
+- Workflow de release simplificado para build Windows sem dependência do Inno Setup no runner.
+
+### Fixed
+- Falhas repetidas na etapa de geração de instalador que impediam publicar o `.exe` na release.
+
 ## [1.0.10] - 18-03-2026
 
 ### Added

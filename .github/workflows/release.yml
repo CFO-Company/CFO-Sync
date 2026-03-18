@@ -25,42 +25,17 @@ jobs:
         run: |
           python -m venv .venv
 
-      - name: Install Inno Setup
-        id: inno
+      - name: Build Windows Executable
         shell: powershell
         run: |
-          choco install innosetup --yes --no-progress
-          $isccPath = @(
-            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
-            "C:\Program Files\Inno Setup 6\ISCC.exe"
-          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-          if (-not $isccPath) {
-            throw "ISCC.exe nao encontrado apos instalar Inno Setup."
-          }
-
-          $isccDir = Split-Path -Parent $isccPath
-          "iscc_path=$isccPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "iscc_dir=$isccDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-      - name: Build Windows Executable And Installer
-        shell: powershell
-        run: |
-          $env:Path = "$env:Path;${{ steps.inno.outputs.iscc_dir }}"
           .\tools\build_windows_package.ps1 -SkipInstaller
 
-          $version = "${{ github.ref_name }}"
-          if ($version.StartsWith("v")) {
-            $version = $version.Substring(1)
-          }
-          & "${{ steps.inno.outputs.iscc_path }}" "/DMyAppVersion=$version" "installer\CFO-Sync.iss"
-
-          if (-not (Test-Path "dist\installer\CFO-Sync-Setup.exe")) {
-            throw "Installer nao gerado em dist\installer\CFO-Sync-Setup.exe"
-          }
           if (-not (Test-Path "dist\CFO-Sync\CFO-Sync.exe")) {
             throw "Executavel nao gerado em dist\CFO-Sync\CFO-Sync.exe"
           }
+
+          New-Item -ItemType Directory -Force -Path "dist\installer" | Out-Null
+          Copy-Item "dist\CFO-Sync\CFO-Sync.exe" "dist\installer\CFO-Sync-Setup.exe" -Force
           Get-ChildItem -Path dist -Recurse | Select-Object FullName
 
       - name: Build Release Notes From CHANGELOG
