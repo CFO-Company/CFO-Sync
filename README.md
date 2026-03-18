@@ -90,7 +90,10 @@ Arquivo:
 
 Ao criar tag `X.Y.Z`, o workflow:
 
+- gera build Windows com PyInstaller
+- gera instalador `CFO-Sync-Setup.exe` (Inno Setup)
 - publica a release da tag
+- anexa os assets Windows na release (`CFO-Sync-Setup.exe` e `CFO-Sync.exe`)
 - usa a secao da versao no `CHANGELOG.md` como corpo da release
 
 ## Changelog

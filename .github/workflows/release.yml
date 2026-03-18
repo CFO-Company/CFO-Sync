@@ -9,17 +9,47 @@ permissions:
   contents: write
 
 jobs:
-  publish-release:
-    runs-on: ubuntu-latest
+  build-and-publish-release:
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Create Virtual Environment
+        shell: powershell
+        run: |
+          python -m venv .venv
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: |
+          choco install innosetup --yes --no-progress
+          "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build Windows Executable And Installer
+        shell: powershell
+        run: |
+          .\tools\build_windows_package.ps1
+          if (-not (Test-Path "dist\installer\CFO-Sync-Setup.exe")) {
+            throw "Installer nao gerado em dist\installer\CFO-Sync-Setup.exe"
+          }
+          if (-not (Test-Path "dist\CFO-Sync\CFO-Sync.exe")) {
+            throw "Executavel nao gerado em dist\CFO-Sync\CFO-Sync.exe"
+          }
+
       - name: Build Release Notes From CHANGELOG
         run: |
-          python3 tools/changelog_extract.py --version "${GITHUB_REF_NAME#v}" --output release-notes.md
+          python tools/changelog_extract.py --version "${GITHUB_REF_NAME#v}" --output release-notes.md
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           body_path: release-notes.md
+          files: |
+            dist/installer/CFO-Sync-Setup.exe
+            dist/CFO-Sync/CFO-Sync.exe

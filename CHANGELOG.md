@@ -1,3 +1,15 @@
+## [1.0.8] - 18-03-2026
+
+### Added
+- Assets Windows anexados automaticamente na release: `CFO-Sync-Setup.exe` e `CFO-Sync.exe`.
+
+### Changed
+- Pipeline de release migrado para `windows-latest` com build real do executável via PyInstaller.
+- Build da release passa a instalar Inno Setup no runner para gerar o instalador oficial do Windows.
+
+### Fixed
+- Release sem `.exe` corrigida: tags novas agora publicam a release com executável e instalador.
+
 ## [1.0.7] - 18-03-2026
 
 ### Added
