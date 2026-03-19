@@ -255,13 +255,19 @@ def _download_asset(asset_url: str, asset_name: str) -> Path:
 
 def _launch_installer(installer_path: Path) -> None:
     if sys.platform == "win32":
+        name = installer_path.name.lower()
+        is_setup_like = "setup" in name or "installer" in name
+        command = [str(installer_path)]
+        if is_setup_like:
+            command.extend(
+                [
+                    "/VERYSILENT",
+                    "/SUPPRESSMSGBOXES",
+                    "/NORESTART",
+                ]
+            )
         subprocess.Popen(
-            [
-                str(installer_path),
-                "/VERYSILENT",
-                "/SUPPRESSMSGBOXES",
-                "/NORESTART",
-            ],
+            command,
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
         )
         return

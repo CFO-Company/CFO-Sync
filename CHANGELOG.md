@@ -1,3 +1,16 @@
+## [1.0.15] - 19-03-2026
+
+### Added
+- Fallback de build Windows para gerar `CFO-Sync-Setup.exe` único (`PyInstaller --onefile`) quando o Inno Setup não estiver disponível.
+
+### Changed
+- Pipeline de release passou a publicar apenas o asset `CFO-Sync-Setup.exe`.
+- Etapa de build da release no GitHub Actions foi centralizada no script `tools/build_windows_package.ps1`.
+
+### Fixed
+- Removida a publicação de executável solto que causava erro de runtime por dependências ausentes (`python311.dll`/`_internal`).
+- Fluxo de atualização do app no Windows ajustado para abrir corretamente tanto instalador real quanto `.exe` único.
+
 ## [1.0.14] - 18-03-2026
 
 ### Added

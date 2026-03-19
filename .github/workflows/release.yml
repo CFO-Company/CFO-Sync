@@ -25,48 +25,32 @@ jobs:
         run: |
           python -m venv .venv
 
-      - name: Build Windows Executable
+      - name: Install Inno Setup
+        shell: powershell
+        run: |
+          choco install innosetup -y --no-progress
+          $innoDirX86 = "${env:ProgramFiles(x86)}\Inno Setup 6"
+          $innoDirX64 = "${env:ProgramFiles}\Inno Setup 6"
+          if (Test-Path $innoDirX86) {
+            Add-Content -Path $env:GITHUB_PATH -Value $innoDirX86
+          } elseif (Test-Path $innoDirX64) {
+            Add-Content -Path $env:GITHUB_PATH -Value $innoDirX64
+          } else {
+            throw "Inno Setup instalado, mas pasta do ISCC nao encontrada."
+          }
+
+      - name: Build Windows Package
         shell: powershell
         run: |
           $pythonExe = ".venv\Scripts\python.exe"
           if (-not (Test-Path $pythonExe)) {
             throw "Python da venv nao encontrado em $pythonExe"
           }
-
-          if (-not (Test-Path "templates")) {
-            New-Item -ItemType Directory -Force -Path "templates\secrets" | Out-Null
+          .\tools\build_windows_package.ps1 -PythonExe $pythonExe
+          if (-not (Test-Path "dist\installer\CFO-Sync-Setup.exe")) {
+            throw "Instalador nao encontrado em dist\installer\CFO-Sync-Setup.exe"
           }
-          if (-not (Test-Path "sounds")) {
-            New-Item -ItemType Directory -Force -Path "sounds" | Out-Null
-          }
-
-          & $pythonExe -V
-          & $pythonExe -m pip install --upgrade pip
-          & $pythonExe -m pip install -r requirements.txt pyinstaller
-          
-          $pyInstallerArgs = @(
-            "launcher_desktop.py",
-            "--noconfirm",
-            "--clean",
-            "--windowed",
-            "--name", "CFO-Sync",
-            "--paths", "src"
-          )
-          if (Test-Path "sounds") {
-            $pyInstallerArgs += @("--add-data", "sounds;sounds")
-          }
-          if (Test-Path "templates") {
-            $pyInstallerArgs += @("--add-data", "templates;templates")
-          }
-          & $pythonExe -m PyInstaller @pyInstallerArgs
-
-          if (-not (Test-Path "dist\CFO-Sync\CFO-Sync.exe")) {
-            throw "Executavel nao gerado em dist\CFO-Sync\CFO-Sync.exe"
-          }
-
-          New-Item -ItemType Directory -Force -Path "dist\installer" | Out-Null
-          Copy-Item "dist\CFO-Sync\CFO-Sync.exe" "dist\installer\CFO-Sync-Setup.exe" -Force
-          Get-ChildItem -Path dist -Recurse | Select-Object FullName
+          Get-ChildItem -Path dist\installer -File | Select-Object FullName
 
       - name: Build Release Notes From CHANGELOG
         shell: powershell
@@ -83,4 +67,3 @@ jobs:
           body_path: release-notes.md
           files: |
             dist/installer/CFO-Sync-Setup.exe
-            dist/CFO-Sync/CFO-Sync.exe

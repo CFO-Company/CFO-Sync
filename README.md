@@ -70,7 +70,7 @@ Pre-requisitos:
 
 - Windows
 - `.venv` no projeto
-- Inno Setup instalado (para gerar setup)
+- Inno Setup instalado (opcional; sem ele o script gera um executavel unico `CFO-Sync-Setup.exe`)
 
 Comando:
 
@@ -92,7 +92,7 @@ Ao criar tag `X.Y.Z`, o workflow:
 
 - gera build Windows com PyInstaller
 - publica a release da tag
-- anexa os assets Windows na release (`CFO-Sync.exe` e `CFO-Sync-Setup.exe`)
+- anexa o asset Windows na release (`CFO-Sync-Setup.exe`)
 - usa a secao da versao no `CHANGELOG.md` como corpo da release
 
 ## Changelog

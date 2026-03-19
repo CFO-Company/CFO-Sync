@@ -25,9 +25,46 @@ Write-Host "==> Instalando dependencias de build..."
 $appName = "CFO-Sync"
 $distDir = Join-Path $repoRoot "dist\\$appName"
 $installerOutDir = Join-Path $repoRoot "dist\\installer"
+$singleFileName = "CFO-Sync-Setup"
+$singleFileDistExe = Join-Path $repoRoot "dist\\$singleFileName.exe"
+$singleFileOutExe = Join-Path $installerOutDir "$singleFileName.exe"
 New-Item -ItemType Directory -Force -Path $installerOutDir | Out-Null
 
-Write-Host "==> Gerando executavel com PyInstaller..."
+$iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
+$shouldBuildSingleFile = $SkipInstaller -or (-not $iscc)
+
+if ($shouldBuildSingleFile) {
+    Write-Host "==> Gerando executavel unico (onefile) com PyInstaller..."
+    & $PythonExe -m PyInstaller `
+        launcher_desktop.py `
+        --noconfirm `
+        --clean `
+        --windowed `
+        --onefile `
+        --name $singleFileName `
+        --paths src `
+        --collect-data cfo_sync `
+        --add-data "sounds;sounds" `
+        --add-data "templates;templates"
+
+    if (-not (Test-Path $singleFileDistExe)) {
+        throw "Build onefile falhou. Arquivo nao encontrado: $singleFileDistExe"
+    }
+
+    Move-Item -Force $singleFileDistExe $singleFileOutExe
+    Write-Host "==> Executavel unico pronto em: $singleFileOutExe"
+
+    if (-not $iscc -and -not $SkipInstaller) {
+        Write-Host "==> Inno Setup nao encontrado. Usando executavel unico como pacote final."
+    }
+
+    if (Test-Path $distDir) {
+        Remove-Item -Recurse -Force $distDir
+    }
+    return
+}
+
+Write-Host "==> Gerando build base (onedir) com PyInstaller..."
 & $PythonExe -m PyInstaller `
     launcher_desktop.py `
     --noconfirm `
@@ -43,19 +80,7 @@ if (-not (Test-Path $distDir)) {
     throw "Build do executavel falhou. Pasta nao encontrada: $distDir"
 }
 
-Write-Host "==> Executavel pronto em: $distDir"
-
-if ($SkipInstaller) {
-    Write-Host "==> Instalador pulado (flag -SkipInstaller)."
-    exit 0
-}
-
-$iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
-if (-not $iscc) {
-    Write-Host "==> Inno Setup (iscc.exe) nao encontrado. Instalador nao foi gerado."
-    Write-Host "    Instale o Inno Setup e rode novamente este script para gerar o Setup.exe."
-    exit 0
-}
+Write-Host "==> Build base pronto em: $distDir"
 
 $issPath = Join-Path $repoRoot "installer\\CFO-Sync.iss"
 if (-not (Test-Path $issPath)) {
@@ -66,3 +91,7 @@ Write-Host "==> Gerando instalador com Inno Setup..."
 & $iscc.Source "/DMyAppVersion=$appVersion" $issPath
 
 Write-Host "==> Instalador pronto em dist\\installer"
+if (Test-Path $distDir) {
+    Remove-Item -Recurse -Force $distDir
+    Write-Host "==> Artefato intermediario removido: dist\\$appName"
+}
