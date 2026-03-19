@@ -1,3 +1,14 @@
+## [1.0.16] - 19-03-2026
+
+### Added
+- Montagem dinâmica de argumentos do PyInstaller no script de build para incluir `--add-data` apenas quando `templates/` e `sounds/` existirem no checkout.
+
+### Changed
+- Build Windows no CI passou a depender de uma única lógica no `tools/build_windows_package.ps1`, com fallback robusto para ambientes sem diretórios opcionais.
+
+### Fixed
+- Falha do workflow de release por ausência da pasta `templates` no GitHub Actions (`Unable to find ...\\templates`).
+
 ## [1.0.15] - 19-03-2026
 
 ### Added

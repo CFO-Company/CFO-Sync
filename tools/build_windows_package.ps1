@@ -30,22 +30,34 @@ $singleFileDistExe = Join-Path $repoRoot "dist\\$singleFileName.exe"
 $singleFileOutExe = Join-Path $installerOutDir "$singleFileName.exe"
 New-Item -ItemType Directory -Force -Path $installerOutDir | Out-Null
 
+$commonPyInstallerArgs = @(
+    "launcher_desktop.py",
+    "--noconfirm",
+    "--clean",
+    "--windowed",
+    "--paths", "src",
+    "--collect-data", "cfo_sync"
+)
+
+if (Test-Path (Join-Path $repoRoot "sounds")) {
+    $commonPyInstallerArgs += @("--add-data", "sounds;sounds")
+} else {
+    Write-Host "==> Aviso: pasta 'sounds' nao encontrada. Seguindo sem --add-data sounds."
+}
+
+if (Test-Path (Join-Path $repoRoot "templates")) {
+    $commonPyInstallerArgs += @("--add-data", "templates;templates")
+} else {
+    Write-Host "==> Aviso: pasta 'templates' nao encontrada. Seguindo sem --add-data templates."
+}
+
 $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
 $shouldBuildSingleFile = $SkipInstaller -or (-not $iscc)
 
 if ($shouldBuildSingleFile) {
     Write-Host "==> Gerando executavel unico (onefile) com PyInstaller..."
-    & $PythonExe -m PyInstaller `
-        launcher_desktop.py `
-        --noconfirm `
-        --clean `
-        --windowed `
-        --onefile `
-        --name $singleFileName `
-        --paths src `
-        --collect-data cfo_sync `
-        --add-data "sounds;sounds" `
-        --add-data "templates;templates"
+    $oneFileArgs = @("--onefile", "--name", $singleFileName) + $commonPyInstallerArgs
+    & $PythonExe -m PyInstaller @oneFileArgs
 
     if (-not (Test-Path $singleFileDistExe)) {
         throw "Build onefile falhou. Arquivo nao encontrado: $singleFileDistExe"
@@ -65,16 +77,8 @@ if ($shouldBuildSingleFile) {
 }
 
 Write-Host "==> Gerando build base (onedir) com PyInstaller..."
-& $PythonExe -m PyInstaller `
-    launcher_desktop.py `
-    --noconfirm `
-    --clean `
-    --windowed `
-    --name $appName `
-    --paths src `
-    --collect-data cfo_sync `
-    --add-data "sounds;sounds" `
-    --add-data "templates;templates"
+$oneDirArgs = @("--name", $appName) + $commonPyInstallerArgs
+& $PythonExe -m PyInstaller @oneDirArgs
 
 if (-not (Test-Path $distDir)) {
     throw "Build do executavel falhou. Pasta nao encontrada: $distDir"
