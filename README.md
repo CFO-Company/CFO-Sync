@@ -46,6 +46,129 @@ Regras de seguranca:
 - Entregar credenciais reais por canal seguro para cada analista.
 - Salvar sempre em `secrets/` da pasta de usuário.
 
+## Integracao Google Ads no ETL
+
+O conector Google Ads foi integrado no mesmo fluxo atual:
+
+- Extracao: `src/cfo_sync/platforms/google_ads/api.py` + `insights.py`
+- Carga local: `SyncPipeline.collect()` -> SQLite (`raw_data`)
+- Exportacao: `SyncPipeline.export_to_sheets()` -> `GoogleSheetsExporter`
+
+### Credenciais e variaveis de ambiente
+
+Arquivo recomendado: `secrets/google_ads_credentials.json`
+
+```json
+{
+  "auth": {
+    "developer_token": "SEU_DEVELOPER_TOKEN",
+    "client_id": "SEU_OAUTH_CLIENT_ID",
+    "client_secret": "SEU_OAUTH_CLIENT_SECRET",
+    "refresh_token": "SEU_REFRESH_TOKEN",
+    "login_customer_id": "1234567890"
+  },
+  "accounts": [
+    {
+      "company_name": "Nome da empresa no CFO Sync",
+      "account_name": "Conta Google Ads",
+      "customer_id": "1112223334",
+      "cost_center": "Marketing",
+      "manager_account_name": "MCC Principal"
+    }
+  ]
+}
+```
+
+As credenciais sensiveis podem ser sobrescritas por variaveis de ambiente:
+
+- `GOOGLE_ADS_DEVELOPER_TOKEN`
+- `GOOGLE_ADS_CLIENT_ID`
+- `GOOGLE_ADS_CLIENT_SECRET`
+- `GOOGLE_ADS_REFRESH_TOKEN`
+- `GOOGLE_ADS_LOGIN_CUSTOMER_ID`
+- `GOOGLE_ADS_API_VERSION` (opcional; se definido, fixa uma versao)
+- `GOOGLE_ADS_API_VERSION_FALLBACKS` (opcional; ex.: `v22,v21,v20`)
+
+Padrao atual no conector: tenta `v22`, depois `v21`, depois `v20`.
+
+### Exemplo de bloco no `app_config.json`
+
+```json
+{
+  "google_ads": {
+    "credentials_file": "google_ads_credentials.json"
+  },
+  "platforms": [
+    {
+      "key": "google_ads",
+      "label": "Google Ads",
+      "clients": ["Nome da empresa no CFO Sync"],
+      "resources": [
+        {
+          "name": "insights",
+          "endpoint": "/customers/{customer_id}/googleAds:searchStream",
+          "spreadsheet_url": "https://docs.google.com/spreadsheets/d/SEU_ID/edit#gid=123456",
+          "client_tabs": {
+            "Nome da empresa no CFO Sync": {
+              "tab_name": "Google Ads",
+              "gid": "123456"
+            }
+          },
+          "field_map": {
+            "nome_ca": "Nome da CA",
+            "nome_campanha": "Nome da Campanha",
+            "nome_anuncio": "Nome do Anúncio",
+            "valor_gasto": "Valor Gasto",
+            "data_gasto": "Data do Gasto",
+            "tipo_ra": "Tipo (R/A)",
+            "centro_custo": "Centro de Custo"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Colunas padronizadas no Sheets (Google Ads)
+
+- `Nome da CA`
+- `Nome da Campanha`
+- `Nome do Anúncio`
+- `Valor Gasto`
+- `Data do Gasto`
+- `Tipo (R/A)`
+- `Centro de Custo`
+
+Observacao: a API retorna `metrics.cost_micros`; o ETL converte para `valor_gasto` dividindo por `1_000_000`.
+
+### Exemplo de consulta GAQL usada
+
+```sql
+SELECT
+  segments.date,
+  customer.id,
+  customer.descriptive_name,
+  campaign.id,
+  campaign.name,
+  metrics.impressions,
+  metrics.clicks,
+  metrics.cost_micros,
+  metrics.conversions
+FROM campaign
+WHERE segments.date BETWEEN '2026-03-01' AND '2026-03-19'
+ORDER BY segments.date ASC, campaign.id ASC
+```
+
+### Exemplo de execucao (UI atual)
+
+```powershell
+$env:PYTHONPATH="src"
+.\.venv\Scripts\python.exe -m cfo_sync.main
+```
+
+No seletor de plataforma, escolha `Google Ads`, cliente, recurso (`insights`/`campanhas`/`contas`) e periodo.
+
 ## Botao de atualizar app
 
 O launcher possui:

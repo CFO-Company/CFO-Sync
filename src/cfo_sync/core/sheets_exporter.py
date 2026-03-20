@@ -83,6 +83,17 @@ class GoogleSheetsExporter:
                 key_columns=("Mês/Ano", "Conta"),
             )
 
+        if platform_key == "google_ads" and resource.name in {"contas", "insights", "campanhas"}:
+            key_columns = self._resolve_google_ads_key_columns(resource)
+            if key_columns:
+                return self._upsert_by_keys(
+                    spreadsheet_id=spreadsheet_id,
+                    tab_name=tab_name,
+                    rows=mapped_rows,
+                    ordered_columns=ordered_columns,
+                    key_columns=key_columns,
+                )
+
         values = [self._to_sheet_row(row, ordered_columns=ordered_columns) for row in mapped_rows]
         self._append_rows(
             spreadsheet_id=spreadsheet_id,
@@ -561,6 +572,30 @@ class GoogleSheetsExporter:
             if anchor_column_index < len(row_values) and str(row_values[anchor_column_index]).strip():
                 last_non_empty_row = row_number
         return last_non_empty_row + 1
+
+    @staticmethod
+    def _resolve_google_ads_key_columns(resource: ResourceConfig) -> tuple[str, ...]:
+        # Padrao oficial do layout Google Ads no Sheets.
+        official_keys: list[str] = []
+        for api_field in ("data_gasto", "nome_ca", "nome_campanha", "nome_anuncio"):
+            column_name = str(resource.field_map.get(api_field) or "").strip()
+            if not column_name or column_name in official_keys:
+                continue
+            official_keys.append(column_name)
+        if len(official_keys) >= 2:
+            return tuple(official_keys)
+
+        # Compatibilidade com layouts antigos configurados com chaves em ingles.
+        fallback_keys: list[str] = []
+        for api_field in ("date", "customer_id", "campaign_id"):
+            column_name = str(resource.field_map.get(api_field) or "").strip()
+            if not column_name or column_name in fallback_keys:
+                continue
+            fallback_keys.append(column_name)
+        if len(fallback_keys) >= 2:
+            return tuple(fallback_keys)
+
+        return ()
 
     @classmethod
     def _resolve_client_tab(cls, resource: ResourceConfig, client: str) -> SheetTabTarget | None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,8 +46,11 @@ class GoogleAdsCredentialsStore:
             client_id=str(auth_payload.get("client_id") or "").strip(),
             client_secret=str(auth_payload.get("client_secret") or "").strip(),
             refresh_token=str(auth_payload.get("refresh_token") or "").strip(),
-            login_customer_id=str(auth_payload.get("login_customer_id") or "").strip(),
+            login_customer_id=_normalize_customer_id(
+                str(auth_payload.get("login_customer_id") or "").strip()
+            ),
         )
+        auth = _auth_from_env(auth)
 
         accounts_payload = data.get("accounts") or []
         if not isinstance(accounts_payload, list):
@@ -56,7 +60,7 @@ class GoogleAdsCredentialsStore:
             GoogleAdsAccount(
                 company_name=str(item["company_name"]).strip(),
                 account_name=str(item["account_name"]).strip(),
-                customer_id=str(item["customer_id"]).strip(),
+                customer_id=_normalize_customer_id(str(item["customer_id"]).strip()),
                 cost_center=str(item.get("cost_center") or "").strip(),
                 manager_account_name=str(item.get("manager_account_name") or "").strip(),
             )
@@ -85,3 +89,28 @@ class GoogleAdsCredentialsStore:
             seen.add(name)
             names.append(name)
         return names
+
+
+def _auth_from_env(base_auth: GoogleAdsAuth) -> GoogleAdsAuth:
+    return GoogleAdsAuth(
+        developer_token=str(
+            os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN") or base_auth.developer_token
+        ).strip(),
+        client_id=str(os.getenv("GOOGLE_ADS_CLIENT_ID") or base_auth.client_id).strip(),
+        client_secret=str(
+            os.getenv("GOOGLE_ADS_CLIENT_SECRET") or base_auth.client_secret
+        ).strip(),
+        refresh_token=str(
+            os.getenv("GOOGLE_ADS_REFRESH_TOKEN") or base_auth.refresh_token
+        ).strip(),
+        login_customer_id=_normalize_customer_id(
+            str(
+                os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
+                or base_auth.login_customer_id
+            ).strip()
+        ),
+    )
+
+
+def _normalize_customer_id(raw_value: str) -> str:
+    return "".join(ch for ch in str(raw_value) if ch.isdigit())

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from cfo_sync.core.models import RawRecord, ResourceConfig
 from cfo_sync.platforms.google_ads.credentials import GoogleAdsCredentialsStore
-from cfo_sync.platforms.google_ads.insights import fetch_insights_stub
+from cfo_sync.platforms.google_ads.insights import fetch_insights
+
+logger = logging.getLogger(__name__)
 
 
 class GoogleAdsConnector:
@@ -30,8 +33,11 @@ class GoogleAdsConnector:
             selected_names = {name.strip() for name in sub_clients if name.strip()}
             accounts = [account for account in accounts if account.account_name in selected_names]
 
+        if not accounts:
+            return []
+
         if resource.name in {"contas", "insights", "campanhas"}:
-            return fetch_insights_stub(
+            return fetch_insights(
                 client=client,
                 resource=resource,
                 accounts=accounts,
@@ -45,5 +51,6 @@ class GoogleAdsConnector:
     def _load_store(self) -> GoogleAdsCredentialsStore | None:
         try:
             return GoogleAdsCredentialsStore.from_file(self.credentials_path)
-        except (FileNotFoundError, ValueError, KeyError, TypeError):
+        except (FileNotFoundError, ValueError, KeyError, TypeError) as error:
+            logger.warning("Google Ads indisponivel: %s", error)
             return None
