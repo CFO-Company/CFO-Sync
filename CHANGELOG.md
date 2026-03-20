@@ -1,3 +1,16 @@
+## [1.0.17] - 20-03-2026
+
+### Added
+- Integração de coleta do Google Ads com credenciais, conector, API e insights para exportação no pipeline.
+- Script dedicado de automação para execução diária de Google Ads (`scripts/task_scheduler/google_ads_dia_atual_e_anterior.py`).
+
+### Changed
+- Exportação para Google Sheets ajustada para suportar o novo fluxo de dados do Google Ads.
+- README atualizado com orientações de uso do módulo Google Ads.
+
+### Fixed
+- 
+
 ## [1.0.16] - 19-03-2026
 
 ### Added
