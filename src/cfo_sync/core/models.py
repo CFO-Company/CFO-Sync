@@ -26,6 +26,11 @@ class GoogleAdsConfig:
 
 
 @dataclass(frozen=True)
+class TikTokAdsConfig:
+    credentials_file: str
+
+
+@dataclass(frozen=True)
 class SheetTabTarget:
     gid: str
     tab_name: str = ""
@@ -58,6 +63,7 @@ class AppConfig:
     yampi: YampiConfig
     meta_ads: MetaAdsConfig
     google_ads: GoogleAdsConfig
+    tiktok_ads: TikTokAdsConfig
     platforms: list[PlatformConfig]
 
 

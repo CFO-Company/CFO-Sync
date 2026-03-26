@@ -83,6 +83,15 @@ class GoogleSheetsExporter:
                 key_columns=("Mês/Ano", "Conta"),
             )
 
+        if platform_key == "tiktok_ads" and resource.name in {"campanhas", "insights", "contas"}:
+            return self._upsert_by_keys(
+                spreadsheet_id=spreadsheet_id,
+                tab_name=tab_name,
+                rows=mapped_rows,
+                ordered_columns=ordered_columns,
+                key_columns=("Mês/Ano", "Conta"),
+            )
+
         if platform_key == "google_ads" and resource.name in {"contas", "insights", "campanhas"}:
             key_columns = self._resolve_google_ads_key_columns(resource)
             if key_columns:

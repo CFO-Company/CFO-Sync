@@ -35,6 +35,7 @@ Arquivos relevantes:
 - `yampi_credentials.json`
 - `meta_ads_credentials.json`
 - `google_ads_credentials.json`
+- `tiktok_ads_credentials.json`
 - `omie_credentials.json`
 - `mercado_livre_credentials.json`
 - `update_config.json`
@@ -168,6 +169,72 @@ $env:PYTHONPATH="src"
 ```
 
 No seletor de plataforma, escolha `Google Ads`, cliente, recurso (`insights`/`campanhas`/`contas`) e periodo.
+
+## Integracao TikTok Ads no ETL
+
+Arquivo recomendado: `secrets/tiktok_ads_credentials.json`
+
+```json
+{
+  "auth": {
+    "access_token": "SEU_ACCESS_TOKEN",
+    "app_id": "SEU_APP_ID",
+    "secret": "SEU_SECRET",
+    "redirect_uri": "SUA_REDIRECT_URI"
+  },
+  "accounts": [
+    {
+      "company_name": "Nome da empresa no CFO Sync",
+      "account_name": "Conta TikTok Ads",
+      "advertiser_id": "1234567890123456789",
+      "cost_center": "Marketing"
+    }
+  ]
+}
+```
+
+Variaveis de ambiente opcionais:
+
+- `TIKTOK_ADS_ACCESS_TOKEN` (sobrescreve o token global do arquivo)
+- `TIKTOK_ADS_APP_ID` (sobrescreve app_id do arquivo)
+- `TIKTOK_ADS_SECRET` (sobrescreve secret do arquivo)
+- `TIKTOK_ADS_REDIRECT_URI` (sobrescreve redirect_uri do arquivo)
+- `TIKTOK_ADS_API_BASE_URL` (default: `https://business-api.tiktok.com`)
+
+Bloco opcional no `app_config.json`:
+
+```json
+{
+  "tiktok_ads": {
+    "credentials_file": "tiktok_ads_credentials.json"
+  }
+}
+```
+
+Validar conexao e advertiser IDs configurados:
+
+```powershell
+$env:PYTHONPATH="src"
+.\.venv\Scripts\python.exe -m cfo_sync.platforms.tiktok_ads.oauth --credentials secrets/tiktok_ads_credentials.json
+```
+
+Fluxo recomendado para projeto local-first (sem backend externo): callback local em `127.0.0.1`.
+
+```powershell
+$env:PYTHONPATH="src"
+.\.venv\Scripts\python.exe -m cfo_sync.platforms.tiktok_ads.oauth --credentials secrets/tiktok_ads_credentials.json --run-local-callback --open-browser
+```
+
+No app TikTok, a `redirect_uri` deve ser exatamente a URL exibida no comando (padrao: `http://127.0.0.1:8765/tiktok/callback`).
+
+Atualizar token manualmente e validar:
+
+```powershell
+$env:PYTHONPATH="src"
+.\.venv\Scripts\python.exe -m cfo_sync.platforms.tiktok_ads.oauth --credentials secrets/tiktok_ads_credentials.json --access-token "SEU_TOKEN"
+```
+
+Callback OAuth com backend proprio (producao): veja `tools/tiktok_oauth_callback/README.md`.
 
 ## Botao de atualizar app
 

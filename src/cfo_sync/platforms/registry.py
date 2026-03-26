@@ -23,6 +23,7 @@ def build_platform_registry(
     yampi_credentials_path: Path,
     meta_ads_credentials_path: Path,
     google_ads_credentials_path: Path,
+    tiktok_ads_credentials_path: Path,
     omie_2026_credentials_path: Path,
     omie_2025_credentials_path: Path,
     mercado_livre_credentials_path: Path,
@@ -53,6 +54,6 @@ def build_platform_registry(
         )
 
     if TikTokAdsConnector is not None:
-        registry["tiktok_ads"] = TikTokAdsConnector()
+        registry["tiktok_ads"] = TikTokAdsConnector(credentials_path=tiktok_ads_credentials_path)
 
     return registry
