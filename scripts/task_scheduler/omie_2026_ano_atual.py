@@ -22,6 +22,27 @@ RESOURCE_NAME = "financeiro"
 TARGET_YEAR = 2026
 
 
+def _resolve_clients(clients: list[str], logger: logging.Logger) -> list[str]:
+    remap = {"Attracione": "Umbrella"}
+    resolved: list[str] = []
+    seen: set[str] = set()
+
+    for client in clients:
+        target_client = remap.get(client, client)
+        if client != target_client:
+            logger.info(
+                "CLIENTE_REMAP platform=%s de=%s para=%s",
+                PLATFORM_KEY,
+                client,
+                target_client,
+            )
+        if target_client in seen:
+            continue
+        seen.add(target_client)
+        resolved.append(target_client)
+    return resolved
+
+
 def _build_logger(log_dir: Path) -> tuple[logging.Logger, Path]:
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"{PLATFORM_KEY}_{date.today().isoformat()}.log"
@@ -113,7 +134,7 @@ def _run(log_dir: Path) -> int:
     failed_tasks = 0
     total_exported = 0
 
-    for client in platform.clients:
+    for client in _resolve_clients(platform.clients, logger):
         target = resource.client_tabs.get(client)
         if target is None:
             failed_tasks += 1

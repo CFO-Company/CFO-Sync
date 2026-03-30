@@ -138,12 +138,9 @@ def _fetch_lookup_departamentos(credential: OmieCredential) -> dict[str, str]:
 
 def _fetch_lookup_contas_correntes(credential: OmieCredential) -> dict[str, str]:
     call_attempts = (
-        ("ListarContasCorrentes", "financas/contacorrente/", "pagina", "registros_por_pagina"),
+        ("ListarContasCorrentes", "geral/contacorrente/", "pagina", "registros_por_pagina"),
         ("ListarContasCorrentes", "geral/contacorrentes/", "pagina", "registros_por_pagina"),
-        ("ListarContaCorrente", "financas/contacorrente/", "pagina", "registros_por_pagina"),
-        ("ListarContaCorrente", "geral/contacorrentes/", "pagina", "registros_por_pagina"),
-        ("ListarContasCorrentes", "financas/contacorrente/", "nPagina", "nRegPorPagina"),
-        ("ListarContasCorrentes", "geral/contacorrentes/", "nPagina", "nRegPorPagina"),
+        ("ListarContasCorrentes", "financas/contacorrente/", "pagina", "registros_por_pagina"),
     )
 
     for call, endpoint, page_param, size_param in call_attempts:
@@ -272,11 +269,12 @@ def _resolve_conta_corrente_descricao(
 
     normalized_code = _normalize_conta_corrente_code(conta_corrente_codigo)
     if not normalized_code:
-        return ""
+        return str(conta_corrente_codigo).strip()
     return (
         lookup_contas_correntes.get(normalized_code)
         or lookup_contas_correntes.get(str(conta_corrente_codigo).strip())
-        or ""
+        or normalized_code
+        or str(conta_corrente_codigo).strip()
     )
 
 
@@ -308,8 +306,8 @@ def _fetch_conta_corrente(
         if not response:
             break
 
-        total_pages = int(response.get("nTotPaginas") or 1)
-        for lancamento in response.get("listaLancamentos") or []:
+        total_pages = _extract_total_pages(response)
+        for lancamento in _extract_conta_corrente_lancamentos(response):
             cabecalho = lancamento.get("cabecalho") or {}
             detalhes = lancamento.get("detalhes") or {}
             diversos = lancamento.get("diversos") or {}
@@ -387,6 +385,14 @@ def _fetch_conta_corrente(
         page += 1
 
     return rows
+
+
+def _extract_conta_corrente_lancamentos(response: dict[str, Any]) -> list[dict[str, Any]]:
+    for key in ("ListarLancCC", "listaLancamentos", "lancamentos"):
+        value = response.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+    return []
 
 
 def _fetch_contas_a_pagar(

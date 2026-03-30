@@ -1,3 +1,15 @@
+## [1.0.18] - 30-03-2026
+
+### Added
+- Novo remapeamento de cliente no scheduler da Omie 2026 para executar `Umbrella` no lugar de `Attracione`, com deduplicação de processamento.
+
+### Changed
+- Ajuste de resolução de conta corrente na Omie para priorizar o endpoint `geral/contacorrente` com `ListarContasCorrentes`.
+
+### Fixed
+- Correção na leitura de lançamentos de conta corrente para aceitar variações de payload (`ListarLancCC`, `listaLancamentos`, `lancamentos`) sem zerar exportações.
+- Fallback de `nCodCC` para evitar campo vazio quando a descrição da conta não estiver disponível.
+
 ## [1.0.17] - 20-03-2026
 
 ### Added
