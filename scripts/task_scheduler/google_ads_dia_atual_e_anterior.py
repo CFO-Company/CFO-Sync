@@ -18,7 +18,7 @@ from cfo_sync.core.pipeline import SyncPipeline
 from cfo_sync.core.runtime_paths import app_config_path, ensure_runtime_layout
 
 PLATFORM_KEY = "google_ads"
-RESOURCE_NAME = "contas"
+RESOURCE_CANDIDATES = ("insights", "contas")
 
 
 def _build_logger(log_dir: Path) -> tuple[logging.Logger, Path]:
@@ -82,13 +82,17 @@ def _run(log_dir: Path) -> int:
     if platform is None:
         raise ValueError(f"Plataforma '{PLATFORM_KEY}' nao configurada no app_config.")
 
-    resource = next((item for item in platform.resources if item.name == RESOURCE_NAME), None)
+    resource = next(
+        (item for item in platform.resources if item.name in RESOURCE_CANDIDATES),
+        None,
+    )
     if resource is None:
         resources = sorted(item.name for item in platform.resources)
         raise ValueError(
-            f"Recurso '{RESOURCE_NAME}' nao encontrado na plataforma {PLATFORM_KEY}. "
-            f"Recursos atuais: {resources}"
+            f"Nenhum dos recursos {list(RESOURCE_CANDIDATES)} foi encontrado na plataforma "
+            f"{PLATFORM_KEY}. Recursos atuais: {resources}"
         )
+    resource_name = resource.name
 
     logger.info(
         "PLATAFORMA key=%s label=%s clientes=%s recursos=%s",
@@ -113,7 +117,7 @@ def _run(log_dir: Path) -> int:
             logger.error(
                 "PLANILHA_NAO_ENCONTRADA platform=%s recurso=%s cliente=%s",
                 PLATFORM_KEY,
-                RESOURCE_NAME,
+                resource_name,
                 client,
             )
             continue
@@ -122,7 +126,7 @@ def _run(log_dir: Path) -> int:
         logger.info(
             "PLANILHA platform=%s recurso=%s cliente=%s spreadsheet_id=%s gid=%s tab=%s",
             PLATFORM_KEY,
-            RESOURCE_NAME,
+            resource_name,
             client,
             spreadsheet_id,
             target.gid,
@@ -135,7 +139,7 @@ def _run(log_dir: Path) -> int:
             "TASK_START platform=%s cliente=%s recurso=%s",
             PLATFORM_KEY,
             client,
-            RESOURCE_NAME,
+            resource_name,
         )
         try:
             exported = pipeline.export_to_sheets(
@@ -143,7 +147,7 @@ def _run(log_dir: Path) -> int:
                 client=client,
                 start_date=start_date,
                 end_date=end_date,
-                resource_names=[RESOURCE_NAME],
+                resource_names=[resource_name],
             )
             elapsed = perf_counter() - task_start
             total_exported += exported
@@ -151,7 +155,7 @@ def _run(log_dir: Path) -> int:
                 "TASK_OK platform=%s cliente=%s recurso=%s linhas=%s tempo=%.2fs",
                 PLATFORM_KEY,
                 client,
-                RESOURCE_NAME,
+                resource_name,
                 exported,
                 elapsed,
             )
@@ -162,7 +166,7 @@ def _run(log_dir: Path) -> int:
                 "TASK_ERRO platform=%s cliente=%s recurso=%s tempo=%.2fs msg=%s",
                 PLATFORM_KEY,
                 client,
-                RESOURCE_NAME,
+                resource_name,
                 elapsed,
                 error,
             )
