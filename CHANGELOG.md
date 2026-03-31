@@ -1,3 +1,14 @@
+## [1.0.19] - 31-03-2026
+
+### Added
+- 
+
+### Changed
+- Scheduler de automação do Google Ads (`google_ads_dia_atual_e_anterior.py`) passou a resolver dinamicamente o recurso disponível entre `insights` e `contas`.
+
+### Fixed
+- Corrigida falha fatal no runner diário do Google Ads quando o `app_config.json` expõe somente o recurso `insights` (`Recurso 'contas' nao encontrado`).
+
 ## [1.0.18] - 30-03-2026
 
 ### Added
