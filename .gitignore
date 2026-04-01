@@ -9,7 +9,6 @@ secrets/*.yaml
 secrets/*.yml
 api-sheets-*.json
 google_service_account.json
-asdas.txt
 build/
 dist/
 *.spec
