@@ -5,6 +5,8 @@
 .env.*
 data/*.db
 settings/*.json
+!settings/desktop_settings.json
+!settings/update_config.json
 settings/docker-server.env
 secrets/*.json
 secrets/*.yaml
