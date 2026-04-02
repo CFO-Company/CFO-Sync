@@ -14,6 +14,10 @@ INSIGHTS_FIELDS = (
     "account_id,account_name,campaign_id,campaign_name,adset_id,adset_name,"
     "ad_id,ad_name,spend,date_start,date_stop"
 )
+ADSET_INSIGHTS_FIELDS = (
+    "account_id,account_name,campaign_id,campaign_name,adset_id,adset_name,"
+    "spend,date_start,date_stop"
+)
 
 
 def fetch_insights(
@@ -29,7 +33,7 @@ def fetch_insights(
 
     rows: list[RawRecord] = []
     for account in accounts:
-        payload_rows = iter_paginated(
+        ad_payload_rows = iter_paginated(
             path=f"/act_{account.account_id}/insights",
             auth=auth,
             params={
@@ -40,12 +44,115 @@ def fetch_insights(
                 "limit": "500",
             },
         )
-        for raw in payload_rows:
+        for raw in ad_payload_rows:
             row = _to_business_row(raw=raw, account=account, company_name=client, resource_name=resource.name)
             if row is not None:
                 rows.append(row)
 
+        ad_spend_cents_by_key = _index_ad_spend_cents(ad_payload_rows)
+        adset_payload_rows = iter_paginated(
+            path=f"/act_{account.account_id}/insights",
+            auth=auth,
+            params={
+                "fields": ADSET_INSIGHTS_FIELDS,
+                "level": "adset",
+                "time_increment": "1",
+                "time_range": time_range,
+                "limit": "500",
+            },
+        )
+        rows.extend(
+            _build_residual_adset_rows(
+                adset_payload_rows=adset_payload_rows,
+                ad_spend_cents_by_key=ad_spend_cents_by_key,
+                account=account,
+                company_name=client,
+                resource_name=resource.name,
+            )
+        )
+
     return rows
+
+
+def _build_residual_adset_rows(
+    adset_payload_rows: list[dict[str, Any]],
+    ad_spend_cents_by_key: dict[tuple[str, str, str], int],
+    account: MetaAdsAccount,
+    company_name: str,
+    resource_name: str,
+) -> list[RawRecord]:
+    residual_rows: list[RawRecord] = []
+
+    for raw in adset_payload_rows:
+        key = _spend_key(raw)
+        if key is None:
+            continue
+
+        adset_cents = _to_cents(raw.get("spend"))
+        if adset_cents <= 0:
+            continue
+
+        ad_cents = ad_spend_cents_by_key.get(key, 0)
+        residual_cents = adset_cents - ad_cents
+        if residual_cents <= 0:
+            continue
+
+        synthetic_raw = dict(raw)
+        synthetic_raw["ad_id"] = ""
+        synthetic_raw["ad_name"] = _build_residual_ad_name(raw)
+        synthetic_raw["spend"] = residual_cents / 100.0
+
+        row = _to_business_row(
+            raw=synthetic_raw,
+            account=account,
+            company_name=company_name,
+            resource_name=resource_name,
+        )
+        if row is not None:
+            residual_rows.append(row)
+
+    return residual_rows
+
+
+def _index_ad_spend_cents(rows: list[dict[str, Any]]) -> dict[tuple[str, str, str], int]:
+    spend_cents_by_key: dict[tuple[str, str, str], int] = {}
+    for raw in rows:
+        key = _spend_key(raw)
+        if key is None:
+            continue
+        spend_cents_by_key[key] = spend_cents_by_key.get(key, 0) + _to_cents(raw.get("spend"))
+    return spend_cents_by_key
+
+
+def _spend_key(raw: dict[str, Any]) -> tuple[str, str, str] | None:
+    date_raw = str(raw.get("date_start") or "").strip()
+    campaign_id = str(raw.get("campaign_id") or "").strip()
+    campaign_name = str(raw.get("campaign_name") or "").strip()
+    adset_id = str(raw.get("adset_id") or "").strip()
+    adset_name = str(raw.get("adset_name") or "").strip()
+
+    if not date_raw:
+        return None
+
+    campaign_token = campaign_id or f"campaign:{campaign_name}"
+    adset_token = adset_id or f"adset:{adset_name}"
+    if not campaign_token.strip() or not adset_token.strip():
+        return None
+
+    return date_raw, campaign_token, adset_token
+
+
+def _build_residual_ad_name(raw: dict[str, Any]) -> str:
+    adset_name = str(raw.get("adset_name") or "").strip()
+    adset_id = str(raw.get("adset_id") or "").strip()
+    campaign_name = str(raw.get("campaign_name") or "").strip()
+
+    suffix = adset_name
+    if not suffix and adset_id:
+        suffix = f"ADSET {adset_id}"
+    if not suffix:
+        suffix = campaign_name or "Sem anuncio"
+    return f"[SEM ANUNCIO] {suffix}"
 
 
 def _to_business_row(
@@ -112,6 +219,10 @@ def _to_float(value: Any) -> float:
         return float(text)
     except ValueError:
         return 0.0
+
+
+def _to_cents(value: Any) -> int:
+    return int(round(_to_float(value) * 100))
 
 
 def _classify_tipo_ra(ad_name: str, campaign_name: str) -> str:

@@ -1,3 +1,14 @@
+## [1.1.1] - 02-04-2026
+
+### Added
+- 
+
+### Changed
+- 
+
+### Fixed
+- Meta Ads: coleta de `Valor Gasto` passou a complementar residual por `adset` sobre o `level=ad`, corrigindo subcontagem recorrente no total exportado para Sheets.
+
 ## [1.1.0] - 02-04-2026
 
 ### Added
