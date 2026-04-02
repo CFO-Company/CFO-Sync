@@ -1,5 +1,5 @@
 {
-  "enabled": false,
+  "enabled": true,
   "github_repo": "CFO-Company/CFO-Sync",
   "windows_asset_name": "CFO-Sync-Setup.exe",
   "macos_asset_name": "CFO-Sync-macOS.dmg"
