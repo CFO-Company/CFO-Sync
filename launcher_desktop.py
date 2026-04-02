@@ -20,25 +20,34 @@ SRC_DIR = PROJECT_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from cfo_sync.core.config_loader import load_app_config
-from cfo_sync.core.models import ResourceConfig
+from cfo_sync.core.models import (
+    AppConfig,
+    GoogleAdsConfig,
+    GoogleSheetsConfig,
+    MetaAdsConfig,
+    PlatformConfig,
+    ResourceConfig,
+    TikTokAdsConfig,
+    YampiConfig,
+)
 from cfo_sync.core.pipeline import SyncPipeline
+from cfo_sync.core.remote_api import RemoteCFOClient
 from cfo_sync.core.runtime_paths import (
-    app_config_path,
     available_sound_dirs,
     custom_sounds_dir,
+    data_dir,
     desktop_settings_path,
     ensure_runtime_layout,
-    secrets_dir,
     update_config_path,
 )
 from cfo_sync.core.updater import check_for_updates, download_and_launch_update, get_releases_page_url
-from cfo_sync.platforms.ui_registry import build_platform_ui_registry
 from cfo_sync.version import __version__
 
 
 ALL_SUB_CLIENTS = "Todos"
 NO_NOTIFICATION_SOUND = "Sem som"
+SERVER_URL_KEY = "server_url"
+SERVER_TOKEN_KEY = "server_token"
 DESKTOP_SETTINGS_PATH = desktop_settings_path()
 SOUNDS_DIR = custom_sounds_dir()
 
@@ -84,6 +93,19 @@ class PlatformChoice:
     resource_name: str
 
 
+def _empty_app_config() -> AppConfig:
+    return AppConfig(
+        database_path=data_dir() / "cfo_sync.db",
+        credentials_dir=Path("."),
+        google_sheets=GoogleSheetsConfig(credentials_file="google_service_account.json"),
+        yampi=YampiConfig(credentials_file="yampi_credentials.json"),
+        meta_ads=MetaAdsConfig(credentials_file="meta_ads_credentials.json"),
+        google_ads=GoogleAdsConfig(credentials_file="google_ads_credentials.json"),
+        tiktok_ads=TikTokAdsConfig(credentials_file="tiktok_ads_credentials.json"),
+        platforms=[],
+    )
+
+
 class CFODesktopApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -96,12 +118,13 @@ class CFODesktopApp:
         self.busy = False
 
         ensure_runtime_layout()
-        self.config = load_app_config(app_config_path())
-        self.pipeline = SyncPipeline(self.config)
-        self.platform_ui_registry = build_platform_ui_registry(self.config)
-
-        self.platform_choices = self._build_platform_choices()
-        self.choice_by_label = {choice.label: choice for choice in self.platform_choices}
+        self.config = _empty_app_config()
+        self.pipeline: SyncPipeline | None = None
+        self.platform_ui_registry = {}
+        self.platform_choices: list[PlatformChoice] = []
+        self.choice_by_label: dict[str, PlatformChoice] = {}
+        self.remote_client: RemoteCFOClient | None = None
+        self.remote_catalog_sub_clients: dict[tuple[str, str], list[str]] = {}
 
         self.platform_var = tk.StringVar()
         self.client_var = tk.StringVar()
@@ -114,6 +137,9 @@ class CFODesktopApp:
         self.sku_preview_rows: list[dict[str, object]] = []
         self.notification_sound_var = tk.StringVar(value=NO_NOTIFICATION_SOUND)
         self.notification_sound_options: list[str] = [NO_NOTIFICATION_SOUND]
+        self.server_url_var = tk.StringVar(value="")
+        self.server_token_var = tk.StringVar(value="")
+        self.server_status_var = tk.StringVar(value="Servidor desconectado")
         self._date_picker_window: tk.Toplevel | None = None
         self._date_picker_month_label_var = tk.StringVar()
         self._date_picker_hint_var = tk.StringVar()
@@ -121,6 +147,8 @@ class CFODesktopApp:
         self._date_picker_month = date.today().replace(day=1)
         self._date_picker_selection_start: date | None = None
         self._date_picker_selection_end: date | None = None
+
+        self._bootstrap_runtime_mode()
 
         self.style = ttk.Style(self.root)
         self._apply_theme()
@@ -130,6 +158,147 @@ class CFODesktopApp:
         self._set_default_dates_current_month()
         self._load_initial_values()
         self._poll_logs()
+
+    def _bootstrap_runtime_mode(self) -> None:
+        saved_url = self._saved_server_url()
+        saved_token = self._saved_server_token()
+        self.server_url_var.set(saved_url)
+        self.server_token_var.set(saved_token)
+        if not saved_url or not saved_token:
+            self.status_var.set("Conecte ao servidor na aba Configuracoes")
+            return
+        try:
+            client = RemoteCFOClient(saved_url, saved_token)
+            catalog = client.fetch_catalog()
+            self._activate_remote_catalog(client, catalog)
+            self.status_var.set("Conectado ao servidor")
+        except Exception as error:  # noqa: BLE001
+            self.server_status_var.set("Falha ao conectar no servidor")
+            self.status_var.set("Conecte ao servidor na aba Configuracoes")
+            self.log(f"Aviso: conexao inicial com servidor falhou ({error}).")
+
+    def _activate_remote_catalog(self, client: RemoteCFOClient, catalog: dict[str, object]) -> None:
+        config, sub_clients_map = self._build_app_config_from_catalog(catalog)
+        self.remote_client = client
+        self.remote_catalog_sub_clients = sub_clients_map
+        self.config = config
+        self.pipeline = None
+        self.platform_ui_registry = {}
+        self.platform_choices = self._build_platform_choices()
+        self.choice_by_label = {choice.label: choice for choice in self.platform_choices}
+        self.server_status_var.set(f"Conectado: {client.base_url}")
+
+    def _build_app_config_from_catalog(
+        self,
+        catalog: dict[str, object],
+    ) -> tuple[AppConfig, dict[tuple[str, str], list[str]]]:
+        raw_platforms = catalog.get("platforms")
+        if not isinstance(raw_platforms, list):
+            raise ValueError("Catalogo remoto invalido: campo 'platforms' ausente.")
+
+        platforms: list[PlatformConfig] = []
+        sub_clients_map: dict[tuple[str, str], list[str]] = {}
+
+        for raw_platform in raw_platforms:
+            if not isinstance(raw_platform, dict):
+                continue
+            platform_key = str(raw_platform.get("key") or "").strip()
+            platform_label = str(raw_platform.get("label") or platform_key).strip()
+            if not platform_key:
+                continue
+
+            resources_data = raw_platform.get("resources")
+            if not isinstance(resources_data, list):
+                continue
+            resources: list[ResourceConfig] = []
+            for raw_resource in resources_data:
+                if not isinstance(raw_resource, dict):
+                    continue
+                resource_name = str(raw_resource.get("name") or "").strip()
+                if not resource_name:
+                    continue
+                endpoint = str(raw_resource.get("endpoint") or "").strip()
+                field_map_raw = raw_resource.get("field_map")
+                field_map: dict[str, str] = {}
+                if isinstance(field_map_raw, dict):
+                    field_map = {
+                        str(key): str(value)
+                        for key, value in field_map_raw.items()
+                    }
+                resources.append(
+                    ResourceConfig(
+                        name=resource_name,
+                        endpoint=endpoint,
+                        spreadsheet_url="",
+                        spreadsheet_id="",
+                        field_map=field_map,
+                        client_tabs={},
+                    )
+                )
+
+            clients_data = raw_platform.get("clients")
+            clients: list[str] = []
+            if isinstance(clients_data, list):
+                for raw_client in clients_data:
+                    if not isinstance(raw_client, dict):
+                        continue
+                    client_name = str(raw_client.get("name") or "").strip()
+                    if not client_name:
+                        continue
+                    clients.append(client_name)
+                    raw_sub_clients = raw_client.get("sub_clients")
+                    if isinstance(raw_sub_clients, list):
+                        sub_clients = [str(item).strip() for item in raw_sub_clients if str(item).strip()]
+                        sub_clients_map[(platform_key, client_name)] = sub_clients
+
+            platforms.append(
+                PlatformConfig(
+                    key=platform_key,
+                    label=platform_label,
+                    clients=clients,
+                    resources=resources,
+                )
+            )
+
+        return (
+            AppConfig(
+                database_path=data_dir() / "cfo_sync.db",
+                credentials_dir=Path("."),
+                google_sheets=GoogleSheetsConfig(credentials_file="google_service_account.json"),
+                yampi=YampiConfig(credentials_file="yampi_credentials.json"),
+                meta_ads=MetaAdsConfig(credentials_file="meta_ads_credentials.json"),
+                google_ads=GoogleAdsConfig(credentials_file="google_ads_credentials.json"),
+                tiktok_ads=TikTokAdsConfig(credentials_file="tiktok_ads_credentials.json"),
+                platforms=platforms,
+            ),
+            sub_clients_map,
+        )
+
+    def _saved_server_url(self) -> str:
+        settings = self._load_desktop_settings()
+        value = settings.get(SERVER_URL_KEY)
+        if not isinstance(value, str):
+            return ""
+        return value.strip()
+
+    def _saved_server_token(self) -> str:
+        settings = self._load_desktop_settings()
+        value = settings.get(SERVER_TOKEN_KEY)
+        if not isinstance(value, str):
+            return ""
+        return value.strip()
+
+    def _persist_server_connection(self, server_url: str, server_token: str) -> None:
+        settings = self._load_desktop_settings()
+        settings[SERVER_URL_KEY] = server_url.strip()
+        settings[SERVER_TOKEN_KEY] = server_token.strip()
+        self._save_desktop_settings(settings)
+
+    def _clear_server_connection(self) -> None:
+        settings = self._load_desktop_settings()
+        settings.pop(SERVER_URL_KEY, None)
+        settings.pop(SERVER_TOKEN_KEY, None)
+        self._save_desktop_settings(settings)
 
     def _apply_theme(self) -> None:
         try:
@@ -759,8 +928,60 @@ class CFODesktopApp:
             style="Field.TLabel",
         ).grid(row=2, column=1, sticky=tk.W, pady=(0, 10))
 
+        ttk.Label(self.settings_tab, text="URL da API servidor", style="Field.TLabel").grid(
+            row=3, column=0, sticky=tk.W, padx=(0, 10), pady=6
+        )
+        server_url_row = ttk.Frame(self.settings_tab, style="Card.TFrame")
+        server_url_row.grid(row=3, column=1, sticky=tk.EW, pady=6)
+        server_url_row.columnconfigure(0, weight=1)
+        self.server_url_entry = ttk.Entry(
+            server_url_row,
+            textvariable=self.server_url_var,
+            style="Dark.TEntry",
+            width=42,
+        )
+        self.server_url_entry.grid(row=0, column=0, sticky=tk.EW)
+
+        ttk.Label(self.settings_tab, text="Token Bearer", style="Field.TLabel").grid(
+            row=4, column=0, sticky=tk.W, padx=(0, 10), pady=6
+        )
+        server_token_row = ttk.Frame(self.settings_tab, style="Card.TFrame")
+        server_token_row.grid(row=4, column=1, sticky=tk.EW, pady=6)
+        server_token_row.columnconfigure(0, weight=1)
+        self.server_token_entry = ttk.Entry(
+            server_token_row,
+            textvariable=self.server_token_var,
+            style="Dark.TEntry",
+            show="*",
+            width=42,
+        )
+        self.server_token_entry.grid(row=0, column=0, sticky=tk.EW)
+
+        server_actions = ttk.Frame(self.settings_tab, style="Card.TFrame")
+        server_actions.grid(row=5, column=1, sticky=tk.W, pady=(4, 10))
+        self.btn_connect_server = ttk.Button(
+            server_actions,
+            text="Conectar servidor",
+            style="Secondary.TButton",
+            command=self.connect_server,
+        )
+        self.btn_connect_server.pack(fill=tk.X, pady=(0, 6))
+        self.btn_disconnect_server = ttk.Button(
+            server_actions,
+            text="Desconectar servidor",
+            style="Secondary.TButton",
+            command=self.disconnect_server,
+        )
+        self.btn_disconnect_server.pack(fill=tk.X)
+
+        ttk.Label(
+            self.settings_tab,
+            textvariable=self.server_status_var,
+            style="Field.TLabel",
+        ).grid(row=6, column=1, sticky=tk.W, pady=(0, 8))
+
         app_actions = ttk.Frame(self.settings_tab, style="Card.TFrame")
-        app_actions.grid(row=3, column=1, sticky=tk.W, pady=(8, 0))
+        app_actions.grid(row=7, column=1, sticky=tk.W, pady=(8, 0))
 
         self.btn_update_app = ttk.Button(
             app_actions,
@@ -777,14 +998,6 @@ class CFODesktopApp:
             command=self.open_changelog,
         )
         self.btn_open_changelog.pack(fill=tk.X, pady=(0, 8))
-
-        self.btn_open_secrets = ttk.Button(
-            app_actions,
-            text="Abrir pasta de config",
-            style="Secondary.TButton",
-            command=self.open_secrets_folder,
-        )
-        self.btn_open_secrets.pack(fill=tk.X)
 
         actions_card = ttk.Frame(right_panel, style="Card.TFrame", padding=16)
         actions_card.grid(row=0, column=0, sticky=tk.EW, pady=(0, 10))
@@ -1264,7 +1477,7 @@ class CFODesktopApp:
     def _load_initial_values(self) -> None:
         if not self.platform_choices:
             self.status_var.set("Sem plataformas configuradas")
-            self.log(f"Nenhuma plataforma/recurso configurado em {app_config_path()}")
+            self.log("Nenhuma plataforma/remoto carregado. Conecte o servidor na aba Configuracoes.")
             return
 
         first = self.platform_choices[0]
@@ -1598,7 +1811,10 @@ class CFODesktopApp:
             self.btn_export_sku.configure(state=tk.DISABLED, cursor="no")
             self.btn_update_app.configure(state=tk.DISABLED)
             self.btn_open_changelog.configure(state=tk.DISABLED)
-            self.btn_open_secrets.configure(state=tk.DISABLED)
+            self.btn_connect_server.configure(state=tk.DISABLED)
+            self.btn_disconnect_server.configure(state=tk.DISABLED)
+            self.server_url_entry.configure(state=tk.DISABLED)
+            self.server_token_entry.configure(state=tk.DISABLED)
             self.btn_select_all_sub_clients.configure(state=tk.DISABLED)
             self.btn_clear_sub_clients.configure(state=tk.DISABLED)
             self.sub_client_listbox.configure(state=tk.DISABLED)
@@ -1614,7 +1830,10 @@ class CFODesktopApp:
         self._update_export_sku_button_state()
         self.btn_update_app.configure(state=tk.NORMAL)
         self.btn_open_changelog.configure(state=tk.NORMAL)
-        self.btn_open_secrets.configure(state=tk.NORMAL)
+        self.btn_connect_server.configure(state=tk.NORMAL)
+        self.btn_disconnect_server.configure(state=tk.NORMAL)
+        self.server_url_entry.configure(state=tk.NORMAL)
+        self.server_token_entry.configure(state=tk.NORMAL)
 
         has_sub_clients = bool(self.sub_client_options)
         controls_state = tk.NORMAL if has_sub_clients else tk.DISABLED
@@ -1836,9 +2055,12 @@ class CFODesktopApp:
         self._clear_sku_preview()
 
         try:
-            behavior = self.platform_ui_registry.get(choice.platform_key)
-            if behavior is not None:
-                options.extend(behavior.sub_client_names(client))
+            if self.remote_client is not None:
+                options.extend(self.remote_catalog_sub_clients.get((choice.platform_key, client), []))
+            else:
+                behavior = self.platform_ui_registry.get(choice.platform_key)
+                if behavior is not None:
+                    options.extend(behavior.sub_client_names(client))
         except Exception as error:  # noqa: BLE001
             self.log(f"Aviso ao carregar filiais/aliases: {error}")
 
@@ -1954,14 +2176,70 @@ class CFODesktopApp:
             return ", ".join(sub_clients)
         return f"{len(sub_clients)} selecionadas"
 
-    def open_secrets_folder(self) -> None:
-        target = secrets_dir()
-        target.mkdir(parents=True, exist_ok=True)
-        try:
-            self._open_path(target)
-            self.log(f"Pasta de configuracao aberta: {target}")
-        except Exception as error:  # noqa: BLE001
-            messagebox.showerror("Erro", f"Nao foi possivel abrir a pasta de configuracao.\n\n{error}")
+    def _reload_catalog_ui(self) -> None:
+        labels = [choice.label for choice in self.platform_choices]
+        self.platform_combo.configure(values=labels)
+        self.platform_var.set("")
+        self.client_combo.configure(values=[])
+        self.client_var.set("")
+        self._set_sub_client_options([])
+        self._clear_sku_preview()
+        self._load_initial_values()
+
+    def _apply_remote_connection_in_ui_thread(
+        self,
+        client: RemoteCFOClient,
+        catalog: dict[str, object],
+    ) -> None:
+        completed = threading.Event()
+        errors: list[Exception] = []
+
+        def apply() -> None:
+            try:
+                self._activate_remote_catalog(client, catalog)
+                self._reload_catalog_ui()
+            except Exception as error:  # noqa: BLE001
+                errors.append(error)
+            finally:
+                completed.set()
+
+        self.root.after(0, apply)
+        completed.wait()
+        if errors:
+            raise errors[0]
+
+    def connect_server(self) -> None:
+        def task() -> None:
+            server_url = self.server_url_var.get().strip()
+            server_token = self.server_token_var.get().strip()
+            if not server_url:
+                raise ValueError("Informe a URL da API do servidor.")
+            if not server_token:
+                raise ValueError("Informe o token Bearer do servidor.")
+
+            self.log(f"Conectando no servidor: {server_url}")
+            client = RemoteCFOClient(server_url, server_token)
+            catalog = client.fetch_catalog()
+            self._apply_remote_connection_in_ui_thread(client, catalog)
+            self._persist_server_connection(server_url, server_token)
+            self.status_var.set("Conectado ao servidor")
+            self.log("Conexao com servidor estabelecida.")
+
+        self._run_task("Conectar servidor", task)
+
+    def disconnect_server(self) -> None:
+        self.remote_client = None
+        self.remote_catalog_sub_clients = {}
+        self.config = _empty_app_config()
+        self.pipeline = None
+        self.platform_ui_registry = {}
+        self.platform_choices = []
+        self.choice_by_label = {}
+        self.server_status_var.set("Servidor desconectado")
+        self.status_var.set("Conecte ao servidor na aba Configuracoes")
+        self._clear_server_connection()
+        self._reload_catalog_ui()
+        self.log("Servidor desconectado e sessao remota limpa.")
 
     def open_changelog(self) -> None:
         releases_url = get_releases_page_url(update_config_path())
@@ -1987,6 +2265,50 @@ class CFODesktopApp:
             subprocess.Popen(["open", target])
             return
         subprocess.Popen(["xdg-open", target])
+
+    def _run_remote_job(
+        self,
+        *,
+        action: str,
+        platform_key: str,
+        client: str,
+        start_date: str,
+        end_date: str,
+        resource_names: list[str],
+        sub_clients: list[str] | None,
+    ) -> int:
+        remote = self.remote_client
+        if remote is None:
+            raise ValueError("Cliente remoto nao inicializado.")
+
+        payload: dict[str, object] = {
+            "action": action,
+            "platform_key": platform_key,
+            "client": client,
+            "start_date": start_date,
+            "end_date": end_date,
+            "resource_names": resource_names,
+        }
+        if sub_clients is not None:
+            payload["sub_clients"] = sub_clients
+
+        job_id = remote.create_job(payload)
+        self.log(f"Job remoto criado: {job_id}")
+        result = remote.wait_for_job(job_id, timeout_seconds=1800.0)
+        if result.status != "completed":
+            logs = remote.get_job_logs(job_id)
+            if logs:
+                self.log("Logs do job remoto:")
+                for line in logs[-10:]:
+                    self.log(line)
+            raise ValueError(result.error or f"Job remoto {job_id} falhou.")
+        if not result.result:
+            return 0
+        count = result.result.get("count")
+        try:
+            return int(count)
+        except Exception:  # noqa: BLE001
+            return 0
 
     def update_app(self) -> None:
         def task() -> None:
@@ -2042,14 +2364,27 @@ class CFODesktopApp:
     def collect_data(self) -> None:
         def task() -> None:
             choice, client, sub_clients, start_date, end_date = self._current_selection()
-            count = self.pipeline.collect(
-                platform_key=choice.platform_key,
-                client=client,
-                start_date=start_date,
-                end_date=end_date,
-                resource_names=[choice.resource_name],
-                sub_clients=sub_clients,
-            )
+            if self.remote_client is not None:
+                count = self._run_remote_job(
+                    action="collect",
+                    platform_key=choice.platform_key,
+                    client=client,
+                    start_date=start_date,
+                    end_date=end_date,
+                    resource_names=[choice.resource_name],
+                    sub_clients=sub_clients,
+                )
+            else:
+                if self.pipeline is None:
+                    raise ValueError("Conecte o servidor na aba Configuracoes para coletar dados.")
+                count = self.pipeline.collect(
+                    platform_key=choice.platform_key,
+                    client=client,
+                    start_date=start_date,
+                    end_date=end_date,
+                    resource_names=[choice.resource_name],
+                    sub_clients=sub_clients,
+                )
             scope = self._format_scope(sub_clients)
             months = self._count_months_covered(start_date, end_date)
             self.log(
@@ -2063,14 +2398,27 @@ class CFODesktopApp:
     def export_data(self) -> None:
         def task() -> None:
             choice, client, sub_clients, start_date, end_date = self._current_selection()
-            count = self.pipeline.export_to_sheets(
-                platform_key=choice.platform_key,
-                client=client,
-                start_date=start_date,
-                end_date=end_date,
-                resource_names=[choice.resource_name],
-                sub_clients=sub_clients,
-            )
+            if self.remote_client is not None:
+                count = self._run_remote_job(
+                    action="export",
+                    platform_key=choice.platform_key,
+                    client=client,
+                    start_date=start_date,
+                    end_date=end_date,
+                    resource_names=[choice.resource_name],
+                    sub_clients=sub_clients,
+                )
+            else:
+                if self.pipeline is None:
+                    raise ValueError("Conecte o servidor na aba Configuracoes para exportar dados.")
+                count = self.pipeline.export_to_sheets(
+                    platform_key=choice.platform_key,
+                    client=client,
+                    start_date=start_date,
+                    end_date=end_date,
+                    resource_names=[choice.resource_name],
+                    sub_clients=sub_clients,
+                )
             scope = self._format_scope(sub_clients)
             months = self._count_months_covered(start_date, end_date)
             self.log(
@@ -2087,6 +2435,8 @@ class CFODesktopApp:
             return
 
         def task() -> None:
+            if self.remote_client is not None:
+                raise ValueError("Fluxo SKU remoto ainda nao habilitado nesta fase.")
             if not self.sku_preview_rows:
                 raise ValueError("Nenhum SKU carregado. Clique em Buscar SKU antes de exportar.")
 
@@ -2101,6 +2451,8 @@ class CFODesktopApp:
 
             sku_resource = self._resolve_resource_by_name(platform_key=choice.platform_key, resource_name="sku")
 
+            if self.pipeline is None:
+                raise ValueError("Conecte o servidor na aba Configuracoes para exportar SKU.")
             exported = self.pipeline.exporter.export(
                 client=client,
                 platform_key=choice.platform_key,
@@ -2124,8 +2476,8 @@ def main() -> None:
         root.withdraw()
         messagebox.showerror(
             "Erro ao iniciar CFO Sync",
-            "Falha ao carregar configuracao/credenciais.\n\n"
-            f"Arquivo principal esperado: {app_config_path()}\n\n"
+            "Falha ao iniciar a interface.\n\n"
+            "Verifique os dados de conexao com o servidor na aba Configuracoes.\n\n"
             f"Detalhe tecnico: {error}",
         )
         root.destroy()

@@ -4,9 +4,13 @@
 .env
 .env.*
 data/*.db
+settings/*.json
+settings/docker-server.env
 secrets/*.json
 secrets/*.yaml
 secrets/*.yml
+server_access.json
+**/server_access.json
 api-sheets-*.json
 google_service_account.json
 build/

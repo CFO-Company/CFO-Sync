@@ -1,0 +1,41 @@
+services:
+  cfo-sync-server:
+    build:
+      context: ..
+      dockerfile: settings/docker/server.Dockerfile
+    container_name: cfo-sync-server
+    restart: unless-stopped
+    environment:
+      PYTHONPATH: /app/src
+      CFO_SYNC_HOME: /srv
+    command:
+      - python
+      - -m
+      - cfo_sync.server.main
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8088"
+      - --app-config
+      - /srv/secrets/app_config.json
+      - --access-config
+      - /srv/cfo_sync/server_access.json
+      - --workers
+      - "${CFO_SYNC_WORKERS:-2}"
+    ports:
+      - "${CFO_SYNC_SERVER_PORT:-8088}:8088"
+    volumes:
+      - type: bind
+        source: ${CFO_SYNC_HOST_ROOT:-C:/srv}
+        target: /srv
+
+  cfo-sync-tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: cfo-sync-tunnel
+    restart: unless-stopped
+    depends_on:
+      - cfo-sync-server
+    command: tunnel --no-autoupdate --url http://cfo-sync-server:8088
+    profiles:
+      - tunnel
+

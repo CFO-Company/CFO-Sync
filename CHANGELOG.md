@@ -1,3 +1,19 @@
+## [1.1.0] - 02-04-2026
+
+### Added
+- Modo servidor remoto com API HTTP autenticada por Bearer token e RBAC por plataforma/cliente.
+- Fila de jobs no servidor para orquestrar `collect` e `export` sem distribuir credenciais aos analistas.
+- Cliente remoto no desktop para consumir catalogo, criar jobs e consultar status/logs.
+- Stack Docker do servidor com `docker-compose` e script unico de bootstrap em `settings/setup_docker_server.ps1`.
+
+### Changed
+- Fluxo do app desktop passou a suportar conexao com servidor remoto via URL + token na aba de configuracoes.
+- Paths de configuracao local reorganizados para `settings/desktop_settings.json` e `settings/update_config.json`.
+- Documentacao atualizada com setup detalhado do servidor remoto e operacao via Docker.
+
+### Fixed
+- Tratamento de erros e validacoes de sincronizacao remota com mensagens mais claras em casos de token/endpoint invalidos.
+
 ## [1.0.19] - 31-03-2026
 
 ### Added

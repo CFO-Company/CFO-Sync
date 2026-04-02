@@ -1,0 +1,12 @@
+{
+  "tokens": [
+    {
+      "name": "analista_principal",
+      "token": "SUBSTITUA_POR_TOKEN_FORTE",
+      "allowed_platforms": ["*"],
+      "allowed_clients": {
+        "*": ["*"]
+      }
+    }
+  ]
+}

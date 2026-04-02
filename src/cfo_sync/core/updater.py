@@ -84,7 +84,7 @@ def check_for_updates(path: Path | None = None) -> UpdateCheckResult:
         return UpdateCheckResult(
             status="misconfigured",
             message=(
-                "Configure o repositorio GitHub em secrets/update_config.json "
+                "Configure o repositorio GitHub em settings/update_config.json "
                 "(campo github_repo no formato owner/repo)."
             ),
             current_version=current_version,

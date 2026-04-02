@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
@@ -52,6 +53,10 @@ def data_dir() -> Path:
     return runtime_root() / "data"
 
 
+def settings_dir() -> Path:
+    return runtime_root() / "settings"
+
+
 def secrets_dir() -> Path:
     return runtime_root() / "secrets"
 
@@ -69,7 +74,7 @@ def app_config_path() -> Path:
 
 
 def desktop_settings_path() -> Path:
-    return secrets_dir() / "desktop_settings.json"
+    return settings_dir() / "desktop_settings.json"
 
 
 def default_omie_credentials_path() -> Path:
@@ -81,7 +86,7 @@ def default_mercado_livre_credentials_path() -> Path:
 
 
 def update_config_path() -> Path:
-    return secrets_dir() / "update_config.json"
+    return settings_dir() / "update_config.json"
 
 
 def available_sound_dirs() -> list[Path]:
@@ -100,27 +105,34 @@ def available_sound_dirs() -> list[Path]:
 def ensure_runtime_layout() -> None:
     runtime_root().mkdir(parents=True, exist_ok=True)
     data_dir().mkdir(parents=True, exist_ok=True)
-    secrets_dir().mkdir(parents=True, exist_ok=True)
+    settings_dir().mkdir(parents=True, exist_ok=True)
     custom_sounds_dir().mkdir(parents=True, exist_ok=True)
-    _seed_secret_templates()
+    _seed_update_config_template()
     _seed_desktop_settings()
 
-
-def _seed_secret_templates() -> None:
-    template_dir = bundle_root() / "templates" / "secrets"
-    if not template_dir.exists():
+def _seed_update_config_template() -> None:
+    template_path = bundle_root() / "templates" / "secrets" / "update_config.json"
+    target = update_config_path()
+    if target.exists():
         return
-
-    target_dir = secrets_dir()
-    for source in template_dir.glob("*.json"):
-        target = target_dir / source.name
-        if target.exists():
-            continue
-        shutil.copyfile(source, target)
+    if template_path.exists():
+        shutil.copyfile(template_path, target)
+        return
+    default_payload = {
+        "enabled": False,
+        "github_repo": "OWNER/REPO",
+        "windows_asset_name": "CFO-Sync-Setup.exe",
+        "macos_asset_name": "CFO-Sync-macOS.dmg",
+    }
+    target.write_text(json.dumps(default_payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _seed_desktop_settings() -> None:
     settings_path = desktop_settings_path()
     if settings_path.exists():
+        return
+    legacy = secrets_dir() / "desktop_settings.json"
+    if legacy.exists():
+        shutil.copyfile(legacy, settings_path)
         return
     settings_path.write_text("{}\n", encoding="utf-8")

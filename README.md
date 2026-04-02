@@ -1,34 +1,58 @@
-# CFO Sync 1.0.2
+# CFO Sync
 
-Aplicativo desktop para sincronizacao de dados de plataformas e exportacao para Google Sheets.
+Aplicativo desktop para orquestrar coleta e exportacao de dados de plataformas sem distribuir credenciais para analistas.
 
-## Objetivo de distribuicao
+## Arquitetura alvo
 
-- Usuário final instala e usa sem instalar Python manualmente.
-- Atualizacao por botao dentro do app.
-- Segredos/API keys fora do binario, no diretório do usuário.
+1. Credenciais de APIs ficam somente no servidor.
+2. O ETL roda no servidor.
+3. O desktop conecta em uma API segura, lista plataformas/clientes e dispara jobs.
+4. O desktop nao precisa de `secrets` com credenciais das plataformas.
 
-## Onde ficam os dados do usuário
+## Componentes implementados nesta fase
 
-### Windows
+- API servidor (HTTP):
+  - `GET /v1/health`
+  - `GET /v1/catalog`
+  - `POST /v1/jobs`
+  - `GET /v1/jobs/{id}`
+  - `GET /v1/jobs/{id}/logs`
+- Autenticacao por Bearer token.
+- RBAC por plataforma/cliente via arquivo `server_access.json`.
+- Fila de jobs em background no servidor.
+- Launcher desktop com:
+  - URL da API
+  - Token Bearer
+  - botao `Conectar servidor`
+  - coleta/exportacao usando jobs remotos
 
-- `%LOCALAPPDATA%\CFO-Sync\`
+## Estrutura de arquivos (fase atual)
 
-### macOS
+- API servidor:
+  - `src/cfo_sync/server/access.py`
+  - `src/cfo_sync/server/jobs.py`
+  - `src/cfo_sync/server/service.py`
+  - `src/cfo_sync/server/http_server.py`
+  - `src/cfo_sync/server/main.py`
+- Desktop remoto:
+  - `src/cfo_sync/core/remote_api.py`
+  - `launcher_desktop.py`
+- Exemplo de permissao:
+  - `tools/server_access.example.json`
 
-- `~/Library/Application Support/CFO-Sync/`
+## Setup detalhado do servidor (Docker)
 
-Estrutura criada automaticamente no primeiro start:
+Esse e o fluxo recomendado para substituir os 3 comandos manuais por um unico script.
 
-- `secrets/`
-- `data/`
-- `sounds/`
+### 1. Preparar a estrutura unica do servidor
 
-## Secrets e chaves de API
+No servidor, use uma raiz unica (padrao `C:\srv`) com estas pastas:
 
-Os templates são copiados automaticamente de `templates/secrets` na primeira execução.
+- `C:\srv\secrets`
+- `C:\srv\cfo_sync`
+- `C:\srv\data`
 
-Arquivos relevantes:
+Dentro de `C:\srv\secrets`, mantenha os arquivos sensiveis do ETL, por exemplo:
 
 - `app_config.json`
 - `google_service_account.json`
@@ -37,292 +61,236 @@ Arquivos relevantes:
 - `google_ads_credentials.json`
 - `tiktok_ads_credentials.json`
 - `omie_credentials.json`
+- `omie_2025.json`
 - `mercado_livre_credentials.json`
-- `update_config.json`
 
-Regras de seguranca:
+Importante:
+- essa pasta deve existir apenas no servidor;
+- nao distribuir esses arquivos para as maquinas dos analistas.
 
-- Nunca embutir credenciais reais no executavel/instalador.
-- Distribuir apenas templates.
-- Entregar credenciais reais por canal seguro para cada analista.
-- Salvar sempre em `secrets/` da pasta de usuário.
+### 2. Rodar o script unico de bootstrap Docker
 
-## Integracao Google Ads no ETL
+No repo (`C:\CFO-Sync`), execute:
 
-O conector Google Ads foi integrado no mesmo fluxo atual:
+```powershell
+.\settings\setup_docker_server.ps1 -HostRoot "C:\srv" -Port 8088 -Workers 2 -WithTunnel
+```
 
-- Extracao: `src/cfo_sync/platforms/google_ads/api.py` + `insights.py`
-- Carga local: `SyncPipeline.collect()` -> SQLite (`raw_data`)
-- Exportacao: `SyncPipeline.export_to_sheets()` -> `GoogleSheetsExporter`
+O script executa automaticamente:
 
-### Credenciais e variaveis de ambiente
+1. `docker compose build cfo-sync-server`
+2. gera `C:\srv\cfo_sync\server_access.json` (se nao existir)
+3. sobe os containers (`cfo-sync-server` e `cfo-sync-tunnel` quando usar `-WithTunnel`)
 
-Arquivo recomendado: `secrets/google_ads_credentials.json`
+Arquivos usados:
+
+- `settings/docker/server.Dockerfile`
+- `settings/docker-compose.server.yml`
+- `settings/docker-server.env` (gerado automaticamente)
+
+### 3. Ajustar tokens/permissoes (RBAC)
+
+Abra `C:\srv\cfo_sync\server_access.json` e edite os escopos por analista.
+
+Exemplo:
 
 ```json
 {
-  "auth": {
-    "developer_token": "SEU_DEVELOPER_TOKEN",
-    "client_id": "SEU_OAUTH_CLIENT_ID",
-    "client_secret": "SEU_OAUTH_CLIENT_SECRET",
-    "refresh_token": "SEU_REFRESH_TOKEN",
-    "login_customer_id": "1234567890"
-  },
-  "accounts": [
+  "tokens": [
     {
-      "company_name": "Nome da empresa no CFO Sync",
-      "account_name": "Conta Google Ads",
-      "customer_id": "1112223334",
-      "cost_center": "Marketing",
-      "manager_account_name": "MCC Principal"
+      "name": "analista_financeiro",
+      "token": "TOKEN_FORTE_AQUI",
+      "allowed_platforms": ["yampi", "meta_ads"],
+      "allowed_clients": {
+        "yampi": ["Aurha", "Avozon"],
+        "meta_ads": ["*"]
+      }
     }
   ]
 }
 ```
 
-As credenciais sensiveis podem ser sobrescritas por variaveis de ambiente:
+Se precisar recriar token/template do zero:
 
-- `GOOGLE_ADS_DEVELOPER_TOKEN`
-- `GOOGLE_ADS_CLIENT_ID`
-- `GOOGLE_ADS_CLIENT_SECRET`
-- `GOOGLE_ADS_REFRESH_TOKEN`
-- `GOOGLE_ADS_LOGIN_CUSTOMER_ID`
-- `GOOGLE_ADS_API_VERSION` (opcional; se definido, fixa uma versao)
-- `GOOGLE_ADS_API_VERSION_FALLBACKS` (opcional; ex.: `v22,v21,v20`)
+```powershell
+.\settings\setup_docker_server.ps1 -HostRoot "C:\srv" -ForceRecreateAccess
+```
 
-Padrao atual no conector: tenta `v22`, depois `v21`, depois `v20`.
+### 4. Validar API localmente
 
-### Exemplo de bloco no `app_config.json`
+Substitua `SEU_TOKEN`:
+
+```powershell
+$token = "SEU_TOKEN"
+irm http://127.0.0.1:8088/v1/health
+irm http://127.0.0.1:8088/v1/catalog -Headers @{ Authorization = "Bearer $token" }
+```
+
+### 5. Obter URL publica (quando usar tunnel)
+
+Para ver logs e URL atual do quick tunnel:
+
+```powershell
+docker compose --env-file .\settings\docker-server.env -f .\settings\docker-compose.server.yml logs -f cfo-sync-tunnel
+```
+
+Use a URL mostrada (exemplo `https://xxxxx.trycloudflare.com`) no desktop.
+
+### Operacao diaria (Docker)
+
+Subir apenas servidor (sem tunnel):
+
+```powershell
+docker compose --env-file .\settings\docker-server.env -f .\settings\docker-compose.server.yml up -d cfo-sync-server
+```
+
+Subir servidor + tunnel:
+
+```powershell
+docker compose --env-file .\settings\docker-server.env -f .\settings\docker-compose.server.yml --profile tunnel up -d
+```
+
+Parar stack:
+
+```powershell
+docker compose --env-file .\settings\docker-server.env -f .\settings\docker-compose.server.yml down
+```
+
+## Setup detalhado do desktop (analista)
+
+1. Abrir `CFO Sync`.
+2. Ir na aba `Configuracoes`.
+3. Preencher:
+   - `URL da API servidor`: `https://SEU_TUNNEL.trycloudflare.com`
+   - `Token Bearer`: token entregue para o analista.
+4. Clicar `Conectar servidor`.
+5. Validar que o status mudou para `Conectado`.
+6. Selecionar plataforma/cliente/periodo e usar:
+   - `Coletar no banco`
+   - `Exportar para Sheets`
+
+## Contrato de API (resumo)
+
+### GET /v1/health
+
+Resposta:
 
 ```json
 {
-  "google_ads": {
-    "credentials_file": "google_ads_credentials.json"
-  },
+  "status": "ok",
+  "version": "1.1.0",
+  "server_time": "2026-04-02T12:00:00+00:00"
+}
+```
+
+### GET /v1/catalog
+
+Auth: `Authorization: Bearer <token>`
+
+Resposta (exemplo reduzido):
+
+```json
+{
+  "generated_at": "2026-04-02T12:00:00+00:00",
   "platforms": [
     {
-      "key": "google_ads",
-      "label": "Google Ads",
-      "clients": ["Nome da empresa no CFO Sync"],
+      "key": "yampi",
+      "label": "Yampi",
       "resources": [
-        {
-          "name": "insights",
-          "endpoint": "/customers/{customer_id}/googleAds:searchStream",
-          "spreadsheet_url": "https://docs.google.com/spreadsheets/d/SEU_ID/edit#gid=123456",
-          "client_tabs": {
-            "Nome da empresa no CFO Sync": {
-              "tab_name": "Google Ads",
-              "gid": "123456"
-            }
-          },
-          "field_map": {
-            "nome_ca": "Nome da CA",
-            "nome_campanha": "Nome da Campanha",
-            "nome_anuncio": "Nome do Anúncio",
-            "valor_gasto": "Valor Gasto",
-            "data_gasto": "Data do Gasto",
-            "tipo_ra": "Tipo (R/A)",
-            "centro_custo": "Centro de Custo"
-          }
-        }
+        { "name": "financeiro", "endpoint": "/orders", "field_map": {} }
+      ],
+      "clients": [
+        { "name": "Aurha", "sub_clients": ["Loja 1", "Loja 2"] }
       ]
     }
   ]
 }
 ```
 
-### Colunas padronizadas no Sheets (Google Ads)
+### POST /v1/jobs
 
-- `Nome da CA`
-- `Nome da Campanha`
-- `Nome do Anúncio`
-- `Valor Gasto`
-- `Data do Gasto`
-- `Tipo (R/A)`
-- `Centro de Custo`
+Auth: `Authorization: Bearer <token>`
 
-Observacao: a API retorna `metrics.cost_micros`; o ETL converte para `valor_gasto` dividindo por `1_000_000`.
-
-### Exemplo de consulta GAQL usada
-
-```sql
-SELECT
-  segments.date,
-  customer.id,
-  customer.descriptive_name,
-  campaign.id,
-  campaign.name,
-  metrics.impressions,
-  metrics.clicks,
-  metrics.cost_micros,
-  metrics.conversions
-FROM campaign
-WHERE segments.date BETWEEN '2026-03-01' AND '2026-03-19'
-ORDER BY segments.date ASC, campaign.id ASC
-```
-
-### Exemplo de execucao (UI atual)
-
-```powershell
-$env:PYTHONPATH="src"
-.\.venv\Scripts\python.exe -m cfo_sync.main
-```
-
-No seletor de plataforma, escolha `Google Ads`, cliente, recurso (`insights`/`campanhas`/`contas`) e periodo.
-
-## Integracao TikTok Ads no ETL
-
-Arquivo recomendado: `secrets/tiktok_ads_credentials.json`
+Request:
 
 ```json
 {
-  "auth": {
-    "access_token": "SEU_ACCESS_TOKEN",
-    "app_id": "SEU_APP_ID",
-    "secret": "SEU_SECRET",
-    "redirect_uri": "SUA_REDIRECT_URI"
+  "action": "export",
+  "platform_key": "yampi",
+  "client": "Aurha",
+  "start_date": "2026-04-01",
+  "end_date": "2026-04-02",
+  "resource_names": ["financeiro"],
+  "sub_clients": ["Loja 1"]
+}
+```
+
+Response:
+
+```json
+{
+  "job_id": "f2c5...",
+  "status": "queued"
+}
+```
+
+### GET /v1/jobs/{id}
+
+Auth: `Authorization: Bearer <token>`
+
+Response:
+
+```json
+{
+  "id": "f2c5...",
+  "requested_by": "analista_financeiro",
+  "status": "completed",
+  "created_at": "...",
+  "started_at": "...",
+  "finished_at": "...",
+  "result": {
+    "action": "export",
+    "platform_key": "yampi",
+    "client": "Aurha",
+    "count": 120
   },
-  "accounts": [
-    {
-      "company_name": "Nome da empresa no CFO Sync",
-      "account_name": "Conta TikTok Ads",
-      "advertiser_id": "1234567890123456789",
-      "cost_center": "Marketing"
-    }
+  "error": null
+}
+```
+
+### GET /v1/jobs/{id}/logs
+
+Auth: `Authorization: Bearer <token>`
+
+Response:
+
+```json
+{
+  "logs": [
+    "[2026-04-02T12:00:00+00:00] Job enfileirado.",
+    "[2026-04-02T12:00:01+00:00] Job iniciado."
   ]
 }
 ```
 
-Variaveis de ambiente opcionais:
+## Segurança recomendada (producao)
 
-- `TIKTOK_ADS_ACCESS_TOKEN` (sobrescreve o token global do arquivo)
-- `TIKTOK_ADS_APP_ID` (sobrescreve app_id do arquivo)
-- `TIKTOK_ADS_SECRET` (sobrescreve secret do arquivo)
-- `TIKTOK_ADS_REDIRECT_URI` (sobrescreve redirect_uri do arquivo)
-- `TIKTOK_ADS_API_BASE_URL` (default: `https://business-api.tiktok.com`)
+1. Substituir quick tunnel por tunnel nomeado + domínio fixo.
+2. Proteger endpoint com camada de acesso (Zero Trust/IdP).
+3. Tokens por analista, sem compartilhamento.
+4. Rotacao periodica de tokens.
+5. Limitar `allowed_platforms` e `allowed_clients` por perfil.
+6. Registrar logs de auditoria em storage central.
+7. Executar servidor atras de firewall + TLS.
 
-Bloco opcional no `app_config.json`:
+## Limitações desta fase
 
-```json
-{
-  "tiktok_ads": {
-    "credentials_file": "tiktok_ads_credentials.json"
-  }
-}
-```
+1. Fluxo remoto de SKU ainda nao foi habilitado.
+2. Token ainda e armazenado no `desktop_settings.json` local (proxima fase: armazenamento seguro no OS keychain/DPAPI).
+3. Autenticacao atual e Bearer token; proxima fase recomendada: SSO/OIDC.
 
-Validar conexao e advertiser IDs configurados:
-
-```powershell
-$env:PYTHONPATH="src"
-.\.venv\Scripts\python.exe -m cfo_sync.platforms.tiktok_ads.oauth --credentials secrets/tiktok_ads_credentials.json
-```
-
-Fluxo recomendado para projeto local-first (sem backend externo): callback local em `127.0.0.1`.
-
-```powershell
-$env:PYTHONPATH="src"
-.\.venv\Scripts\python.exe -m cfo_sync.platforms.tiktok_ads.oauth --credentials secrets/tiktok_ads_credentials.json --run-local-callback --open-browser
-```
-
-No app TikTok, a `redirect_uri` deve ser exatamente a URL exibida no comando (padrao: `http://127.0.0.1:8765/tiktok/callback`).
-
-Atualizar token manualmente e validar:
-
-```powershell
-$env:PYTHONPATH="src"
-.\.venv\Scripts\python.exe -m cfo_sync.platforms.tiktok_ads.oauth --credentials secrets/tiktok_ads_credentials.json --access-token "SEU_TOKEN"
-```
-
-Callback OAuth com backend proprio (producao): veja `tools/tiktok_oauth_callback/README.md`.
-
-## Botao de atualizar app
-
-O launcher possui:
-
-- `Atualizar app`: consulta o `latest release` no GitHub, baixa o asset da plataforma e inicia instalador.
-- `Abrir pasta de config`: abre a pasta `secrets` para facilitar colagem/edicao de credenciais.
-
-Configure `secrets/update_config.json`:
-
-```json
-{
-  "enabled": true,
-  "github_repo": "OWNER/REPO",
-  "windows_asset_name": "CFO-Sync-Setup.exe",
-  "macos_asset_name": "CFO-Sync-macOS.dmg"
-}
-```
-
-## Build local - Windows
-
-Pre-requisitos:
-
-- Windows
-- `.venv` no projeto
-- Inno Setup instalado (opcional; sem ele o script gera um executavel unico `CFO-Sync-Setup.exe`)
-
-Comando:
+## Build local
 
 ```powershell
 .\tools\build_windows_package.ps1
 ```
-
-Saídas:
-
-- `dist\installer\CFO-Sync-Setup.exe`
-
-## Pipeline de release no GitHub
-
-Arquivo:
-
-- `.github/workflows/release.yml`
-
-Ao criar tag `X.Y.Z`, o workflow:
-
-- gera build Windows com PyInstaller
-- publica a release da tag
-- anexa o asset Windows na release (`CFO-Sync-Setup.exe`)
-- usa a secao da versao no `CHANGELOG.md` como corpo da release
-
-## Changelog
-
-Arquivo principal:
-
-- `CHANGELOG.md`
-
-Formato adotado:
-
-- `## [Unreleased]` para mudancas em desenvolvimento
-- `## [X.Y.Z] - AAAA-MM-DD` para versao publicada
-
-Script utilitario:
-
-```bash
-python tools/changelog_extract.py --version 1.0.2
-```
-
-Para cada nova release:
-
-1. Atualize `CHANGELOG.md` com a secao da nova versao.
-2. Crie a tag `X.Y.Z`.
-3. O workflow publica a release usando essa secao como release notes.
-
-## Fluxo sugerido para analistas
-
-1. Instalar via setup do Windows.
-2. Abrir app.
-3. Clicar em `Abrir pasta de config`.
-4. Colar/preencher os arquivos em `secrets`.
-5. Usar normalmente.
-6. Quando houver release nova, clicar em `Atualizar app`.
-
-## Automacao via Task Scheduler
-
-Scripts de automacao por plataforma:
-
-- `scripts/task_scheduler/`
-
-Documentacao:
-
-- `scripts/task_scheduler/README.md`
