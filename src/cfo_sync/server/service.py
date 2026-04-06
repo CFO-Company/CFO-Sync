@@ -7,6 +7,7 @@ from typing import Callable
 
 from cfo_sync.core.client_registration import ClientRegistrationManager
 from cfo_sync.core.config_loader import load_app_config
+from cfo_sync.core.link_generator import GeneratorLinkManager
 from cfo_sync.core.pipeline import SyncPipeline
 from cfo_sync.platforms.ui_registry import build_platform_ui_registry
 from cfo_sync.server.access import AccessTokenPolicy
@@ -18,6 +19,7 @@ class CfoSyncServerService:
         self.config_path = config_path
         self._state_lock = RLock()
         self.registration_manager = ClientRegistrationManager(config_path)
+        self.generator_manager = GeneratorLinkManager(config_path)
         self._reload_state_locked()
 
     def _reload_state_locked(self) -> None:
@@ -151,10 +153,50 @@ class CfoSyncServerService:
     ) -> dict[str, object]:
         platform_key = str(payload.get("platform_key") or "").strip()
         client_name = str(payload.get("client_name") or payload.get("company_name") or "").strip()
-        self._validate_registration_access(policy, platform_key, client_name)
+        registration_mode = _registration_mode(payload.get("registration_mode"))
+        self._validate_registration_access(
+            policy,
+            platform_key,
+            client_name,
+            registration_mode=registration_mode,
+        )
 
         with self._state_lock:
             result = self.registration_manager.register_client(payload)
+            self._reload_state_locked()
+        return result
+
+    def create_generator_link(
+        self,
+        payload: dict[str, object],
+        *,
+        policy: AccessTokenPolicy,
+        external_base_url: str,
+    ) -> dict[str, object]:
+        platform_key = str(payload.get("platform_key") or "").strip()
+        client_name = str(payload.get("client_name") or "").strip()
+        registration_mode = _registration_mode(payload.get("registration_mode"))
+        self._validate_registration_access(
+            policy,
+            platform_key,
+            client_name,
+            registration_mode=registration_mode,
+        )
+        with self._state_lock:
+            return self.generator_manager.create_link(payload, external_base_url=external_base_url)
+
+    def complete_mercado_livre_oauth_callback(
+        self,
+        *,
+        code: str,
+        state: str,
+    ) -> dict[str, object]:
+        registration_payload = self.generator_manager.consume_mercado_livre_callback(
+            code=code,
+            state=state,
+        )
+        with self._state_lock:
+            result = self.registration_manager.register_client(registration_payload)
             self._reload_state_locked()
         return result
 
@@ -175,6 +217,8 @@ class CfoSyncServerService:
         policy: AccessTokenPolicy,
         platform_key: str,
         client_name: str,
+        *,
+        registration_mode: str,
     ) -> None:
         if not platform_key:
             raise ValueError("Campo obrigatorio ausente: platform_key")
@@ -182,6 +226,8 @@ class CfoSyncServerService:
             raise ValueError("Campo obrigatorio ausente: client_name")
         if not policy.allows_platform(platform_key):
             raise PermissionError(f"Token sem permissao para plataforma '{platform_key}'.")
+        if registration_mode == "new_client":
+            return
         if not policy.allows_client(platform_key, client_name):
             raise PermissionError(
                 f"Token sem permissao para cliente '{client_name}' na plataforma '{platform_key}'."
@@ -223,3 +269,15 @@ def _optional_string_list(value: object) -> list[str] | None:
     if not cleaned:
         return None
     return cleaned
+
+
+def _registration_mode(value: object) -> str:
+    cleaned = str(value or "").strip().casefold()
+    if cleaned in {"", "existing_client", "existing", "alias", "filial"}:
+        return "existing_client"
+    if cleaned in {"new_client", "new", "novo_cliente"}:
+        return "new_client"
+    raise ValueError(
+        "Modo de cadastro invalido. Use 'existing_client' para filial/alias "
+        "ou 'new_client' para novo cliente."
+    )

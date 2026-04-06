@@ -67,7 +67,11 @@ def main() -> int:
     print(f"Bind: http://{args.host}:{args.port}")
     print(f"App config: {app_config}")
     print(f"Access config: {access_config}")
-    print("Endpoints: GET /v1/health | GET /v1/catalog | POST /v1/jobs | GET /v1/jobs/{id}")
+    print(
+        "Endpoints: GET /v1/health | GET /v1/catalog | POST /v1/jobs | "
+        "GET /v1/jobs/{id} | POST /v1/clients | POST /v1/generators/link | "
+        "GET /v1/oauth/mercado_livre/callback"
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

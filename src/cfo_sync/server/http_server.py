@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import html
 import json
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from cfo_sync.server.access import AccessTokenPolicy, authenticate_token, load_access_policies
 from cfo_sync.server.jobs import JobManager
@@ -61,6 +62,45 @@ class CfoSyncHttpServer:
 
                 if path == "/v1/health":
                     self._write_json(HTTPStatus.OK, server.service.health_payload())
+                    return
+
+                if path == "/v1/oauth/mercado_livre/callback":
+                    params = parse_qs(parsed.query or "")
+                    oauth_error = str((params.get("error") or [""])[0] or "").strip()
+                    oauth_error_description = str(
+                        (params.get("error_description") or [""])[0] or ""
+                    ).strip()
+                    if oauth_error:
+                        message = f"Autorizacao recusada pelo Mercado Livre: {oauth_error}"
+                        if oauth_error_description:
+                            message += f" ({oauth_error_description})"
+                        self._write_html(
+                            HTTPStatus.BAD_REQUEST,
+                            _oauth_error_html(message),
+                        )
+                        return
+
+                    code = str((params.get("code") or [""])[0] or "").strip()
+                    state = str((params.get("state") or [""])[0] or "").strip()
+                    try:
+                        result = server.service.complete_mercado_livre_oauth_callback(
+                            code=code,
+                            state=state,
+                        )
+                    except (ValueError, FileNotFoundError) as error:
+                        self._write_html(
+                            HTTPStatus.BAD_REQUEST,
+                            _oauth_error_html(str(error)),
+                        )
+                        return
+                    except Exception as error:  # noqa: BLE001
+                        self._write_html(
+                            HTTPStatus.INTERNAL_SERVER_ERROR,
+                            _oauth_error_html(f"Falha no callback OAuth: {error}"),
+                        )
+                        return
+
+                    self._write_html(HTTPStatus.OK, _oauth_success_html(result))
                     return
 
                 policy = self._require_auth()
@@ -139,6 +179,28 @@ class CfoSyncHttpServer:
                     self._write_json(HTTPStatus.CREATED, result)
                     return
 
+                if path == "/v1/generators/link":
+                    payload = self._read_json_body()
+                    if payload is None:
+                        return
+                    try:
+                        result = server.service.create_generator_link(
+                            payload,
+                            policy=policy,
+                            external_base_url=self._external_base_url(),
+                        )
+                    except PermissionError as error:
+                        self._write_json(HTTPStatus.FORBIDDEN, {"error": str(error)})
+                        return
+                    except (ValueError, FileNotFoundError) as error:
+                        self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+                        return
+                    except Exception as error:  # noqa: BLE001
+                        self._write_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error)})
+                        return
+                    self._write_json(HTTPStatus.CREATED, result)
+                    return
+
                 self._write_json(HTTPStatus.NOT_FOUND, {"error": "Rota nao encontrada."})
 
             def _require_auth(self) -> AccessTokenPolicy | None:
@@ -186,8 +248,76 @@ class CfoSyncHttpServer:
                 self.end_headers()
                 self.wfile.write(body)
 
+            def _write_html(self, status_code: HTTPStatus, html: str) -> None:
+                body = str(html or "").encode("utf-8")
+                self.send_response(status_code)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _external_base_url(self) -> str:
+                forwarded_proto = str(self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
+                forwarded_host = str(self.headers.get("X-Forwarded-Host") or "").split(",")[0].strip()
+                host = forwarded_host or str(self.headers.get("Host") or "").strip()
+                if not host:
+                    host = f"{server.host}:{server.port}"
+                scheme = forwarded_proto or "http"
+                return f"{scheme}://{host}".rstrip("/")
+
             def log_message(self, format: str, *args) -> None:  # noqa: A003
                 return
 
         return Handler
+
+
+def _oauth_success_html(result: dict[str, object]) -> str:
+    platform = html.escape(str(result.get("platform_key") or "").strip() or "mercado_livre")
+    client_name = html.escape(str(result.get("client_name") or "").strip())
+    mode = str(result.get("registration_mode") or "").strip()
+    mode_label = "Novo cliente" if mode == "new_client" else "Filial/Alias"
+
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>Autorizacao concluida</title>"
+        "<style>"
+        "body{font-family:Segoe UI,Arial,sans-serif;background:#f5f7fa;margin:0;padding:24px;}"
+        ".card{max-width:640px;margin:0 auto;background:#fff;border:1px solid #dde3ea;"
+        "border-radius:12px;padding:24px;box-shadow:0 8px 24px rgba(0,0,0,.08)}"
+        "h1{margin:0 0 12px;color:#123;font-size:24px}"
+        "p{margin:8px 0;color:#334}"
+        "code{background:#eef2f6;padding:2px 6px;border-radius:6px}"
+        ".ok{color:#0b7a43;font-weight:600}"
+        "</style></head><body><div class='card'>"
+        "<h1>Autorizacao concluida</h1>"
+        "<p class='ok'>Conta Mercado Livre autorizada com sucesso.</p>"
+        f"<p><strong>Plataforma:</strong> <code>{platform}</code></p>"
+        f"<p><strong>Cliente:</strong> {client_name}</p>"
+        f"<p><strong>Modo:</strong> {mode_label}</p>"
+        "<p>Voce pode fechar esta pagina e voltar ao aplicativo CFO Sync.</p>"
+        "</div></body></html>"
+    )
+
+
+def _oauth_error_html(message: str) -> str:
+    safe = html.escape(str(message or "Erro desconhecido no callback OAuth."))
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>Erro na autorizacao</title>"
+        "<style>"
+        "body{font-family:Segoe UI,Arial,sans-serif;background:#fff5f5;margin:0;padding:24px;}"
+        ".card{max-width:640px;margin:0 auto;background:#fff;border:1px solid #ffd5d5;"
+        "border-radius:12px;padding:24px;box-shadow:0 8px 24px rgba(0,0,0,.08)}"
+        "h1{margin:0 0 12px;color:#7a0b0b;font-size:24px}"
+        "p{margin:8px 0;color:#533}"
+        "code{background:#fff1f1;padding:2px 6px;border-radius:6px}"
+        "</style></head><body><div class='card'>"
+        "<h1>Erro na autorizacao</h1>"
+        f"<p>{safe}</p>"
+        "<p>Gere um novo link de autorizacao no aplicativo e tente novamente.</p>"
+        "</div></body></html>"
+    )
 

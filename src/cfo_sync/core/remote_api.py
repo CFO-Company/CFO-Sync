@@ -44,6 +44,9 @@ class RemoteCFOClient:
     def register_client(self, payload: dict[str, object]) -> dict[str, object]:
         return self._request_json("POST", "/v1/clients", payload=payload)
 
+    def generate_generator_link(self, payload: dict[str, object]) -> dict[str, object]:
+        return self._request_json("POST", "/v1/generators/link", payload=payload)
+
     def get_job(self, job_id: str) -> dict[str, object]:
         return self._request_json("GET", f"/v1/jobs/{job_id}")
 

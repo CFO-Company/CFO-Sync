@@ -31,7 +31,7 @@ from cfo_sync.core.models import (
     YampiConfig,
 )
 from cfo_sync.core.pipeline import SyncPipeline
-from cfo_sync.core.remote_api import RemoteCFOClient
+from cfo_sync.core.remote_api import RemoteApiError, RemoteCFOClient
 from cfo_sync.core.runtime_paths import (
     available_sound_dirs,
     custom_sounds_dir,
@@ -269,6 +269,17 @@ CLIENT_REGISTRATION_MODE_OPTIONS: list[tuple[str, str]] = [
     ("Novo cliente (cadastro completo)", "new_client"),
 ]
 
+GENERATOR_SCHEMAS: dict[str, list[dict[str, object]]] = {
+    "mercado_livre": [
+        {
+            "name": "account_alias",
+            "label": "Alias/Filial",
+            "required": True,
+            "help": "Nome da filial/alias que identifica a conta autorizada.",
+        }
+    ]
+}
+
 
 def _empty_app_config() -> AppConfig:
     return AppConfig(
@@ -329,6 +340,19 @@ class CFODesktopApp:
         self.client_registration_field_vars: dict[str, tk.Variable] = {}
         self.client_registration_dynamic_entries: list[ttk.Entry] = []
         self.client_registration_dynamic_combos: list[ttk.Combobox] = []
+        self.generator_mode_var = tk.StringVar()
+        self.generator_platform_var = tk.StringVar()
+        self.generator_client_var = tk.StringVar()
+        self.generator_client_name_var = tk.StringVar()
+        self.generator_gid_var = tk.StringVar()
+        self.generator_link_var = tk.StringVar()
+        self.generator_mode_map: dict[str, str] = {}
+        self.generator_platform_map: dict[str, str] = {}
+        self.generator_clients: list[str] = []
+        self.generator_field_specs: list[dict[str, object]] = []
+        self.generator_field_vars: dict[str, tk.Variable] = {}
+        self.generator_dynamic_entries: list[ttk.Entry] = []
+        self.generator_dynamic_combos: list[ttk.Combobox] = []
         self._date_picker_window: tk.Toplevel | None = None
         self._date_picker_month_label_var = tk.StringVar()
         self._date_picker_hint_var = tk.StringVar()
@@ -846,11 +870,13 @@ class CFODesktopApp:
 
         config_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
         self.clients_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
+        self.generator_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
         self.sku_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
         self.settings_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
 
         self.tabs.add(config_tab, text="Pedidos")
         self.tabs.add(self.clients_tab, text="Clientes")
+        self.tabs.add(self.generator_tab, text="Gerador")
         self.tabs.add(self.sku_tab, text="SKU")
         self.tabs.add(self.settings_tab, text="Configurações")
 
@@ -1142,6 +1168,157 @@ class CFODesktopApp:
 
         self.clients_tab.columnconfigure(1, weight=1)
         self.clients_tab.rowconfigure(4, weight=1)
+
+        ttk.Label(self.generator_tab, text="Gerador", style="CardTitle.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 12)
+        )
+        ttk.Label(
+            self.generator_tab,
+            text=(
+                "Gere links de autorizacao por plataforma. "
+                "O callback registra o cliente automaticamente no servidor."
+            ),
+            style="Field.TLabel",
+        ).grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(0, 8))
+
+        generator_selectors = ttk.Frame(self.generator_tab, style="Card.TFrame")
+        generator_selectors.grid(row=2, column=0, columnspan=2, sticky=tk.EW, pady=compact_pady)
+        generator_selectors.columnconfigure(1, weight=1)
+        generator_selectors.columnconfigure(3, weight=1)
+
+        ttk.Label(generator_selectors, text="Tipo de cadastro", style="Field.TLabel").grid(
+            row=0, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
+        )
+        self.generator_mode_combo = ttk.Combobox(
+            generator_selectors,
+            textvariable=self.generator_mode_var,
+            state="readonly",
+            style="Dark.TCombobox",
+            width=field_width,
+        )
+        self.generator_mode_combo.grid(
+            row=0,
+            column=1,
+            columnspan=3,
+            sticky=tk.EW,
+            pady=compact_pady,
+        )
+
+        ttk.Label(generator_selectors, text="Plataforma", style="Field.TLabel").grid(
+            row=1, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
+        )
+        self.generator_platform_combo = ttk.Combobox(
+            generator_selectors,
+            textvariable=self.generator_platform_var,
+            state="readonly",
+            style="Dark.TCombobox",
+            width=field_width,
+        )
+        self.generator_platform_combo.grid(
+            row=1,
+            column=1,
+            sticky=tk.EW,
+            pady=compact_pady,
+            padx=(0, 12),
+        )
+
+        self.generator_client_label = ttk.Label(
+            generator_selectors,
+            text="Cliente",
+            style="Field.TLabel",
+        )
+        self.generator_client_label.grid(
+            row=1,
+            column=2,
+            sticky=tk.W,
+            padx=compact_padx,
+            pady=compact_pady,
+        )
+        self.generator_client_combo = ttk.Combobox(
+            generator_selectors,
+            textvariable=self.generator_client_var,
+            state="readonly",
+            style="Dark.TCombobox",
+            width=field_width,
+        )
+        self.generator_client_combo.grid(
+            row=1,
+            column=3,
+            sticky=tk.EW,
+            pady=compact_pady,
+        )
+        self.generator_client_entry = ttk.Entry(
+            generator_selectors,
+            textvariable=self.generator_client_name_var,
+            style="Dark.TEntry",
+            width=field_width,
+        )
+        self.generator_client_entry.grid(
+            row=1,
+            column=3,
+            sticky=tk.EW,
+            pady=compact_pady,
+        )
+        self.generator_client_entry.grid_remove()
+
+        ttk.Label(self.generator_tab, text="GID da aba do cliente", style="Field.TLabel").grid(
+            row=3, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
+        )
+        self.generator_gid_entry = ttk.Entry(
+            self.generator_tab,
+            textvariable=self.generator_gid_var,
+            style="Dark.TEntry",
+            width=field_width,
+        )
+        self.generator_gid_entry.grid(row=3, column=1, sticky=tk.EW, pady=compact_pady)
+
+        ttk.Label(self.generator_tab, text="Parametros da plataforma", style="Field.TLabel").grid(
+            row=4, column=0, sticky=tk.NW, padx=compact_padx, pady=compact_pady
+        )
+        self.generator_fields_frame = ttk.Frame(self.generator_tab, style="Card.TFrame")
+        self.generator_fields_frame.grid(row=4, column=1, sticky=tk.NSEW, pady=compact_pady)
+        self.generator_fields_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(self.generator_tab, text="Link gerado", style="Field.TLabel").grid(
+            row=5, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
+        )
+        self.generator_link_entry = ttk.Entry(
+            self.generator_tab,
+            textvariable=self.generator_link_var,
+            style="Dark.TEntry",
+            state="readonly",
+        )
+        self.generator_link_entry.grid(row=5, column=1, sticky=tk.EW, pady=compact_pady)
+
+        generator_actions = ttk.Frame(self.generator_tab, style="Card.TFrame")
+        generator_actions.grid(row=6, column=1, sticky=tk.E, pady=(6, 0))
+
+        self.btn_generate_link = ttk.Button(
+            generator_actions,
+            text="Gerar link",
+            style="Primary.TButton",
+            command=self.generate_platform_link,
+        )
+        self.btn_generate_link.pack(side=tk.RIGHT)
+
+        self.btn_open_generated_link = ttk.Button(
+            generator_actions,
+            text="Abrir link",
+            style="Secondary.TButton",
+            command=self.open_generated_link,
+        )
+        self.btn_open_generated_link.pack(side=tk.RIGHT, padx=(0, 8))
+
+        self.btn_copy_generated_link = ttk.Button(
+            generator_actions,
+            text="Copiar link",
+            style="Secondary.TButton",
+            command=self.copy_generated_link,
+        )
+        self.btn_copy_generated_link.pack(side=tk.RIGHT, padx=(0, 8))
+
+        self.generator_tab.columnconfigure(1, weight=1)
+        self.generator_tab.rowconfigure(4, weight=1)
 
         self.sku_tab.rowconfigure(3, weight=1)
         self.sku_tab.columnconfigure(0, weight=1)
@@ -1435,6 +1612,26 @@ class CFODesktopApp:
         self.client_registration_client_entry.bind(
             "<KeyRelease>",
             lambda _event: self._update_register_client_button_state(),
+        )
+        self.generator_mode_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._on_generator_mode_change(),
+        )
+        self.generator_platform_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._on_generator_platform_change(),
+        )
+        self.generator_client_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._update_generate_link_button_state(),
+        )
+        self.generator_client_entry.bind(
+            "<KeyRelease>",
+            lambda _event: self._update_generate_link_button_state(),
+        )
+        self.generator_gid_entry.bind(
+            "<KeyRelease>",
+            lambda _event: self._update_generate_link_button_state(),
         )
         self.sub_client_listbox.bind("<<ListboxSelect>>", lambda _event: self._update_sub_client_summary())
         self.notification_sound_combo.bind(
@@ -1816,6 +2013,8 @@ class CFODesktopApp:
     def _load_initial_values(self) -> None:
         self._refresh_client_registration_modes()
         self._refresh_client_registration_platforms()
+        self._refresh_generator_modes()
+        self._refresh_generator_platforms()
         if not self.platform_choices:
             if self.config.platforms:
                 self.status_var.set("Sem clientes para Pedidos")
@@ -1827,6 +2026,7 @@ class CFODesktopApp:
                 self.status_var.set("Sem plataformas configuradas")
                 self.log("Nenhuma plataforma/remoto carregado. Conecte o servidor na aba Configuracoes.")
             self._update_register_client_button_state()
+            self._update_generate_link_button_state()
             return
 
         first = self.platform_choices[0]
@@ -1835,6 +2035,7 @@ class CFODesktopApp:
         self._refresh_notification_sounds(preserve_current=False)
         self._update_export_sku_button_state()
         self._update_register_client_button_state()
+        self._update_generate_link_button_state()
 
     def _ensure_sounds_directory(self) -> None:
         try:
@@ -2184,6 +2385,18 @@ class CFODesktopApp:
                 entry.configure(state=tk.DISABLED)
             for combo in self.client_registration_dynamic_combos:
                 combo.configure(state=tk.DISABLED)
+            self.generator_mode_combo.configure(state=tk.DISABLED)
+            self.generator_platform_combo.configure(state=tk.DISABLED)
+            self.generator_client_combo.configure(state=tk.DISABLED)
+            self.generator_client_entry.configure(state=tk.DISABLED)
+            self.generator_gid_entry.configure(state=tk.DISABLED)
+            self.btn_generate_link.configure(state=tk.DISABLED, cursor="no")
+            self.btn_open_generated_link.configure(state=tk.DISABLED, cursor="no")
+            self.btn_copy_generated_link.configure(state=tk.DISABLED, cursor="no")
+            for entry in self.generator_dynamic_entries:
+                entry.configure(state=tk.DISABLED)
+            for combo in self.generator_dynamic_combos:
+                combo.configure(state=tk.DISABLED)
             return
 
         self.btn_collect.configure(state=tk.NORMAL)
@@ -2208,6 +2421,7 @@ class CFODesktopApp:
         self.sku_order_entry.configure(state=sku_state)
         self.btn_pick_period.configure(state=tk.NORMAL)
         self._sync_client_registration_input_states()
+        self._sync_generator_input_states()
 
     def _run_task(self, action_name: str, target) -> None:
         if self.busy:
@@ -2233,6 +2447,7 @@ class CFODesktopApp:
             return
         self._update_export_sku_button_state()
         self._update_register_client_button_state()
+        self._update_generate_link_button_state()
 
     def _platform_supports_sku_workflow(self) -> bool:
         choice = self.choice_by_label.get(self.platform_var.get())
@@ -2324,6 +2539,91 @@ class CFODesktopApp:
         mode_label = self.client_registration_mode_var.get().strip()
         mode = self.client_registration_mode_map.get(mode_label, "").strip()
         return mode or "existing_client"
+
+    def _sync_generator_input_states(self) -> None:
+        if self.busy:
+            return
+        enabled = self.remote_client is not None
+        mode_state = "readonly" if enabled and self.generator_mode_map else tk.DISABLED
+        platform_state = "readonly" if enabled and self.generator_platform_map else tk.DISABLED
+        self.generator_mode_combo.configure(state=mode_state)
+        self.generator_platform_combo.configure(state=platform_state)
+
+        mode = self._generator_mode()
+        if mode == "new_client":
+            self.generator_client_combo.configure(state=tk.DISABLED)
+            self.generator_client_entry.configure(state=tk.NORMAL if enabled else tk.DISABLED)
+        else:
+            client_state = "readonly" if enabled and bool(self.generator_clients) else tk.DISABLED
+            self.generator_client_combo.configure(state=client_state)
+            self.generator_client_entry.configure(state=tk.DISABLED)
+
+        entry_state = tk.NORMAL if enabled else tk.DISABLED
+        self.generator_gid_entry.configure(state=entry_state)
+        for entry in self.generator_dynamic_entries:
+            entry.configure(state=entry_state)
+        for combo in self.generator_dynamic_combos:
+            combo.configure(state="readonly" if enabled else tk.DISABLED)
+
+        self._update_generate_link_button_state()
+
+    def _update_generate_link_button_state(self) -> None:
+        has_platform = bool(
+            self.generator_platform_map.get(
+                self.generator_platform_var.get().strip(),
+                "",
+            )
+        )
+        mode = self._generator_mode()
+        if mode == "new_client":
+            has_client = bool(self.generator_client_name_var.get().strip())
+        else:
+            has_client = bool(self.generator_client_var.get().strip())
+        has_gid = bool("".join(ch for ch in self.generator_gid_var.get().strip() if ch.isdigit()))
+        can_generate = (
+            has_platform
+            and has_client
+            and has_gid
+            and self._generator_required_fields_filled()
+            and self.remote_client is not None
+            and not self.busy
+        )
+        self.btn_generate_link.configure(
+            state=tk.NORMAL if can_generate else tk.DISABLED,
+            cursor="hand2" if can_generate else "no",
+        )
+
+        has_link = bool(self.generator_link_var.get().strip()) and not self.busy
+        self.btn_open_generated_link.configure(
+            state=tk.NORMAL if has_link else tk.DISABLED,
+            cursor="hand2" if has_link else "no",
+        )
+        self.btn_copy_generated_link.configure(
+            state=tk.NORMAL if has_link else tk.DISABLED,
+            cursor="hand2" if has_link else "no",
+        )
+
+    def _generator_mode(self) -> str:
+        mode_label = self.generator_mode_var.get().strip()
+        mode = self.generator_mode_map.get(mode_label, "").strip()
+        return mode or "existing_client"
+
+    def _generator_required_fields_filled(self) -> bool:
+        for field in self.generator_field_specs:
+            if not bool(field.get("required")):
+                continue
+            name = str(field.get("name") or "").strip()
+            if not name:
+                continue
+            kind = str(field.get("kind") or "text").strip().lower()
+            if kind == "bool":
+                continue
+            raw = self.generator_field_vars.get(name)
+            if raw is None:
+                return False
+            if not str(raw.get() or "").strip():
+                return False
+        return True
 
     def _get_current_choice(self) -> PlatformChoice:
         choice = self.choice_by_label.get(self.platform_var.get())
@@ -2605,6 +2905,303 @@ class CFODesktopApp:
             self.client_registration_client_combo.grid()
         self._sync_client_registration_input_states()
         self._update_register_client_button_state()
+
+    def _refresh_generator_modes(self) -> None:
+        labels = [label for label, _mode in CLIENT_REGISTRATION_MODE_OPTIONS]
+        mapping = {label: mode for label, mode in CLIENT_REGISTRATION_MODE_OPTIONS}
+        current_label = self.generator_mode_var.get().strip()
+
+        self.generator_mode_map = mapping
+        self.generator_mode_combo.configure(values=labels)
+
+        if current_label in mapping:
+            self.generator_mode_var.set(current_label)
+        elif labels:
+            self.generator_mode_var.set(labels[0])
+        else:
+            self.generator_mode_var.set("")
+
+    def _on_generator_mode_change(self) -> None:
+        self.generator_link_var.set("")
+        mode = self._generator_mode()
+        if mode == "new_client":
+            self.generator_client_label.configure(text="Novo cliente")
+            self.generator_client_combo.grid_remove()
+            self.generator_client_entry.grid()
+        else:
+            self.generator_client_label.configure(text="Cliente")
+            self.generator_client_entry.grid_remove()
+            self.generator_client_combo.grid()
+        self._sync_generator_input_states()
+        self._update_generate_link_button_state()
+
+    def _refresh_generator_platforms(self) -> None:
+        available_platforms = [
+            platform
+            for platform in self.config.platforms
+            if platform.key in GENERATOR_SCHEMAS
+        ]
+
+        options: list[str] = []
+        mapping: dict[str, str] = {}
+        repeated_labels: set[str] = set()
+
+        for platform in available_platforms:
+            label = str(platform.label or platform.key).strip() or platform.key
+            if label in mapping:
+                repeated_labels.add(label)
+                continue
+            mapping[label] = platform.key
+            options.append(label)
+
+        if repeated_labels:
+            options = []
+            mapping = {}
+            for platform in available_platforms:
+                base_label = str(platform.label or platform.key).strip() or platform.key
+                label = base_label if base_label not in repeated_labels else f"{base_label} ({platform.key})"
+                mapping[label] = platform.key
+                options.append(label)
+
+        current_label = self.generator_platform_var.get().strip()
+        self.generator_platform_map = mapping
+        self.generator_platform_combo.configure(values=options)
+
+        if not options:
+            self.generator_platform_var.set("")
+            self.generator_clients = []
+            self.generator_client_var.set("")
+            self.generator_client_name_var.set("")
+            self.generator_client_combo.configure(values=[])
+            self.generator_field_specs = []
+            self.generator_field_vars = {}
+            self._render_generator_fields([])
+            self._sync_generator_input_states()
+            self._update_generate_link_button_state()
+            return
+
+        if current_label in mapping:
+            self.generator_platform_var.set(current_label)
+        else:
+            self.generator_platform_var.set(options[0])
+        self._on_generator_platform_change()
+        self._on_generator_mode_change()
+        self._sync_generator_input_states()
+
+    def _on_generator_platform_change(self) -> None:
+        self.generator_link_var.set("")
+        platform_key = self.generator_platform_map.get(
+            self.generator_platform_var.get().strip(),
+            "",
+        )
+        self._refresh_generator_clients(platform_key)
+        schema = self._generator_schema_for_platform(platform_key)
+        self.generator_field_specs = schema
+        self._render_generator_fields(schema)
+        self._sync_generator_input_states()
+        self._update_generate_link_button_state()
+
+    def _refresh_generator_clients(self, platform_key: str) -> None:
+        clients = self._clients_for_platform(platform_key) if platform_key else []
+        self.generator_clients = list(clients)
+        self.generator_client_combo.configure(values=self.generator_clients)
+        current_client = self.generator_client_var.get().strip()
+        if current_client in self.generator_clients:
+            self.generator_client_var.set(current_client)
+            return
+        if self.generator_clients:
+            self.generator_client_var.set(self.generator_clients[0])
+            return
+        self.generator_client_var.set("")
+
+    @staticmethod
+    def _generator_schema_for_platform(platform_key: str) -> list[dict[str, object]]:
+        return list(GENERATOR_SCHEMAS.get(platform_key, []))
+
+    def _render_generator_fields(self, schema: list[dict[str, object]]) -> None:
+        for child in self.generator_fields_frame.winfo_children():
+            child.destroy()
+        self.generator_dynamic_entries = []
+        self.generator_dynamic_combos = []
+        self.generator_field_vars = {}
+
+        if not schema:
+            ttk.Label(
+                self.generator_fields_frame,
+                text="Plataforma sem parametros adicionais.",
+                style="Field.TLabel",
+            ).grid(row=0, column=0, sticky=tk.W, padx=(0, 8), pady=2)
+            return
+
+        for index, field in enumerate(schema):
+            row = index * 2
+            name = str(field.get("name") or "").strip()
+            if not name:
+                continue
+            label = str(field.get("label") or name).strip()
+            kind = str(field.get("kind") or "text").strip().lower()
+            default_value = str(field.get("default") or "").strip()
+            required = bool(field.get("required"))
+            help_text = str(field.get("help") or "").strip()
+
+            ttk.Label(
+                self.generator_fields_frame,
+                text=f"{label} *" if required else label,
+                style="Field.TLabel",
+            ).grid(row=row, column=0, sticky=tk.W, padx=(0, 8), pady=2)
+
+            if kind == "bool":
+                var = tk.StringVar(value=default_value or "Nao")
+                combo = ttk.Combobox(
+                    self.generator_fields_frame,
+                    textvariable=var,
+                    values=["Sim", "Nao"],
+                    state="readonly",
+                    style="Dark.TCombobox",
+                    width=22,
+                )
+                combo.grid(row=row, column=1, sticky=tk.EW, pady=2)
+                self.generator_dynamic_combos.append(combo)
+                self.generator_field_vars[name] = var
+                var.trace_add("write", lambda *_: self._update_generate_link_button_state())
+                if help_text:
+                    ttk.Label(
+                        self.generator_fields_frame,
+                        text=help_text,
+                        style="Field.TLabel",
+                        wraplength=420,
+                        justify=tk.LEFT,
+                    ).grid(row=row + 1, column=1, sticky=tk.W, pady=(0, 2))
+                continue
+
+            var = tk.StringVar(value=default_value)
+            show_char = "*" if bool(field.get("secret")) else ""
+            entry = ttk.Entry(
+                self.generator_fields_frame,
+                textvariable=var,
+                style="Dark.TEntry",
+                show=show_char,
+            )
+            entry.grid(row=row, column=1, sticky=tk.EW, pady=2)
+            self.generator_dynamic_entries.append(entry)
+            self.generator_field_vars[name] = var
+            var.trace_add("write", lambda *_: self._update_generate_link_button_state())
+            if help_text:
+                ttk.Label(
+                    self.generator_fields_frame,
+                    text=help_text,
+                    style="Field.TLabel",
+                    wraplength=420,
+                    justify=tk.LEFT,
+                ).grid(row=row + 1, column=1, sticky=tk.W, pady=(0, 2))
+
+        self.generator_fields_frame.columnconfigure(0, minsize=180, weight=0)
+        self.generator_fields_frame.columnconfigure(1, weight=1)
+
+    def _collect_generator_payload(self) -> dict[str, object]:
+        platform_label = self.generator_platform_var.get().strip()
+        platform_key = self.generator_platform_map.get(platform_label, "").strip()
+        if not platform_key:
+            raise ValueError("Selecione uma plataforma na aba Gerador.")
+
+        mode = self._generator_mode()
+        if mode == "new_client":
+            client_name = self.generator_client_name_var.get().strip()
+            if not client_name:
+                raise ValueError("Informe o nome do novo cliente para gerar o link.")
+        else:
+            client_name = self.generator_client_var.get().strip()
+            if not client_name:
+                raise ValueError("Selecione um cliente existente para gerar o link.")
+
+        gid = "".join(ch for ch in self.generator_gid_var.get().strip() if ch.isdigit())
+        if not gid:
+            raise ValueError("Informe o GID da aba do cliente (sheetId) com numeros validos.")
+
+        credentials: dict[str, object] = {}
+        for field in self.generator_field_specs:
+            name = str(field.get("name") or "").strip()
+            if not name:
+                continue
+            raw_value = self.generator_field_vars.get(name)
+            if raw_value is None:
+                continue
+
+            kind = str(field.get("kind") or "text").strip().lower()
+            required = bool(field.get("required"))
+            if kind == "bool":
+                credentials[name] = self._parse_yes_no(raw_value.get())
+                continue
+
+            value = str(raw_value.get() or "").strip()
+            if required and not value:
+                raise ValueError(f"Campo obrigatorio ausente: {name}")
+            if value:
+                credentials[name] = value
+
+        return {
+            "platform_key": platform_key,
+            "registration_mode": mode,
+            "client_name": client_name,
+            "gid": gid,
+            "credentials": credentials,
+        }
+
+    def generate_platform_link(self) -> None:
+        def task() -> None:
+            if self.remote_client is None:
+                raise ValueError("Conecte o servidor para usar o gerador.")
+
+            payload = self._collect_generator_payload()
+            try:
+                result = self.remote_client.generate_generator_link(payload)
+            except RemoteApiError as error:
+                message = str(error)
+                if "HTTP 404" in message and "Rota nao encontrada" in message:
+                    raise ValueError(
+                        "Servidor conectado sem suporte ao Gerador "
+                        "(/v1/generators/link). Atualize/reinicie o servidor para a versao com Gerador."
+                    ) from error
+                raise
+            authorization_url = str(result.get("authorization_url") or "").strip()
+            if not authorization_url:
+                raise ValueError("Resposta invalida do servidor: authorization_url ausente.")
+
+            expires_at = str(result.get("expires_at") or "").strip()
+            client_name = str(result.get("client_name") or payload.get("client_name") or "").strip()
+            platform_key = str(result.get("platform_key") or payload.get("platform_key") or "").strip()
+            self.log(
+                "Link gerado: "
+                f"plataforma={platform_key} | cliente={client_name} | expira={expires_at or '-'}"
+            )
+            self.root.after(0, lambda: self._set_generated_link(authorization_url))
+
+        self._run_task("Gerar link", task)
+
+    def _set_generated_link(self, url: str) -> None:
+        self.generator_link_var.set(str(url or "").strip())
+        self._update_generate_link_button_state()
+
+    def open_generated_link(self) -> None:
+        link = self.generator_link_var.get().strip()
+        if not link:
+            messagebox.showwarning("Gerador", "Nenhum link gerado para abrir.")
+            return
+        try:
+            self._open_path(link)
+            self.log("Link de autorizacao aberto no navegador.")
+        except Exception as error:  # noqa: BLE001
+            messagebox.showerror("Gerador", f"Nao foi possivel abrir o link.\n\n{error}")
+
+    def copy_generated_link(self) -> None:
+        link = self.generator_link_var.get().strip()
+        if not link:
+            messagebox.showwarning("Gerador", "Nenhum link gerado para copiar.")
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(link)
+        self.root.update()
+        self.log("Link de autorizacao copiado para a area de transferencia.")
 
     def _refresh_client_registration_platforms(self) -> None:
         available_platforms = [
@@ -2936,6 +3533,10 @@ class CFODesktopApp:
         self.client_registration_client_var.set("")
         self.client_registration_client_name_var.set("")
         self.client_registration_gid_var.set("")
+        self.generator_client_var.set("")
+        self.generator_client_name_var.set("")
+        self.generator_gid_var.set("")
+        self.generator_link_var.set("")
         self._load_initial_values()
 
     def _apply_remote_connection_in_ui_thread(
