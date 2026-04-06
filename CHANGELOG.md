@@ -1,3 +1,19 @@
+## [1.2.1] - 06-04-2026
+
+### Added
+- Nova aba `Gerador` no desktop, com fluxo por plataforma para geracao de links de autorizacao.
+- Suporte inicial no Gerador para `mercado_livre`, incluindo campo obrigatorio de `Alias/Filial`.
+- Novo endpoint autenticado `POST /v1/generators/link` para gerar URL de autorizacao OAuth.
+- Novo callback `GET /v1/oauth/mercado_livre/callback` para troca de `code` por tokens e cadastro automatico no servidor.
+- Novo modulo `link_generator` com controle de `state`, expiracao e validacoes de payload.
+
+### Changed
+- Fluxo de cadastro passou a suportar `new_client` sem exigir cliente preexistente na validacao de permissao.
+- Log de inicializacao do servidor passou a listar os endpoints novos do Gerador/OAuth.
+
+### Fixed
+- Mensagem de erro no desktop para servidor desatualizado sem rota `/v1/generators/link` (404), orientando atualizacao do servidor.
+
 ## [1.2.0] - 06-04-2026
 
 ### Added

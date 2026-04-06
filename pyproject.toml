@@ -1,6 +1,6 @@
 [project]
 name = "cfo-sync"
-version = "1.2.2"
+version = "1.2.1"
 description = "App local modular para coleta de APIs e exportacao para Google Sheets"
 requires-python = ">=3.11"
 
