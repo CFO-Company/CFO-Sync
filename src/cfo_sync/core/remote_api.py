@@ -41,6 +41,9 @@ class RemoteCFOClient:
             raise RemoteApiError("Resposta invalida ao criar job: sem job_id.")
         return job_id
 
+    def register_client(self, payload: dict[str, object]) -> dict[str, object]:
+        return self._request_json("POST", "/v1/clients", payload=payload)
+
     def get_job(self, job_id: str) -> dict[str, object]:
         return self._request_json("GET", f"/v1/jobs/{job_id}")
 

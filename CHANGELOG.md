@@ -1,10 +1,12 @@
-## [1.1.1] - 02-04-2026
+## [1.2.0] - 06-04-2026
 
 ### Added
-- 
+- Nova aba `Clientes` no desktop para cadastro de novas contas/credenciais em clientes ja existentes da plataforma, com formulario dinamico por plataforma e validacoes de campos obrigatorios (token/gid/ids).
+- Novo endpoint autenticado `POST /v1/clients` no servidor para persistir cadastro em `app_config.json` e arquivos de credenciais por plataforma usando `platform_key + client_name`.
 
 ### Changed
-- 
+- Catalogo remoto (`GET /v1/catalog`) passou a retornar plataformas mesmo sem clientes visiveis, permitindo preparar cadastro inicial pela aba `Clientes`.
+- Aba `Clientes` ganhou acao `Atualizar catalogo do servidor` para recarregar clientes/plataformas sem reiniciar o desktop.
 
 ### Fixed
 - Meta Ads: coleta de `Valor Gasto` passou a complementar residual por `adset` sobre o `level=ad`, corrigindo subcontagem recorrente no total exportado para Sheets.

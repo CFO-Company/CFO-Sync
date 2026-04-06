@@ -100,28 +100,46 @@ class CfoSyncHttpServer:
                 if policy is None:
                     return
 
-                if path != "/v1/jobs":
-                    self._write_json(HTTPStatus.NOT_FOUND, {"error": "Rota nao encontrada."})
+                if path == "/v1/jobs":
+                    payload = self._read_json_body()
+                    if payload is None:
+                        return
+
+                    job = server.jobs.enqueue(
+                        requested_by=policy.name,
+                        payload={
+                            "_policy_name": policy.name,
+                            "_request_payload": payload,
+                        },
+                    )
+                    self._write_json(
+                        HTTPStatus.ACCEPTED,
+                        {
+                            "job_id": job.id,
+                            "status": job.status,
+                        },
+                    )
                     return
 
-                payload = self._read_json_body()
-                if payload is None:
+                if path == "/v1/clients":
+                    payload = self._read_json_body()
+                    if payload is None:
+                        return
+                    try:
+                        result = server.service.register_client(payload, policy=policy)
+                    except PermissionError as error:
+                        self._write_json(HTTPStatus.FORBIDDEN, {"error": str(error)})
+                        return
+                    except (ValueError, FileNotFoundError) as error:
+                        self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+                        return
+                    except Exception as error:  # noqa: BLE001
+                        self._write_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error)})
+                        return
+                    self._write_json(HTTPStatus.CREATED, result)
                     return
 
-                job = server.jobs.enqueue(
-                    requested_by=policy.name,
-                    payload={
-                        "_policy_name": policy.name,
-                        "_request_payload": payload,
-                    },
-                )
-                self._write_json(
-                    HTTPStatus.ACCEPTED,
-                    {
-                        "job_id": job.id,
-                        "status": job.status,
-                    },
-                )
+                self._write_json(HTTPStatus.NOT_FOUND, {"error": "Rota nao encontrada."})
 
             def _require_auth(self) -> AccessTokenPolicy | None:
                 header = str(self.headers.get("Authorization") or "").strip()

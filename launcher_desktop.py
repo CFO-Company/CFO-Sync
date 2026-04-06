@@ -93,6 +93,183 @@ class PlatformChoice:
     resource_name: str
 
 
+CLIENT_REGISTRATION_SCHEMAS: dict[str, list[dict[str, object]]] = {
+    "yampi": [
+        {
+            "name": "alias",
+            "label": "Alias",
+            "required": True,
+            "help": "Nome do subcliente/loja que aparecera na selecao de Pedidos.",
+        },
+        {
+            "name": "user_token",
+            "label": "User token",
+            "required": True,
+            "secret": True,
+            "help": "Token da API da conta Yampi.",
+        },
+        {
+            "name": "user_secret_key",
+            "label": "User secret key",
+            "required": True,
+            "secret": True,
+            "help": "Secret key da API da conta Yampi.",
+        },
+        {
+            "name": "sku_gid",
+            "label": "GID da aba SKU (opcional)",
+            "required": False,
+            "resource_gid": "sku",
+            "help": "sheetId da aba SKU para este cliente (nao e o ID da planilha).",
+        },
+    ],
+    "mercado_livre": [
+        {"name": "client_id", "label": "Client ID", "required": True, "help": "ID do app Mercado Livre."},
+        {
+            "name": "client_secret",
+            "label": "Client secret",
+            "required": True,
+            "secret": True,
+            "help": "Secret do app Mercado Livre.",
+        },
+        {
+            "name": "access_token",
+            "label": "Access token",
+            "required": True,
+            "secret": True,
+            "help": "Token de acesso atual.",
+        },
+        {
+            "name": "refresh_token",
+            "label": "Refresh token",
+            "required": True,
+            "secret": True,
+            "help": "Token de renovacao.",
+        },
+        {
+            "name": "account_alias",
+            "label": "Alias/Filial",
+            "required": False,
+            "help": "Alias da conta dentro do cliente selecionado.",
+        },
+        {"name": "user_id", "label": "User ID (opcional)", "required": False, "help": "ID do vendedor."},
+    ],
+    "meta_ads": [
+        {
+            "name": "business_manager_name",
+            "label": "Business manager",
+            "required": True,
+            "help": "Nome do BM da conta.",
+        },
+        {
+            "name": "ad_account_name",
+            "label": "Conta de anuncio",
+            "required": True,
+            "help": "Nome da conta de anuncio.",
+        },
+        {"name": "account_id", "label": "Account ID", "required": True, "help": "ID numerico da conta."},
+        {
+            "name": "cost_center",
+            "label": "Centro de custo (opcional)",
+            "required": False,
+            "help": "Centro de custo interno.",
+        },
+    ],
+    "google_ads": [
+        {
+            "name": "account_name",
+            "label": "Nome da conta",
+            "required": True,
+            "help": "Nome da conta Google Ads.",
+        },
+        {
+            "name": "customer_id",
+            "label": "Customer ID",
+            "required": True,
+            "help": "ID da conta (aceita com ou sem pontuacao).",
+        },
+        {
+            "name": "cost_center",
+            "label": "Centro de custo (opcional)",
+            "required": False,
+            "help": "Centro de custo interno.",
+        },
+        {"name": "manager_account_name", "label": "MCC (opcional)", "required": False, "help": "Nome do MCC."},
+    ],
+    "tiktok_ads": [
+        {
+            "name": "account_name",
+            "label": "Nome da conta",
+            "required": True,
+            "help": "Nome da conta TikTok Ads.",
+        },
+        {"name": "advertiser_id", "label": "Advertiser ID", "required": True, "help": "ID numerico da conta."},
+        {
+            "name": "cost_center",
+            "label": "Centro de custo (opcional)",
+            "required": False,
+            "help": "Centro de custo interno.",
+        },
+        {
+            "name": "business_center_name",
+            "label": "Business center (opcional)",
+            "required": False,
+            "help": "Nome do business center.",
+        },
+        {
+            "name": "access_token",
+            "label": "Access token (opcional)",
+            "required": False,
+            "secret": True,
+            "help": "Token especifico da conta (opcional).",
+        },
+    ],
+    "__omie__": [
+        {
+            "name": "alias",
+            "label": "Alias",
+            "required": True,
+            "help": "Nome da filial/alias para o cliente.",
+        },
+        {"name": "app_key", "label": "App key", "required": True, "secret": True, "help": "App key da Omie."},
+        {
+            "name": "app_secret",
+            "label": "App secret",
+            "required": True,
+            "secret": True,
+            "help": "App secret da Omie.",
+        },
+        {
+            "name": "app_name",
+            "label": "App name (opcional)",
+            "required": False,
+            "help": "Nome amigavel da integracao.",
+        },
+        {
+            "name": "include_accounts_payable",
+            "label": "Incluir contas a pagar",
+            "required": True,
+            "kind": "bool",
+            "default": "Sim",
+            "help": "Ativa coleta de contas a pagar para este alias.",
+        },
+        {
+            "name": "include_accounts_receivable",
+            "label": "Incluir contas a receber",
+            "required": True,
+            "kind": "bool",
+            "default": "Sim",
+            "help": "Ativa coleta de contas a receber para este alias.",
+        },
+    ],
+}
+
+CLIENT_REGISTRATION_MODE_OPTIONS: list[tuple[str, str]] = [
+    ("Nova filial/alias (cliente existente)", "existing_client"),
+    ("Novo cliente (cadastro completo)", "new_client"),
+]
+
+
 def _empty_app_config() -> AppConfig:
     return AppConfig(
         database_path=data_dir() / "cfo_sync.db",
@@ -140,6 +317,18 @@ class CFODesktopApp:
         self.server_url_var = tk.StringVar(value="")
         self.server_token_var = tk.StringVar(value="")
         self.server_status_var = tk.StringVar(value="Servidor desconectado")
+        self.client_registration_mode_var = tk.StringVar()
+        self.client_registration_platform_var = tk.StringVar()
+        self.client_registration_client_var = tk.StringVar()
+        self.client_registration_client_name_var = tk.StringVar()
+        self.client_registration_gid_var = tk.StringVar()
+        self.client_registration_mode_map: dict[str, str] = {}
+        self.client_registration_platform_map: dict[str, str] = {}
+        self.client_registration_clients: list[str] = []
+        self.client_registration_field_specs: list[dict[str, object]] = []
+        self.client_registration_field_vars: dict[str, tk.Variable] = {}
+        self.client_registration_dynamic_entries: list[ttk.Entry] = []
+        self.client_registration_dynamic_combos: list[ttk.Combobox] = []
         self._date_picker_window: tk.Toplevel | None = None
         self._date_picker_month_label_var = tk.StringVar()
         self._date_picker_hint_var = tk.StringVar()
@@ -656,10 +845,12 @@ class CFODesktopApp:
         self.tabs.pack(fill=tk.BOTH, expand=True)
 
         config_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
+        self.clients_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
         self.sku_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
         self.settings_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
 
         self.tabs.add(config_tab, text="Pedidos")
+        self.tabs.add(self.clients_tab, text="Clientes")
         self.tabs.add(self.sku_tab, text="SKU")
         self.tabs.add(self.settings_tab, text="Configurações")
 
@@ -819,6 +1010,138 @@ class CFODesktopApp:
 
         config_tab.rowconfigure(3, weight=1)
         config_tab.columnconfigure(1, weight=1)
+
+        ttk.Label(self.clients_tab, text="Clientes", style="CardTitle.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 12)
+        )
+        ttk.Label(
+            self.clients_tab,
+            text=(
+                "Escolha o tipo de cadastro, selecione a plataforma e preencha os campos. "
+                "Use o GID da aba (sheetId)."
+            ),
+            style="Field.TLabel",
+        ).grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(0, 8))
+
+        selectors_row = ttk.Frame(self.clients_tab, style="Card.TFrame")
+        selectors_row.grid(row=2, column=0, columnspan=2, sticky=tk.EW, pady=compact_pady)
+        selectors_row.columnconfigure(1, weight=1)
+        selectors_row.columnconfigure(3, weight=1)
+
+        ttk.Label(selectors_row, text="Tipo de cadastro", style="Field.TLabel").grid(
+            row=0, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
+        )
+        self.client_registration_mode_combo = ttk.Combobox(
+            selectors_row,
+            textvariable=self.client_registration_mode_var,
+            state="readonly",
+            style="Dark.TCombobox",
+            width=field_width,
+        )
+        self.client_registration_mode_combo.grid(
+            row=0,
+            column=1,
+            columnspan=3,
+            sticky=tk.EW,
+            pady=compact_pady,
+        )
+
+        ttk.Label(selectors_row, text="Plataforma", style="Field.TLabel").grid(
+            row=1, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
+        )
+        self.client_registration_platform_combo = ttk.Combobox(
+            selectors_row,
+            textvariable=self.client_registration_platform_var,
+            state="readonly",
+            style="Dark.TCombobox",
+            width=field_width,
+        )
+        self.client_registration_platform_combo.grid(
+            row=1,
+            column=1,
+            sticky=tk.EW,
+            pady=compact_pady,
+            padx=(0, 12),
+        )
+
+        self.client_registration_client_label = ttk.Label(
+            selectors_row,
+            text="Cliente",
+            style="Field.TLabel",
+        )
+        self.client_registration_client_label.grid(
+            row=1,
+            column=2,
+            sticky=tk.W,
+            padx=compact_padx,
+            pady=compact_pady,
+        )
+        self.client_registration_client_combo = ttk.Combobox(
+            selectors_row,
+            textvariable=self.client_registration_client_var,
+            state="readonly",
+            style="Dark.TCombobox",
+            width=field_width,
+        )
+        self.client_registration_client_combo.grid(
+            row=1,
+            column=3,
+            sticky=tk.EW,
+            pady=compact_pady,
+        )
+        self.client_registration_client_entry = ttk.Entry(
+            selectors_row,
+            textvariable=self.client_registration_client_name_var,
+            style="Dark.TEntry",
+            width=field_width,
+        )
+        self.client_registration_client_entry.grid(
+            row=1,
+            column=3,
+            sticky=tk.EW,
+            pady=compact_pady,
+        )
+        self.client_registration_client_entry.grid_remove()
+
+        ttk.Label(self.clients_tab, text="GID da aba do cliente", style="Field.TLabel").grid(
+            row=3, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
+        )
+        self.client_registration_gid_entry = ttk.Entry(
+            self.clients_tab,
+            textvariable=self.client_registration_gid_var,
+            style="Dark.TEntry",
+            width=field_width,
+        )
+        self.client_registration_gid_entry.grid(row=3, column=1, sticky=tk.EW, pady=compact_pady)
+
+        ttk.Label(self.clients_tab, text="Credenciais", style="Field.TLabel").grid(
+            row=4, column=0, sticky=tk.NW, padx=compact_padx, pady=compact_pady
+        )
+        self.client_registration_fields_frame = ttk.Frame(self.clients_tab, style="Card.TFrame")
+        self.client_registration_fields_frame.grid(row=4, column=1, sticky=tk.NSEW, pady=compact_pady)
+        self.client_registration_fields_frame.columnconfigure(1, weight=1)
+
+        clients_actions = ttk.Frame(self.clients_tab, style="Card.TFrame")
+        clients_actions.grid(row=5, column=1, sticky=tk.E, pady=(6, 0))
+
+        self.btn_register_client = ttk.Button(
+            clients_actions,
+            text="Registrar cliente",
+            style="Secondary.TButton",
+            command=self.register_client,
+        )
+        self.btn_register_client.pack(side=tk.RIGHT)
+
+        self.btn_refresh_catalog = ttk.Button(
+            clients_actions,
+            text="Atualizar catalogo",
+            style="Secondary.TButton",
+            command=self.refresh_remote_catalog,
+        )
+        self.btn_refresh_catalog.pack(side=tk.RIGHT, padx=(0, 8))
+
+        self.clients_tab.columnconfigure(1, weight=1)
+        self.clients_tab.rowconfigure(4, weight=1)
 
         self.sku_tab.rowconfigure(3, weight=1)
         self.sku_tab.columnconfigure(0, weight=1)
@@ -1097,6 +1420,22 @@ class CFODesktopApp:
     def _bind_events(self) -> None:
         self.platform_combo.bind("<<ComboboxSelected>>", lambda _event: self.on_platform_change())
         self.client_combo.bind("<<ComboboxSelected>>", lambda _event: self.on_client_change())
+        self.client_registration_mode_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._on_client_registration_mode_change(),
+        )
+        self.client_registration_platform_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._on_client_registration_platform_change(),
+        )
+        self.client_registration_client_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._update_register_client_button_state(),
+        )
+        self.client_registration_client_entry.bind(
+            "<KeyRelease>",
+            lambda _event: self._update_register_client_button_state(),
+        )
         self.sub_client_listbox.bind("<<ListboxSelect>>", lambda _event: self._update_sub_client_summary())
         self.notification_sound_combo.bind(
             "<<ComboboxSelected>>",
@@ -1475,9 +1814,19 @@ class CFODesktopApp:
             self._refresh_date_picker_grid()
 
     def _load_initial_values(self) -> None:
+        self._refresh_client_registration_modes()
+        self._refresh_client_registration_platforms()
         if not self.platform_choices:
-            self.status_var.set("Sem plataformas configuradas")
-            self.log("Nenhuma plataforma/remoto carregado. Conecte o servidor na aba Configuracoes.")
+            if self.config.platforms:
+                self.status_var.set("Sem clientes para Pedidos")
+                self.log(
+                    "Catalogo carregado sem clientes disponiveis para a aba Pedidos. "
+                    "Use a aba Clientes para novo cadastro."
+                )
+            else:
+                self.status_var.set("Sem plataformas configuradas")
+                self.log("Nenhuma plataforma/remoto carregado. Conecte o servidor na aba Configuracoes.")
+            self._update_register_client_button_state()
             return
 
         first = self.platform_choices[0]
@@ -1485,6 +1834,7 @@ class CFODesktopApp:
         self.on_platform_change()
         self._refresh_notification_sounds(preserve_current=False)
         self._update_export_sku_button_state()
+        self._update_register_client_button_state()
 
     def _ensure_sounds_directory(self) -> None:
         try:
@@ -1823,6 +2173,17 @@ class CFODesktopApp:
             self.btn_search_sku.configure(state=tk.DISABLED)
             self.sku_order_entry.configure(state=tk.DISABLED)
             self.btn_pick_period.configure(state=tk.DISABLED)
+            self.client_registration_mode_combo.configure(state=tk.DISABLED)
+            self.client_registration_platform_combo.configure(state=tk.DISABLED)
+            self.client_registration_client_combo.configure(state=tk.DISABLED)
+            self.client_registration_client_entry.configure(state=tk.DISABLED)
+            self.client_registration_gid_entry.configure(state=tk.DISABLED)
+            self.btn_register_client.configure(state=tk.DISABLED, cursor="no")
+            self.btn_refresh_catalog.configure(state=tk.DISABLED)
+            for entry in self.client_registration_dynamic_entries:
+                entry.configure(state=tk.DISABLED)
+            for combo in self.client_registration_dynamic_combos:
+                combo.configure(state=tk.DISABLED)
             return
 
         self.btn_collect.configure(state=tk.NORMAL)
@@ -1846,6 +2207,7 @@ class CFODesktopApp:
         self.btn_search_sku.configure(state=sku_state)
         self.sku_order_entry.configure(state=sku_state)
         self.btn_pick_period.configure(state=tk.NORMAL)
+        self._sync_client_registration_input_states()
 
     def _run_task(self, action_name: str, target) -> None:
         if self.busy:
@@ -1870,6 +2232,7 @@ class CFODesktopApp:
         if self.busy:
             return
         self._update_export_sku_button_state()
+        self._update_register_client_button_state()
 
     def _platform_supports_sku_workflow(self) -> bool:
         choice = self.choice_by_label.get(self.platform_var.get())
@@ -1896,6 +2259,71 @@ class CFODesktopApp:
             self.btn_export_sku.configure(state=tk.NORMAL, cursor="hand2")
             return
         self.btn_export_sku.configure(state=tk.DISABLED, cursor="no")
+
+    def _sync_client_registration_input_states(self) -> None:
+        if self.busy:
+            return
+        registration_enabled = self.remote_client is not None
+        registration_mode_state = (
+            "readonly"
+            if registration_enabled and self.client_registration_mode_map
+            else tk.DISABLED
+        )
+        self.client_registration_mode_combo.configure(state=registration_mode_state)
+        registration_platform_state = (
+            "readonly"
+            if registration_enabled and self.client_registration_platform_map
+            else tk.DISABLED
+        )
+        self.client_registration_platform_combo.configure(state=registration_platform_state)
+
+        mode = self._client_registration_mode()
+        if mode == "new_client":
+            self.client_registration_client_combo.configure(state=tk.DISABLED)
+            self.client_registration_client_entry.configure(
+                state=tk.NORMAL if registration_enabled else tk.DISABLED
+            )
+        else:
+            registration_client_state = (
+                "readonly"
+                if registration_enabled and bool(self.client_registration_clients)
+                else tk.DISABLED
+            )
+            self.client_registration_client_combo.configure(state=registration_client_state)
+            self.client_registration_client_entry.configure(state=tk.DISABLED)
+
+        registration_entry_state = tk.NORMAL if registration_enabled else tk.DISABLED
+        self.client_registration_gid_entry.configure(state=registration_entry_state)
+        for entry in self.client_registration_dynamic_entries:
+            entry.configure(state=registration_entry_state)
+        for combo in self.client_registration_dynamic_combos:
+            combo.configure(state="readonly" if registration_enabled else tk.DISABLED)
+        self.btn_refresh_catalog.configure(
+            state=tk.NORMAL if registration_enabled else tk.DISABLED
+        )
+
+    def _update_register_client_button_state(self) -> None:
+        has_platform = bool(
+            self.client_registration_platform_map.get(
+                self.client_registration_platform_var.get().strip(),
+                "",
+            )
+        )
+        mode = self._client_registration_mode()
+        if mode == "new_client":
+            has_client = bool(self.client_registration_client_name_var.get().strip())
+        else:
+            has_client = bool(self.client_registration_client_var.get().strip())
+        can_register = has_platform and has_client and self.remote_client is not None and not self.busy
+        self.btn_register_client.configure(
+            state=tk.NORMAL if can_register else tk.DISABLED,
+            cursor="hand2" if can_register else "no",
+        )
+
+    def _client_registration_mode(self) -> str:
+        mode_label = self.client_registration_mode_var.get().strip()
+        mode = self.client_registration_mode_map.get(mode_label, "").strip()
+        return mode or "existing_client"
 
     def _get_current_choice(self) -> PlatformChoice:
         choice = self.choice_by_label.get(self.platform_var.get())
@@ -2150,6 +2578,327 @@ class CFODesktopApp:
 
         self.sub_client_summary_var.set(f"{selected_count} selecionadas")
 
+    def _refresh_client_registration_modes(self) -> None:
+        labels = [label for label, _mode in CLIENT_REGISTRATION_MODE_OPTIONS]
+        mapping = {label: mode for label, mode in CLIENT_REGISTRATION_MODE_OPTIONS}
+        current_label = self.client_registration_mode_var.get().strip()
+
+        self.client_registration_mode_map = mapping
+        self.client_registration_mode_combo.configure(values=labels)
+
+        if current_label in mapping:
+            self.client_registration_mode_var.set(current_label)
+        elif labels:
+            self.client_registration_mode_var.set(labels[0])
+        else:
+            self.client_registration_mode_var.set("")
+
+    def _on_client_registration_mode_change(self) -> None:
+        mode = self._client_registration_mode()
+        if mode == "new_client":
+            self.client_registration_client_label.configure(text="Novo cliente")
+            self.client_registration_client_combo.grid_remove()
+            self.client_registration_client_entry.grid()
+        else:
+            self.client_registration_client_label.configure(text="Cliente")
+            self.client_registration_client_entry.grid_remove()
+            self.client_registration_client_combo.grid()
+        self._sync_client_registration_input_states()
+        self._update_register_client_button_state()
+
+    def _refresh_client_registration_platforms(self) -> None:
+        available_platforms = [
+            platform
+            for platform in self.config.platforms
+            if platform.key.startswith("omie") or platform.key in CLIENT_REGISTRATION_SCHEMAS
+        ]
+
+        options: list[str] = []
+        mapping: dict[str, str] = {}
+        repeated_labels: set[str] = set()
+
+        for platform in available_platforms:
+            label = str(platform.label or platform.key).strip() or platform.key
+            if label in mapping:
+                repeated_labels.add(label)
+                continue
+            mapping[label] = platform.key
+            options.append(label)
+
+        if repeated_labels:
+            options = []
+            mapping = {}
+            for platform in available_platforms:
+                base_label = str(platform.label or platform.key).strip() or platform.key
+                label = base_label if base_label not in repeated_labels else f"{base_label} ({platform.key})"
+                mapping[label] = platform.key
+                options.append(label)
+
+        current_label = self.client_registration_platform_var.get().strip()
+        self.client_registration_platform_map = mapping
+        self.client_registration_platform_combo.configure(values=options)
+
+        if not options:
+            self.client_registration_platform_var.set("")
+            self.client_registration_clients = []
+            self.client_registration_client_var.set("")
+            self.client_registration_client_combo.configure(values=[])
+            self.client_registration_field_specs = []
+            self.client_registration_field_vars = {}
+            self._render_client_registration_fields([])
+            self._sync_client_registration_input_states()
+            self._update_register_client_button_state()
+            return
+
+        if current_label in mapping:
+            self.client_registration_platform_var.set(current_label)
+        else:
+            self.client_registration_platform_var.set(options[0])
+        self._on_client_registration_platform_change()
+        self._on_client_registration_mode_change()
+        self._sync_client_registration_input_states()
+
+    def _on_client_registration_platform_change(self) -> None:
+        platform_key = self.client_registration_platform_map.get(
+            self.client_registration_platform_var.get().strip(),
+            "",
+        )
+        self._refresh_client_registration_clients(platform_key)
+        schema = self._client_registration_schema_for_platform(platform_key)
+        self.client_registration_field_specs = schema
+        self._render_client_registration_fields(schema)
+        self._sync_client_registration_input_states()
+        self._update_register_client_button_state()
+
+    def _refresh_client_registration_clients(self, platform_key: str) -> None:
+        clients = self._clients_for_platform(platform_key) if platform_key else []
+        self.client_registration_clients = list(clients)
+        self.client_registration_client_combo.configure(values=self.client_registration_clients)
+        current_client = self.client_registration_client_var.get().strip()
+        if current_client in self.client_registration_clients:
+            self.client_registration_client_var.set(current_client)
+            return
+        if self.client_registration_clients:
+            self.client_registration_client_var.set(self.client_registration_clients[0])
+            return
+        self.client_registration_client_var.set("")
+
+    @staticmethod
+    def _client_registration_schema_for_platform(platform_key: str) -> list[dict[str, object]]:
+        if platform_key.startswith("omie"):
+            return list(CLIENT_REGISTRATION_SCHEMAS["__omie__"])
+        return list(CLIENT_REGISTRATION_SCHEMAS.get(platform_key, []))
+
+    def _render_client_registration_fields(self, schema: list[dict[str, object]]) -> None:
+        for child in self.client_registration_fields_frame.winfo_children():
+            child.destroy()
+        self.client_registration_dynamic_entries = []
+        self.client_registration_dynamic_combos = []
+        self.client_registration_field_vars = {}
+
+        if not schema:
+            ttk.Label(
+                self.client_registration_fields_frame,
+                text="Plataforma sem campos extras obrigatorios.",
+                style="Field.TLabel",
+            ).grid(row=0, column=0, sticky=tk.W, padx=(0, 8), pady=2)
+            return
+
+        for index, field in enumerate(schema):
+            row = index * 2
+            name = str(field.get("name") or "").strip()
+            if not name:
+                continue
+            label = str(field.get("label") or name).strip()
+            kind = str(field.get("kind") or "text").strip().lower()
+            default_value = str(field.get("default") or "").strip()
+            required = bool(field.get("required"))
+            help_text = str(field.get("help") or "").strip()
+
+            ttk.Label(
+                self.client_registration_fields_frame,
+                text=f"{label} *" if required else label,
+                style="Field.TLabel",
+            ).grid(row=row, column=0, sticky=tk.W, padx=(0, 8), pady=2)
+
+            if kind == "bool":
+                var = tk.StringVar(value=default_value or "Nao")
+                combo = ttk.Combobox(
+                    self.client_registration_fields_frame,
+                    textvariable=var,
+                    values=["Sim", "Nao"],
+                    state="readonly",
+                    style="Dark.TCombobox",
+                    width=22,
+                )
+                combo.grid(row=row, column=1, sticky=tk.EW, pady=2)
+                self.client_registration_dynamic_combos.append(combo)
+                self.client_registration_field_vars[name] = var
+                if help_text:
+                    ttk.Label(
+                        self.client_registration_fields_frame,
+                        text=help_text,
+                        style="Field.TLabel",
+                        wraplength=420,
+                        justify=tk.LEFT,
+                    ).grid(row=row + 1, column=1, sticky=tk.W, pady=(0, 2))
+                continue
+
+            var = tk.StringVar(value=default_value)
+            show_char = "*" if bool(field.get("secret")) else ""
+            entry = ttk.Entry(
+                self.client_registration_fields_frame,
+                textvariable=var,
+                style="Dark.TEntry",
+                show=show_char,
+            )
+            entry.grid(row=row, column=1, sticky=tk.EW, pady=2)
+            self.client_registration_dynamic_entries.append(entry)
+            self.client_registration_field_vars[name] = var
+            if help_text:
+                ttk.Label(
+                    self.client_registration_fields_frame,
+                    text=help_text,
+                    style="Field.TLabel",
+                    wraplength=420,
+                    justify=tk.LEFT,
+                ).grid(row=row + 1, column=1, sticky=tk.W, pady=(0, 2))
+
+        self.client_registration_fields_frame.columnconfigure(0, minsize=180, weight=0)
+        self.client_registration_fields_frame.columnconfigure(1, weight=1)
+
+    def _collect_client_registration_payload(self) -> dict[str, object]:
+        platform_label = self.client_registration_platform_var.get().strip()
+        platform_key = self.client_registration_platform_map.get(platform_label, "").strip()
+        if not platform_key:
+            raise ValueError("Selecione uma plataforma na aba Clientes.")
+
+        registration_mode = self._client_registration_mode()
+        if registration_mode == "new_client":
+            client_name = self.client_registration_client_name_var.get().strip()
+            if not client_name:
+                raise ValueError("Informe o nome do novo cliente.")
+        else:
+            client_name = self.client_registration_client_var.get().strip()
+            if not client_name:
+                raise ValueError("Selecione um cliente existente para cadastrar a nova conta/credencial.")
+
+        gid = "".join(ch for ch in self.client_registration_gid_var.get().strip() if ch.isdigit())
+        if not gid:
+            raise ValueError("Informe o GID da aba do cliente (sheetId) com numeros validos.")
+
+        credentials: dict[str, object] = {}
+        resource_gids: dict[str, str] = {}
+
+        for field in self.client_registration_field_specs:
+            name = str(field.get("name") or "").strip()
+            if not name:
+                continue
+
+            raw_value = self.client_registration_field_vars.get(name)
+            if raw_value is None:
+                continue
+
+            kind = str(field.get("kind") or "text").strip().lower()
+            required = bool(field.get("required"))
+            resource_gid_for = str(field.get("resource_gid") or "").strip()
+
+            if kind == "bool":
+                parsed_bool = self._parse_yes_no(raw_value.get())
+                credentials[name] = parsed_bool
+                continue
+
+            value = str(raw_value.get() or "").strip()
+            if required and not value:
+                raise ValueError(f"Campo obrigatorio ausente: {name}")
+            if not value:
+                continue
+
+            if resource_gid_for:
+                cleaned_gid = "".join(ch for ch in value if ch.isdigit())
+                if not cleaned_gid:
+                    raise ValueError(
+                        f"GID de aba invalido para recurso '{resource_gid_for}'."
+                    )
+                resource_gids[resource_gid_for] = cleaned_gid
+                continue
+
+            credentials[name] = value
+
+        payload: dict[str, object] = {
+            "registration_mode": registration_mode,
+            "platform_key": platform_key,
+            "client_name": client_name,
+            "gid": gid,
+            "credentials": credentials,
+        }
+        if resource_gids:
+            payload["resource_gids"] = resource_gids
+        return payload
+
+    @staticmethod
+    def _parse_yes_no(value: object) -> bool:
+        normalized = str(value or "").strip().casefold()
+        return normalized in {"sim", "true", "1", "yes", "y"}
+
+    def register_client(self) -> None:
+        def task() -> None:
+            payload = self._collect_client_registration_payload()
+            registration_mode = str(payload.get("registration_mode") or "").strip() or "existing_client"
+            platform_key = str(payload.get("platform_key") or "").strip()
+            client_name = str(payload.get("client_name") or "").strip()
+
+            if self.remote_client is None:
+                raise ValueError("Conecte o servidor na aba Configuracoes para cadastrar clientes.")
+
+            result = self.remote_client.register_client(payload)
+            updated_resources_raw = result.get("updated_resources")
+            updated_resources: list[str] = []
+            if isinstance(updated_resources_raw, list):
+                updated_resources = [str(item).strip() for item in updated_resources_raw if str(item).strip()]
+            resources_label = ", ".join(updated_resources) if updated_resources else "-"
+            mode_label = (
+                "novo_cliente" if registration_mode == "new_client" else "filial_alias"
+            )
+            self.log(
+                "Cliente cadastrado: "
+                f"tipo={mode_label} | plataforma={platform_key} | cliente={client_name} "
+                f"| recursos={resources_label}"
+            )
+
+            catalog = self.remote_client.fetch_catalog()
+            self._apply_remote_connection_in_ui_thread(self.remote_client, catalog)
+
+            self.root.after(0, self._reset_client_registration_form)
+            self.root.after(
+                0,
+                lambda: messagebox.showinfo(
+                    "Clientes",
+                    (
+                        f"Cadastro salvo no servidor para cliente '{client_name}' "
+                        f"em '{platform_key}'."
+                    ),
+                ),
+            )
+
+        self._run_task("Cadastro de cliente", task)
+
+    def refresh_remote_catalog(self) -> None:
+        def task() -> None:
+            if self.remote_client is None:
+                raise ValueError("Conecte o servidor na aba Configuracoes para atualizar o catalogo.")
+            catalog = self.remote_client.fetch_catalog()
+            self._apply_remote_connection_in_ui_thread(self.remote_client, catalog)
+            self.log("Catalogo remoto atualizado a partir do servidor.")
+
+        self._run_task("Atualizar catalogo", task)
+
+    def _reset_client_registration_form(self) -> None:
+        self.client_registration_gid_var.set("")
+        self.client_registration_client_name_var.set("")
+        self._on_client_registration_platform_change()
+        self._on_client_registration_mode_change()
+
     def _set_default_dates_current_month(self) -> None:
         today = date.today()
         self._set_period_dates(today.replace(day=1), today)
@@ -2184,6 +2933,9 @@ class CFODesktopApp:
         self.client_var.set("")
         self._set_sub_client_options([])
         self._clear_sku_preview()
+        self.client_registration_client_var.set("")
+        self.client_registration_client_name_var.set("")
+        self.client_registration_gid_var.set("")
         self._load_initial_values()
 
     def _apply_remote_connection_in_ui_thread(

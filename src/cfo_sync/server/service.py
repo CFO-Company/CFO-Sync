@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import RLock
 from typing import Callable
 
+from cfo_sync.core.client_registration import ClientRegistrationManager
 from cfo_sync.core.config_loader import load_app_config
-from cfo_sync.core.models import AppConfig
 from cfo_sync.core.pipeline import SyncPipeline
 from cfo_sync.platforms.ui_registry import build_platform_ui_registry
 from cfo_sync.server.access import AccessTokenPolicy
@@ -15,7 +16,12 @@ from cfo_sync.version import __version__
 class CfoSyncServerService:
     def __init__(self, config_path: Path) -> None:
         self.config_path = config_path
-        self.config = load_app_config(config_path)
+        self._state_lock = RLock()
+        self.registration_manager = ClientRegistrationManager(config_path)
+        self._reload_state_locked()
+
+    def _reload_state_locked(self) -> None:
+        self.config = load_app_config(self.config_path)
         self.platform_ui_registry = build_platform_ui_registry(self.config)
 
     def health_payload(self) -> dict[str, object]:
@@ -26,12 +32,16 @@ class CfoSyncServerService:
         }
 
     def build_catalog(self, policy: AccessTokenPolicy) -> dict[str, object]:
+        with self._state_lock:
+            config = self.config
+            platform_ui_registry = self.platform_ui_registry
+
         platforms: list[dict[str, object]] = []
-        for platform in self.config.platforms:
+        for platform in config.platforms:
             if not policy.allows_platform(platform.key):
                 continue
 
-            behavior = self.platform_ui_registry.get(platform.key)
+            behavior = platform_ui_registry.get(platform.key)
             clients = list(platform.clients)
             if behavior is not None:
                 try:
@@ -56,9 +66,6 @@ class CfoSyncServerService:
                         "sub_clients": sub_clients,
                     }
                 )
-
-            if not visible_clients:
-                continue
 
             resources = [
                 {
@@ -99,7 +106,10 @@ class CfoSyncServerService:
         self._validate_access(policy, platform_key, client)
         log(f"Executando action={action} platform={platform_key} client={client}")
 
-        pipeline = SyncPipeline(self.config)
+        with self._state_lock:
+            config = self.config
+
+        pipeline = SyncPipeline(config)
         if action == "collect":
             count = pipeline.collect(
                 platform_key=platform_key,
@@ -134,6 +144,20 @@ class CfoSyncServerService:
 
         raise ValueError("Acao invalida. Use 'collect' ou 'export'.")
 
+    def register_client(
+        self,
+        payload: dict[str, object],
+        policy: AccessTokenPolicy,
+    ) -> dict[str, object]:
+        platform_key = str(payload.get("platform_key") or "").strip()
+        client_name = str(payload.get("client_name") or payload.get("company_name") or "").strip()
+        self._validate_registration_access(policy, platform_key, client_name)
+
+        with self._state_lock:
+            result = self.registration_manager.register_client(payload)
+            self._reload_state_locked()
+        return result
+
     def _validate_access(self, policy: AccessTokenPolicy, platform_key: str, client: str) -> None:
         if not platform_key:
             raise ValueError("Campo obrigatorio ausente: platform_key")
@@ -144,6 +168,23 @@ class CfoSyncServerService:
         if not policy.allows_client(platform_key, client):
             raise PermissionError(
                 f"Token sem permissao para cliente '{client}' na plataforma '{platform_key}'."
+            )
+
+    def _validate_registration_access(
+        self,
+        policy: AccessTokenPolicy,
+        platform_key: str,
+        client_name: str,
+    ) -> None:
+        if not platform_key:
+            raise ValueError("Campo obrigatorio ausente: platform_key")
+        if not client_name:
+            raise ValueError("Campo obrigatorio ausente: client_name")
+        if not policy.allows_platform(platform_key):
+            raise PermissionError(f"Token sem permissao para plataforma '{platform_key}'.")
+        if not policy.allows_client(platform_key, client_name):
+            raise PermissionError(
+                f"Token sem permissao para cliente '{client_name}' na plataforma '{platform_key}'."
             )
 
 

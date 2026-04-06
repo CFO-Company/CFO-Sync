@@ -168,6 +168,13 @@ docker compose --env-file .\settings\docker-server.env -f .\settings\docker-comp
 6. Selecionar plataforma/cliente/periodo e usar:
    - `Coletar no banco`
    - `Exportar para Sheets`
+7. Para cadastrar nova conta/credencial em cliente existente:
+   - ir na aba `Clientes`,
+   - selecionar a plataforma,
+   - selecionar `Cliente`, preencher `GID da aba do cliente` e os campos da plataforma,
+   - clicar `Registrar cliente`.
+   - os dados ficam salvos no `secrets` do servidor e passam a valer para todos os usuarios conectados no mesmo servidor.
+   - para refletir imediatamente em outra estacao, use `Atualizar catalogo do servidor` (ou reconecte).
 
 ## Contrato de API (resumo)
 
@@ -178,7 +185,7 @@ Resposta:
 ```json
 {
   "status": "ok",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "server_time": "2026-04-02T12:00:00+00:00"
 }
 ```
@@ -231,6 +238,43 @@ Response:
 {
   "job_id": "f2c5...",
   "status": "queued"
+}
+```
+
+### POST /v1/clients
+
+Auth: `Authorization: Bearer <token>`
+
+Observacao: `client_name` deve ser um cliente ja existente na plataforma selecionada.
+Observacao: `gid` e o GID da aba (sheetId) do cliente no Google Sheets. O ID da planilha ja vem do cadastro atual.
+
+Request (exemplo):
+
+```json
+{
+  "platform_key": "yampi",
+  "client_name": "Aurha",
+  "gid": "123456789",
+  "credentials": {
+    "alias": "Loja Principal",
+    "user_token": "TOKEN",
+    "user_secret_key": "SECRET"
+  },
+  "resource_gids": {
+    "sku": "987654321"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "message": "Cadastro registrado com sucesso.",
+  "platform_key": "yampi",
+  "client_name": "Aurha",
+  "updated_resources": ["financeiro", "sku"],
+  "updated_files": [".../app_config.json", ".../yampi_credentials.json"]
 }
 ```
 
