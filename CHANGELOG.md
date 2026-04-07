@@ -1,3 +1,16 @@
+## [1.2.2] - 07-04-2026
+
+### Added
+- Suporte a tunnel nomeado do Cloudflare via token no bootstrap Docker (`-TunnelToken` e `-TunnelHostname`).
+- Persistencia de `CLOUDFLARE_TUNNEL_TOKEN` e `CLOUDFLARE_TUNNEL_HOSTNAME` no `settings/docker-server.env`.
+
+### Changed
+- Container `cfo-sync-tunnel` passou a usar `cloudflared tunnel run --token`, permitindo dominio fixo em vez de URL aleatoria `trycloudflare`.
+- Documentacao do setup remoto atualizada para fluxo de dominio fixo (`https://ecfo.com.br`) com Cloudflare Tunnel.
+
+### Fixed
+- Validacao no script de setup para falhar cedo quando `-WithTunnel` e usado sem `-TunnelToken`.
+
 ## [1.2.1] - 06-04-2026
 
 ### Added

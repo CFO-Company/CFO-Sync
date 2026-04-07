@@ -3,6 +3,8 @@ param(
     [int]$Port = 8088,
     [int]$Workers = 2,
     [switch]$WithTunnel,
+    [string]$TunnelToken = "",
+    [string]$TunnelHostname = "",
     [switch]$ForceRecreateAccess
 )
 
@@ -36,6 +38,25 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $script:ComposeFile = Join-Path $PSScriptRoot "docker-compose.server.yml"
 $script:EnvFile = Join-Path $PSScriptRoot "docker-server.env"
 
+$TunnelToken = $TunnelToken.Trim()
+$TunnelHostname = $TunnelHostname.Trim()
+
+if (Test-Path $script:EnvFile) {
+    $existingEnv = @{}
+    foreach ($line in (Get-Content -Path $script:EnvFile -ErrorAction SilentlyContinue)) {
+        if ($line -match "^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$") {
+            $existingEnv[$matches[1]] = $matches[2]
+        }
+    }
+
+    if (-not $TunnelToken -and $existingEnv.ContainsKey("CLOUDFLARE_TUNNEL_TOKEN")) {
+        $TunnelToken = $existingEnv["CLOUDFLARE_TUNNEL_TOKEN"]
+    }
+    if (-not $TunnelHostname -and $existingEnv.ContainsKey("CLOUDFLARE_TUNNEL_HOSTNAME")) {
+        $TunnelHostname = $existingEnv["CLOUDFLARE_TUNNEL_HOSTNAME"]
+    }
+}
+
 if (-not (Test-Path $script:ComposeFile)) {
     throw "Arquivo nao encontrado: $script:ComposeFile"
 }
@@ -61,12 +82,31 @@ Essa pasta (HostRoot) e a fonte unica dos dados do servidor.
 "@
 }
 
+if ($WithTunnel -and -not $TunnelToken) {
+    throw @"
+Parametro obrigatorio ausente para tunnel nomeado.
+
+Informe:
+  -TunnelToken "SEU_TUNNEL_TOKEN"
+
+Opcional:
+  -TunnelHostname "ecfo.com.br"
+"@
+}
+
 $dockerHostRoot = Convert-ToDockerPath -PathValue $hostRootAbsolute
-@"
-CFO_SYNC_HOST_ROOT=$dockerHostRoot
-CFO_SYNC_SERVER_PORT=$Port
-CFO_SYNC_WORKERS=$Workers
-"@ | Set-Content -Path $script:EnvFile -Encoding ascii
+$envLines = @(
+    "CFO_SYNC_HOST_ROOT=$dockerHostRoot"
+    "CFO_SYNC_SERVER_PORT=$Port"
+    "CFO_SYNC_WORKERS=$Workers"
+)
+if ($TunnelToken) {
+    $envLines += "CLOUDFLARE_TUNNEL_TOKEN=$TunnelToken"
+}
+if ($TunnelHostname) {
+    $envLines += "CLOUDFLARE_TUNNEL_HOSTNAME=$TunnelHostname"
+}
+$envLines | Set-Content -Path $script:EnvFile -Encoding ascii
 
 Write-Host ""
 Write-Host "1/3 Build da imagem do servidor..."
@@ -113,12 +153,18 @@ Write-Host "Healthcheck:   http://127.0.0.1:$Port/v1/health"
 
 if ($WithTunnel) {
     $logOutput = & docker compose --env-file $script:EnvFile -f $script:ComposeFile logs --no-color cfo-sync-tunnel 2>$null
-    $urlMatch = [regex]::Match(($logOutput -join "`n"), "https://[a-z0-9-]+\.trycloudflare\.com")
-    if ($urlMatch.Success) {
+    $joinedLogs = ($logOutput -join "`n")
+    $urlMatch = [regex]::Match($joinedLogs, "https://[a-zA-Z0-9\.\-]+")
+
+    if ($TunnelHostname) {
+        Write-Host "Tunnel URL:    https://$TunnelHostname"
+    }
+    elseif ($urlMatch.Success) {
         Write-Host "Tunnel URL:    $($urlMatch.Value)"
     }
     else {
-        Write-Host "Tunnel URL:    ainda nao detectada, rode:"
+        Write-Host "Tunnel URL:    tunnel nomeado ativo (confira o hostname no Cloudflare Dashboard)."
+        Write-Host "Logs tunnel:   rode:"
         Write-Host "  docker compose --env-file `"$script:EnvFile`" -f `"$script:ComposeFile`" logs -f cfo-sync-tunnel"
     }
 }

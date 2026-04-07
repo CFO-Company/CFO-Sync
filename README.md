@@ -73,14 +73,20 @@ Importante:
 No repo (`C:\CFO-Sync`), execute:
 
 ```powershell
-.\settings\setup_docker_server.ps1 -HostRoot "C:\srv" -Port 8088 -Workers 2 -WithTunnel
+.\settings\setup_docker_server.ps1 -HostRoot "C:\srv" -Port 8088 -Workers 2
+```
+
+Para usar tunnel nomeado com dominio fixo, passe o token do tunnel e hostname:
+
+```powershell
+.\settings\setup_docker_server.ps1 -HostRoot "C:\srv" -Port 8088 -Workers 2 -WithTunnel -TunnelToken "SEU_TUNNEL_TOKEN" -TunnelHostname "ecfo.com.br"
 ```
 
 O script executa automaticamente:
 
 1. `docker compose build cfo-sync-server`
 2. gera `C:\srv\cfo_sync\server_access.json` (se nao existir)
-3. sobe os containers (`cfo-sync-server` e `cfo-sync-tunnel` quando usar `-WithTunnel`)
+3. sobe os containers (`cfo-sync-server` e `cfo-sync-tunnel` quando usar `-WithTunnel` com `-TunnelToken`)
 
 Arquivos usados:
 
@@ -126,15 +132,15 @@ irm http://127.0.0.1:8088/v1/health
 irm http://127.0.0.1:8088/v1/catalog -Headers @{ Authorization = "Bearer $token" }
 ```
 
-### 5. Obter URL publica (quando usar tunnel)
+### 5. URL publica (quando usar tunnel)
 
-Para ver logs e URL atual do quick tunnel:
+Para acompanhar logs do tunnel:
 
 ```powershell
 docker compose --env-file .\settings\docker-server.env -f .\settings\docker-compose.server.yml logs -f cfo-sync-tunnel
 ```
 
-Use a URL mostrada (exemplo `https://xxxxx.trycloudflare.com`) no desktop.
+Use seu dominio fixo configurado no Cloudflare (exemplo `https://ecfo.com.br`).
 
 ### Operacao diaria (Docker)
 
@@ -161,7 +167,7 @@ docker compose --env-file .\settings\docker-server.env -f .\settings\docker-comp
 1. Abrir `CFO Sync`.
 2. Ir na aba `Configuracoes`.
 3. Preencher:
-   - `URL da API servidor`: `https://SEU_TUNNEL.trycloudflare.com`
+   - `URL da API servidor`: `https://ecfo.com.br`
    - `Token Bearer`: token entregue para o analista.
 4. Clicar `Conectar servidor`.
 5. Validar que o status mudou para `Conectado`.
@@ -319,7 +325,7 @@ Response:
 
 ## Segurança recomendada (producao)
 
-1. Substituir quick tunnel por tunnel nomeado + domínio fixo.
+1. Usar tunnel nomeado + dominio fixo (ja suportado em `setup_docker_server.ps1`).
 2. Proteger endpoint com camada de acesso (Zero Trust/IdP).
 3. Tokens por analista, sem compartilhamento.
 4. Rotacao periodica de tokens.

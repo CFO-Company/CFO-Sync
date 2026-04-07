@@ -35,7 +35,11 @@ services:
     restart: unless-stopped
     depends_on:
       - cfo-sync-server
-    command: tunnel --no-autoupdate --url http://cfo-sync-server:8088
+    command:
+      - tunnel
+      - run
+      - --token
+      - "${CLOUDFLARE_TUNNEL_TOKEN}"
     profiles:
       - tunnel
 
