@@ -38,9 +38,11 @@ from cfo_sync.core.runtime_paths import (
     data_dir,
     desktop_settings_path,
     ensure_runtime_layout,
+    secrets_dir,
     update_config_path,
 )
 from cfo_sync.core.updater import check_for_updates, download_and_launch_update, get_releases_page_url
+from cfo_sync.platforms.ui_registry import build_platform_ui_registry
 from cfo_sync.version import __version__
 
 
@@ -284,7 +286,7 @@ GENERATOR_SCHEMAS: dict[str, list[dict[str, object]]] = {
 def _empty_app_config() -> AppConfig:
     return AppConfig(
         database_path=data_dir() / "cfo_sync.db",
-        credentials_dir=Path("."),
+        credentials_dir=secrets_dir(),
         google_sheets=GoogleSheetsConfig(credentials_file="google_service_account.json"),
         yampi=YampiConfig(credentials_file="yampi_credentials.json"),
         meta_ads=MetaAdsConfig(credentials_file="meta_ads_credentials.json"),
@@ -308,7 +310,7 @@ class CFODesktopApp:
         ensure_runtime_layout()
         self.config = _empty_app_config()
         self.pipeline: SyncPipeline | None = None
-        self.platform_ui_registry = {}
+        self.platform_ui_registry = build_platform_ui_registry(self.config)
         self.platform_choices: list[PlatformChoice] = []
         self.choice_by_label: dict[str, PlatformChoice] = {}
         self.remote_client: RemoteCFOClient | None = None
@@ -396,7 +398,7 @@ class CFODesktopApp:
         self.remote_catalog_sub_clients = sub_clients_map
         self.config = config
         self.pipeline = None
-        self.platform_ui_registry = {}
+        self.platform_ui_registry = build_platform_ui_registry(self.config)
         self.platform_choices = self._build_platform_choices()
         self.choice_by_label = {choice.label: choice for choice in self.platform_choices}
         self.server_status_var.set(f"Conectado: {client.base_url}")
@@ -476,7 +478,7 @@ class CFODesktopApp:
         return (
             AppConfig(
                 database_path=data_dir() / "cfo_sync.db",
-                credentials_dir=Path("."),
+                credentials_dir=secrets_dir(),
                 google_sheets=GoogleSheetsConfig(credentials_file="google_service_account.json"),
                 yampi=YampiConfig(credentials_file="yampi_credentials.json"),
                 meta_ads=MetaAdsConfig(credentials_file="meta_ads_credentials.json"),
@@ -3585,7 +3587,7 @@ class CFODesktopApp:
         self.remote_catalog_sub_clients = {}
         self.config = _empty_app_config()
         self.pipeline = None
-        self.platform_ui_registry = {}
+        self.platform_ui_registry = build_platform_ui_registry(self.config)
         self.platform_choices = []
         self.choice_by_label = {}
         self.server_status_var.set("Servidor desconectado")

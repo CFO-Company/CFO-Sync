@@ -13,24 +13,49 @@ from cfo_sync.platforms.yampi.ui_behavior import YampiUIBehavior
 def build_platform_ui_registry(config: AppConfig) -> dict[str, PlatformUIBehavior]:
     omie_2026_credentials_path = config.credentials_dir / "omie_credentials.json"
     omie_2025_credentials_path = config.credentials_dir / "omie_2025.json"
+    configured_platform_keys = {platform.key for platform in config.platforms}
 
-    registry: dict[str, PlatformUIBehavior] = {
-        "yampi": YampiUIBehavior(
-            credentials_path=config.credentials_dir / config.yampi.credentials_file,
-        ),
-        "meta_ads": MetaAdsUIBehavior(
-            credentials_path=config.credentials_dir / config.meta_ads.credentials_file,
-        ),
-        "google_ads": GoogleAdsUIBehavior(
-            credentials_path=config.credentials_dir / config.google_ads.credentials_file,
-        ),
-        "mercado_livre": MercadoLivreUIBehavior(
-            credentials_path=config.credentials_dir / "mercado_livre_credentials.json",
-        ),
-        "tiktok_ads": TikTokAdsUIBehavior(
-            credentials_path=config.credentials_dir / config.tiktok_ads.credentials_file,
-        ),
-    }
+    registry: dict[str, PlatformUIBehavior] = {}
+
+    if "yampi" in configured_platform_keys:
+        try:
+            registry["yampi"] = YampiUIBehavior(
+                credentials_path=config.credentials_dir / config.yampi.credentials_file,
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
+    if "meta_ads" in configured_platform_keys:
+        try:
+            registry["meta_ads"] = MetaAdsUIBehavior(
+                credentials_path=config.credentials_dir / config.meta_ads.credentials_file,
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
+    if "google_ads" in configured_platform_keys:
+        try:
+            registry["google_ads"] = GoogleAdsUIBehavior(
+                credentials_path=config.credentials_dir / config.google_ads.credentials_file,
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
+    if "mercado_livre" in configured_platform_keys:
+        try:
+            registry["mercado_livre"] = MercadoLivreUIBehavior(
+                credentials_path=config.credentials_dir / "mercado_livre_credentials.json",
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
+    if "tiktok_ads" in configured_platform_keys:
+        try:
+            registry["tiktok_ads"] = TikTokAdsUIBehavior(
+                credentials_path=config.credentials_dir / config.tiktok_ads.credentials_file,
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
 
     for platform in config.platforms:
         if not platform.key.startswith("omie"):
