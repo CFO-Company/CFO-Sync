@@ -30,10 +30,12 @@ from cfo_sync.core.models import (
     TikTokAdsConfig,
     YampiConfig,
 )
+from cfo_sync.core.config_loader import load_app_config
 from cfo_sync.core.pipeline import SyncPipeline
 from cfo_sync.core.remote_api import RemoteApiError, RemoteCFOClient
 from cfo_sync.core.runtime_paths import (
     available_sound_dirs,
+    app_config_path,
     custom_sounds_dir,
     data_dir,
     desktop_settings_path,
@@ -43,6 +45,7 @@ from cfo_sync.core.runtime_paths import (
 )
 from cfo_sync.core.updater import check_for_updates, download_and_launch_update, get_releases_page_url
 from cfo_sync.platforms.ui_registry import build_platform_ui_registry
+from cfo_sync.platforms.yampi.credentials import YampiCredentialsStore
 from cfo_sync.version import __version__
 
 
@@ -52,6 +55,7 @@ SERVER_URL_KEY = "server_url"
 SERVER_TOKEN_KEY = "server_token"
 DESKTOP_SETTINGS_PATH = desktop_settings_path()
 SOUNDS_DIR = custom_sounds_dir()
+UPDATE_APP_DEFAULT_LABEL = "Atualizar app"
 
 COLOR_BG = "#0B0D10"
 COLOR_SURFACE = "#14181D"
@@ -231,7 +235,7 @@ CLIENT_REGISTRATION_SCHEMAS: dict[str, list[dict[str, object]]] = {
             "name": "alias",
             "label": "Alias",
             "required": True,
-            "help": "Nome da filial/alias para o cliente.",
+            "help": "Nome da filial/alias para o cliente (tambem usado como app_name).",
         },
         {"name": "app_key", "label": "App key", "required": True, "secret": True, "help": "App key da Omie."},
         {
@@ -240,12 +244,6 @@ CLIENT_REGISTRATION_SCHEMAS: dict[str, list[dict[str, object]]] = {
             "required": True,
             "secret": True,
             "help": "App secret da Omie.",
-        },
-        {
-            "name": "app_name",
-            "label": "App name (opcional)",
-            "required": False,
-            "help": "Nome amigavel da integracao.",
         },
         {
             "name": "include_accounts_payable",
@@ -313,17 +311,27 @@ class CFODesktopApp:
         self.platform_ui_registry = build_platform_ui_registry(self.config)
         self.platform_choices: list[PlatformChoice] = []
         self.choice_by_label: dict[str, PlatformChoice] = {}
+        self.estoque_platform_choices: list[PlatformChoice] = []
+        self.estoque_choice_by_label: dict[str, PlatformChoice] = {}
         self.remote_client: RemoteCFOClient | None = None
         self.remote_catalog_sub_clients: dict[tuple[str, str], list[str]] = {}
+        self.yampi_estoque_credentials_store: YampiCredentialsStore | None = None
 
         self.platform_var = tk.StringVar()
         self.client_var = tk.StringVar()
+        self.estoque_platform_var = tk.StringVar()
+        self.estoque_client_var = tk.StringVar()
         self.sub_client_options: list[str] = []
+        self.estoque_sub_client_options: list[str] = []
         self.sub_client_summary_var = tk.StringVar(value=ALL_SUB_CLIENTS)
+        self.estoque_sub_client_summary_var = tk.StringVar(value=ALL_SUB_CLIENTS)
         self.start_date_var = tk.StringVar()
         self.end_date_var = tk.StringVar()
+        self.estoque_start_date_var = tk.StringVar()
+        self.estoque_end_date_var = tk.StringVar()
         self.sku_order_number_var = tk.StringVar()
         self.status_var = tk.StringVar(value="Pronto")
+        self.update_notice_var = tk.StringVar(value="")
         self.sku_preview_rows: list[dict[str, object]] = []
         self.notification_sound_var = tk.StringVar(value=NO_NOTIFICATION_SOUND)
         self.notification_sound_options: list[str] = [NO_NOTIFICATION_SOUND]
@@ -342,6 +350,10 @@ class CFODesktopApp:
         self.client_registration_field_vars: dict[str, tk.Variable] = {}
         self.client_registration_dynamic_entries: list[ttk.Entry] = []
         self.client_registration_dynamic_combos: list[ttk.Combobox] = []
+        self.client_registration_fields_canvas: tk.Canvas | None = None
+        self.client_registration_fields_window_id: int | None = None
+        self.btn_use_local_secrets: ttk.Button | None = None
+        self.update_notice_label: ttk.Label | None = None
         self.generator_mode_var = tk.StringVar()
         self.generator_platform_var = tk.StringVar()
         self.generator_client_var = tk.StringVar()
@@ -362,8 +374,10 @@ class CFODesktopApp:
         self._date_picker_month = date.today().replace(day=1)
         self._date_picker_selection_start: date | None = None
         self._date_picker_selection_end: date | None = None
+        self._date_picker_target = "pedidos"
 
         self._bootstrap_runtime_mode()
+        self._refresh_estoque_credentials_store()
 
         self.style = ttk.Style(self.root)
         self._apply_theme()
@@ -371,7 +385,9 @@ class CFODesktopApp:
         self.root.after(50, self._apply_native_titlebar_color)
         self._bind_events()
         self._set_default_dates_current_month()
+        self._set_default_estoque_dates_current_month()
         self._load_initial_values()
+        self.root.after(1200, self._check_updates_notice_async)
         self._poll_logs()
 
     def _bootstrap_runtime_mode(self) -> None:
@@ -401,7 +417,20 @@ class CFODesktopApp:
         self.platform_ui_registry = build_platform_ui_registry(self.config)
         self.platform_choices = self._build_platform_choices()
         self.choice_by_label = {choice.label: choice for choice in self.platform_choices}
+        self.estoque_platform_choices = self._build_estoque_platform_choices()
+        self.estoque_choice_by_label = {choice.label: choice for choice in self.estoque_platform_choices}
+        self._refresh_estoque_credentials_store()
         self.server_status_var.set(f"Conectado: {client.base_url}")
+
+    def _refresh_estoque_credentials_store(self) -> None:
+        self.yampi_estoque_credentials_store = None
+        credentials_path = self.config.credentials_dir / "yampi_estoque.json"
+        if not credentials_path.exists():
+            return
+        try:
+            self.yampi_estoque_credentials_store = YampiCredentialsStore.from_file(credentials_path)
+        except Exception as error:  # noqa: BLE001
+            self.log(f"Aviso: nao foi possivel carregar yampi_estoque.json ({error}).")
 
     def _build_app_config_from_catalog(
         self,
@@ -604,6 +633,12 @@ class CFODesktopApp:
             font=("Segoe UI Semibold", 10),
         )
         self.style.configure(
+            "UpdateNotice.TLabel",
+            background=COLOR_SURFACE,
+            foreground="#F7C66A",
+            font=("Segoe UI Semibold", 9),
+        )
+        self.style.configure(
             "FieldValue.TLabel",
             background=COLOR_SURFACE,
             foreground=COLOR_TEXT,
@@ -796,6 +831,18 @@ class CFODesktopApp:
                 )
         return choices
 
+    def _build_estoque_platform_choices(self) -> list[PlatformChoice]:
+        choices: list[PlatformChoice] = []
+        for platform in self.config.platforms:
+            for resource in platform.resources:
+                if resource.name.strip().lower() != "estoque":
+                    continue
+                label = self._platform_resource_label(platform.key, platform.label, resource.name)
+                choices.append(
+                    PlatformChoice(label=label, platform_key=platform.key, resource_name=resource.name)
+                )
+        return choices
+
     def _clients_for_platform(self, platform_key: str) -> list[str]:
         platform = next((item for item in self.config.platforms if item.key == platform_key), None)
         configured_clients = list(platform.clients) if platform is not None else []
@@ -871,12 +918,15 @@ class CFODesktopApp:
         self.tabs.pack(fill=tk.BOTH, expand=True)
 
         config_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
+        self.pedidos_tab = config_tab
+        self.estoque_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
         self.clients_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
         self.generator_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
         self.sku_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
         self.settings_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
 
         self.tabs.add(config_tab, text="Pedidos")
+        self.tabs.add(self.estoque_tab, text="Estoque")
         self.tabs.add(self.clients_tab, text="Clientes")
         self.tabs.add(self.generator_tab, text="Gerador")
         self.tabs.add(self.sku_tab, text="SKU")
@@ -1039,6 +1089,161 @@ class CFODesktopApp:
         config_tab.rowconfigure(3, weight=1)
         config_tab.columnconfigure(1, weight=1)
 
+        ttk.Label(self.estoque_tab, text="Estoque", style="CardTitle.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 12)
+        )
+
+        ttk.Label(self.estoque_tab, text="Plataforma", style="Field.TLabel").grid(
+            row=1, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
+        )
+        self.estoque_platform_combo = ttk.Combobox(
+            self.estoque_tab,
+            textvariable=self.estoque_platform_var,
+            state="readonly",
+            values=[choice.label for choice in self.estoque_platform_choices],
+            style="Dark.TCombobox",
+            width=field_width,
+        )
+        self.estoque_platform_combo.grid(row=1, column=1, sticky=tk.EW, pady=compact_pady)
+
+        ttk.Label(self.estoque_tab, text="Cliente", style="Field.TLabel").grid(
+            row=2, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
+        )
+        self.estoque_client_combo = ttk.Combobox(
+            self.estoque_tab,
+            textvariable=self.estoque_client_var,
+            state="readonly",
+            style="Dark.TCombobox",
+            width=field_width,
+        )
+        self.estoque_client_combo.grid(row=2, column=1, sticky=tk.EW, pady=compact_pady)
+
+        ttk.Label(self.estoque_tab, text="Filiais / Alias", style="Field.TLabel").grid(
+            row=3, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
+        )
+        estoque_sub_client_panel = ttk.Frame(self.estoque_tab, style="Card.TFrame")
+        estoque_sub_client_panel.grid(row=3, column=1, sticky=tk.NSEW, pady=compact_pady)
+        estoque_sub_client_panel.columnconfigure(0, weight=1)
+        estoque_sub_client_panel.rowconfigure(1, weight=1)
+
+        ttk.Label(
+            estoque_sub_client_panel,
+            textvariable=self.estoque_sub_client_summary_var,
+            style="FieldValue.TLabel",
+        ).grid(row=0, column=0, sticky=tk.W, pady=(0, compact_pady))
+
+        estoque_sub_client_actions = ttk.Frame(estoque_sub_client_panel, style="Card.TFrame")
+        estoque_sub_client_actions.grid(row=0, column=1, sticky=tk.E, pady=(0, compact_pady))
+
+        self.btn_estoque_select_all_sub_clients = ttk.Button(
+            estoque_sub_client_actions,
+            text="Todos",
+            style="Secondary.TButton",
+            command=self._select_all_estoque_sub_clients,
+        )
+        self.btn_estoque_select_all_sub_clients.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.btn_estoque_clear_sub_clients = ttk.Button(
+            estoque_sub_client_actions,
+            text="Limpar",
+            style="Secondary.TButton",
+            command=self._clear_estoque_sub_clients,
+        )
+        self.btn_estoque_clear_sub_clients.pack(side=tk.LEFT)
+
+        estoque_sub_client_list_frame = ttk.Frame(estoque_sub_client_panel, style="Card.TFrame")
+        estoque_sub_client_list_frame.grid(row=1, column=0, columnspan=2, sticky=tk.NSEW)
+        estoque_sub_client_list_frame.columnconfigure(0, weight=1)
+        estoque_sub_client_list_frame.rowconfigure(0, weight=1)
+
+        self.estoque_sub_client_listbox = tk.Listbox(
+            estoque_sub_client_list_frame,
+            selectmode=tk.MULTIPLE,
+            exportselection=False,
+            height=9,
+            bg=COLOR_SURFACE_ALT,
+            fg=COLOR_TEXT,
+            selectbackground=COLOR_BUTTON_ALT_HOVER,
+            selectforeground=COLOR_TEXT,
+            highlightthickness=1,
+            highlightbackground=COLOR_BORDER,
+            highlightcolor=COLOR_ACCENT,
+            relief=tk.FLAT,
+            borderwidth=0,
+            activestyle="none",
+            font=("Segoe UI", 10),
+        )
+        self.estoque_sub_client_listbox.grid(row=0, column=0, sticky=tk.EW)
+
+        estoque_sub_client_scroll = ttk.Scrollbar(
+            estoque_sub_client_list_frame,
+            orient=tk.VERTICAL,
+            style="Modern.Vertical.TScrollbar",
+            command=self.estoque_sub_client_listbox.yview,
+        )
+        estoque_sub_client_scroll.grid(row=0, column=1, sticky=tk.NS, padx=(5, 0))
+        self.estoque_sub_client_listbox.configure(yscrollcommand=estoque_sub_client_scroll.set)
+
+        ttk.Label(self.estoque_tab, text="Data inicial", style="Field.TLabel").grid(
+            row=4, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
+        )
+        estoque_date_controls = ttk.Frame(self.estoque_tab, style="Card.TFrame")
+        estoque_date_controls.grid(row=4, column=1, rowspan=2, sticky=tk.EW, pady=compact_pady)
+        estoque_date_controls.columnconfigure(0, weight=1)
+        estoque_date_controls.columnconfigure(1, weight=0)
+
+        self.estoque_start_entry = ttk.Entry(
+            estoque_date_controls,
+            textvariable=self.estoque_start_date_var,
+            width=18,
+            style="Dark.TEntry",
+        )
+        self.estoque_start_entry.grid(row=0, column=0, sticky=tk.EW, pady=(0, compact_pady))
+
+        ttk.Label(self.estoque_tab, text="Data final", style="Field.TLabel").grid(
+            row=5, column=0, sticky=tk.W, padx=compact_padx, pady=compact_pady
+        )
+        self.estoque_end_entry = ttk.Entry(
+            estoque_date_controls,
+            textvariable=self.estoque_end_date_var,
+            width=18,
+            style="Dark.TEntry",
+        )
+        self.estoque_end_entry.grid(row=1, column=0, sticky=tk.EW)
+
+        estoque_period_actions = ttk.Frame(estoque_date_controls, style="Card.TFrame")
+        estoque_period_actions.grid(row=0, column=1, rowspan=2, sticky=tk.NE, padx=(8, 0))
+
+        self.btn_estoque_pick_period = ttk.Button(
+            estoque_period_actions,
+            text="Selecionar no calendario",
+            style="Secondary.TButton",
+            command=self._open_estoque_date_range_picker,
+        )
+        self.btn_estoque_pick_period.grid(row=0, column=0, columnspan=2, sticky=tk.EW, pady=(0, compact_pady))
+
+        estoque_period_btn = ttk.Button(
+            estoque_period_actions,
+            text="Mês atual",
+            style="Secondary.TButton",
+            command=self._set_default_estoque_dates_current_month,
+        )
+        estoque_period_btn.grid(row=1, column=0, sticky=tk.EW, padx=(0, 5))
+
+        estoque_previous_month_btn = ttk.Button(
+            estoque_period_actions,
+            text="Mês anterior",
+            style="Secondary.TButton",
+            command=self._set_previous_estoque_month_period_based_on_today,
+        )
+        estoque_previous_month_btn.grid(row=1, column=1, sticky=tk.EW)
+
+        estoque_period_actions.columnconfigure(0, weight=1)
+        estoque_period_actions.columnconfigure(1, weight=1)
+
+        self.estoque_tab.rowconfigure(3, weight=1)
+        self.estoque_tab.columnconfigure(1, weight=1)
+
         ttk.Label(self.clients_tab, text="Clientes", style="CardTitle.TLabel").grid(
             row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 12)
         )
@@ -1145,9 +1350,51 @@ class CFODesktopApp:
         ttk.Label(self.clients_tab, text="Credenciais", style="Field.TLabel").grid(
             row=4, column=0, sticky=tk.NW, padx=compact_padx, pady=compact_pady
         )
-        self.client_registration_fields_frame = ttk.Frame(self.clients_tab, style="Card.TFrame")
-        self.client_registration_fields_frame.grid(row=4, column=1, sticky=tk.NSEW, pady=compact_pady)
+        client_registration_fields_container = ttk.Frame(self.clients_tab, style="Card.TFrame")
+        client_registration_fields_container.grid(
+            row=4,
+            column=1,
+            sticky=tk.NSEW,
+            pady=compact_pady,
+        )
+        client_registration_fields_container.columnconfigure(0, weight=1)
+        client_registration_fields_container.rowconfigure(0, weight=1)
+
+        self.client_registration_fields_canvas = tk.Canvas(
+            client_registration_fields_container,
+            bg=COLOR_SURFACE,
+            highlightthickness=1,
+            highlightbackground=COLOR_BORDER,
+            highlightcolor=COLOR_ACCENT,
+            relief=tk.FLAT,
+            borderwidth=0,
+        )
+        self.client_registration_fields_canvas.grid(row=0, column=0, sticky=tk.NSEW)
+
+        client_registration_fields_scroll = ttk.Scrollbar(
+            client_registration_fields_container,
+            orient=tk.VERTICAL,
+            style="Modern.Vertical.TScrollbar",
+            command=self.client_registration_fields_canvas.yview,
+        )
+        client_registration_fields_scroll.grid(row=0, column=1, sticky=tk.NS, padx=(5, 0))
+        self.client_registration_fields_canvas.configure(yscrollcommand=client_registration_fields_scroll.set)
+
+        self.client_registration_fields_frame = ttk.Frame(self.client_registration_fields_canvas, style="Card.TFrame")
+        self.client_registration_fields_window_id = self.client_registration_fields_canvas.create_window(
+            (0, 0),
+            window=self.client_registration_fields_frame,
+            anchor=tk.NW,
+        )
         self.client_registration_fields_frame.columnconfigure(1, weight=1)
+        self.client_registration_fields_frame.bind(
+            "<Configure>",
+            lambda _event: self._sync_client_registration_fields_scrollregion(),
+        )
+        self.client_registration_fields_canvas.bind(
+            "<Configure>",
+            lambda event: self._sync_client_registration_fields_width(event.width),
+        )
 
         clients_actions = ttk.Frame(self.clients_tab, style="Card.TFrame")
         clients_actions.grid(row=5, column=1, sticky=tk.E, pady=(6, 0))
@@ -1460,21 +1707,31 @@ class CFODesktopApp:
         self.server_token_entry.grid(row=0, column=0, sticky=tk.EW)
 
         server_actions = ttk.Frame(self.settings_tab, style="Card.TFrame")
-        server_actions.grid(row=5, column=1, sticky=tk.W, pady=(4, 10))
+        server_actions.grid(row=5, column=1, sticky=tk.EW, pady=(4, 10))
+        server_actions.columnconfigure(0, weight=1)
+        server_actions.columnconfigure(1, weight=1)
+        server_actions.columnconfigure(2, weight=0)
         self.btn_connect_server = ttk.Button(
             server_actions,
             text="Conectar servidor",
             style="Secondary.TButton",
             command=self.connect_server,
         )
-        self.btn_connect_server.pack(fill=tk.X, pady=(0, 6))
+        self.btn_connect_server.grid(row=0, column=0, sticky=tk.EW, padx=(0, 6))
         self.btn_disconnect_server = ttk.Button(
             server_actions,
             text="Desconectar servidor",
             style="Secondary.TButton",
             command=self.disconnect_server,
         )
-        self.btn_disconnect_server.pack(fill=tk.X)
+        self.btn_disconnect_server.grid(row=0, column=1, sticky=tk.EW, padx=(0, 6))
+        self.btn_use_local_secrets = ttk.Button(
+            server_actions,
+            text="Usar fallback local (secrets)",
+            style="Secondary.TButton",
+            command=self.activate_local_mode,
+        )
+        self._refresh_local_fallback_visibility()
 
         ttk.Label(
             self.settings_tab,
@@ -1483,15 +1740,17 @@ class CFODesktopApp:
         ).grid(row=6, column=1, sticky=tk.W, pady=(0, 8))
 
         app_actions = ttk.Frame(self.settings_tab, style="Card.TFrame")
-        app_actions.grid(row=7, column=1, sticky=tk.W, pady=(8, 0))
+        app_actions.grid(row=7, column=1, sticky=tk.EW, pady=(8, 0))
+        app_actions.columnconfigure(0, weight=1)
+        app_actions.columnconfigure(1, weight=1)
 
         self.btn_update_app = ttk.Button(
             app_actions,
-            text="Atualizar app",
+            text=UPDATE_APP_DEFAULT_LABEL,
             style="Secondary.TButton",
             command=self.update_app,
         )
-        self.btn_update_app.pack(fill=tk.X, pady=(0, 8))
+        self.btn_update_app.grid(row=0, column=0, sticky=tk.EW, padx=(0, 6))
 
         self.btn_open_changelog = ttk.Button(
             app_actions,
@@ -1499,7 +1758,14 @@ class CFODesktopApp:
             style="Secondary.TButton",
             command=self.open_changelog,
         )
-        self.btn_open_changelog.pack(fill=tk.X, pady=(0, 8))
+        self.btn_open_changelog.grid(row=0, column=1, sticky=tk.EW)
+        self.update_notice_label = ttk.Label(
+            app_actions,
+            textvariable=self.update_notice_var,
+            style="UpdateNotice.TLabel",
+        )
+        self.update_notice_label.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(6, 0))
+        self.update_notice_label.grid_remove()
 
         actions_card = ttk.Frame(right_panel, style="Card.TFrame", padding=16)
         actions_card.grid(row=0, column=0, sticky=tk.EW, pady=(0, 10))
@@ -1518,7 +1784,7 @@ class CFODesktopApp:
 
         self.btn_export = ttk.Button(
             buttons,
-            text="Exportar para Sheets",
+            text="Exportar Pedidos",
             style="Secondary.TButton",
             command=self.export_data,
         )
@@ -1526,9 +1792,9 @@ class CFODesktopApp:
 
         self.btn_export_sku = ttk.Button(
             buttons,
-            text="Exportar SKU",
+            text="Exportar Estoque",
             style="Sku.TButton",
-            command=self.export_sku,
+            command=self.export_data,
             cursor="no",
         )
         self.btn_export_sku.pack(fill=tk.X)
@@ -1599,6 +1865,8 @@ class CFODesktopApp:
     def _bind_events(self) -> None:
         self.platform_combo.bind("<<ComboboxSelected>>", lambda _event: self.on_platform_change())
         self.client_combo.bind("<<ComboboxSelected>>", lambda _event: self.on_client_change())
+        self.estoque_platform_combo.bind("<<ComboboxSelected>>", lambda _event: self.on_estoque_platform_change())
+        self.estoque_client_combo.bind("<<ComboboxSelected>>", lambda _event: self.on_estoque_client_change())
         self.client_registration_mode_combo.bind(
             "<<ComboboxSelected>>",
             lambda _event: self._on_client_registration_mode_change(),
@@ -1635,7 +1903,14 @@ class CFODesktopApp:
             "<KeyRelease>",
             lambda _event: self._update_generate_link_button_state(),
         )
-        self.sub_client_listbox.bind("<<ListboxSelect>>", lambda _event: self._update_sub_client_summary())
+        self.sub_client_listbox.bind(
+            "<<ListboxSelect>>",
+            lambda _event: self._update_sub_client_summary(),
+        )
+        self.estoque_sub_client_listbox.bind(
+            "<<ListboxSelect>>",
+            lambda _event: self._update_estoque_sub_client_summary(),
+        )
         self.notification_sound_combo.bind(
             "<<ComboboxSelected>>",
             lambda _event: self._on_notification_sound_change(),
@@ -1643,10 +1918,23 @@ class CFODesktopApp:
         self.tabs.bind("<<NotebookTabChanged>>", lambda _event: self._on_tab_changed())
         self.sku_order_entry.bind("<Return>", lambda _event: self.search_sku())
 
+    def _period_vars_for_target(self, target: str) -> tuple[tk.StringVar, tk.StringVar]:
+        if target == "estoque":
+            return self.estoque_start_date_var, self.estoque_end_date_var
+        return self.start_date_var, self.end_date_var
+
     def _open_date_range_picker(self) -> None:
+        self._open_date_range_picker_for_target("pedidos")
+
+    def _open_estoque_date_range_picker(self) -> None:
+        self._open_date_range_picker_for_target("estoque")
+
+    def _open_date_range_picker_for_target(self, target: str) -> None:
+        self._date_picker_target = target
+        target_start_var, target_end_var = self._period_vars_for_target(target)
         try:
-            start = self._parse_ui_date(self.start_date_var.get().strip())
-            end = self._parse_ui_date(self.end_date_var.get().strip())
+            start = self._parse_ui_date(target_start_var.get().strip())
+            end = self._parse_ui_date(target_end_var.get().strip())
         except ValueError:
             today = date.today()
             start = today.replace(day=1)
@@ -1880,7 +2168,7 @@ class CFODesktopApp:
             messagebox.showwarning("Periodo", "Nao foi possivel determinar o periodo selecionado.")
             return
 
-        self._set_period_dates(start, end)
+        self._set_period_dates_for_target(self._date_picker_target, start, end)
         self._close_date_range_picker()
 
     def _refresh_date_picker_grid(self) -> None:
@@ -2000,13 +2288,24 @@ class CFODesktopApp:
         )
 
     def _set_period_dates(self, start: date, end: date) -> None:
+        self._set_period_dates_for_target("pedidos", start, end)
+
+    def _set_estoque_period_dates(self, start: date, end: date) -> None:
+        self._set_period_dates_for_target("estoque", start, end)
+
+    def _set_period_dates_for_target(self, target: str, start: date, end: date) -> None:
         if start > end:
             start, end = end, start
 
-        self.start_date_var.set(start.strftime("%d/%m/%Y"))
-        self.end_date_var.set(end.strftime("%d/%m/%Y"))
+        target_start_var, target_end_var = self._period_vars_for_target(target)
+        target_start_var.set(start.strftime("%d/%m/%Y"))
+        target_end_var.set(end.strftime("%d/%m/%Y"))
 
-        if self._date_picker_window is not None and self._date_picker_window.winfo_exists():
+        if (
+            self._date_picker_window is not None
+            and self._date_picker_window.winfo_exists()
+            and self._date_picker_target == target
+        ):
             self._date_picker_selection_start = start
             self._date_picker_selection_end = end
             self._date_picker_month = start.replace(day=1)
@@ -2017,6 +2316,7 @@ class CFODesktopApp:
         self._refresh_client_registration_platforms()
         self._refresh_generator_modes()
         self._refresh_generator_platforms()
+        self._refresh_estoque_platform_options()
         if not self.platform_choices:
             if self.config.platforms:
                 self.status_var.set("Sem clientes para Pedidos")
@@ -2366,16 +2666,22 @@ class CFODesktopApp:
             self.btn_open_changelog.configure(state=tk.DISABLED)
             self.btn_connect_server.configure(state=tk.DISABLED)
             self.btn_disconnect_server.configure(state=tk.DISABLED)
+            if self.btn_use_local_secrets is not None:
+                self.btn_use_local_secrets.configure(state=tk.DISABLED)
             self.server_url_entry.configure(state=tk.DISABLED)
             self.server_token_entry.configure(state=tk.DISABLED)
             self.btn_select_all_sub_clients.configure(state=tk.DISABLED)
             self.btn_clear_sub_clients.configure(state=tk.DISABLED)
             self.sub_client_listbox.configure(state=tk.DISABLED)
+            self.btn_estoque_select_all_sub_clients.configure(state=tk.DISABLED)
+            self.btn_estoque_clear_sub_clients.configure(state=tk.DISABLED)
+            self.estoque_sub_client_listbox.configure(state=tk.DISABLED)
             self.notification_sound_combo.configure(state=tk.DISABLED)
             self.btn_refresh_sounds.configure(state=tk.DISABLED)
             self.btn_search_sku.configure(state=tk.DISABLED)
             self.sku_order_entry.configure(state=tk.DISABLED)
             self.btn_pick_period.configure(state=tk.DISABLED)
+            self.btn_estoque_pick_period.configure(state=tk.DISABLED)
             self.client_registration_mode_combo.configure(state=tk.DISABLED)
             self.client_registration_platform_combo.configure(state=tk.DISABLED)
             self.client_registration_client_combo.configure(state=tk.DISABLED)
@@ -2402,26 +2708,35 @@ class CFODesktopApp:
             return
 
         self.btn_collect.configure(state=tk.NORMAL)
-        self.btn_export.configure(state=tk.NORMAL)
         self._update_export_sku_button_state()
         self.btn_update_app.configure(state=tk.NORMAL)
         self.btn_open_changelog.configure(state=tk.NORMAL)
         self.btn_connect_server.configure(state=tk.NORMAL)
         self.btn_disconnect_server.configure(state=tk.NORMAL)
+        self._refresh_local_fallback_visibility()
+        if self.btn_use_local_secrets is not None:
+            local_state = tk.NORMAL if self._has_local_secrets_files() else tk.DISABLED
+            self.btn_use_local_secrets.configure(state=local_state)
         self.server_url_entry.configure(state=tk.NORMAL)
         self.server_token_entry.configure(state=tk.NORMAL)
 
         has_sub_clients = bool(self.sub_client_options)
         controls_state = tk.NORMAL if has_sub_clients else tk.DISABLED
+        has_estoque_sub_clients = bool(self.estoque_sub_client_options)
+        estoque_controls_state = tk.NORMAL if has_estoque_sub_clients else tk.DISABLED
         self.btn_select_all_sub_clients.configure(state=controls_state)
         self.btn_clear_sub_clients.configure(state=controls_state)
         self.sub_client_listbox.configure(state=controls_state)
+        self.btn_estoque_select_all_sub_clients.configure(state=estoque_controls_state)
+        self.btn_estoque_clear_sub_clients.configure(state=estoque_controls_state)
+        self.estoque_sub_client_listbox.configure(state=estoque_controls_state)
         self.notification_sound_combo.configure(state="readonly")
         self.btn_refresh_sounds.configure(state=tk.NORMAL)
         sku_state = tk.NORMAL if self._platform_supports_sku_workflow() else tk.DISABLED
         self.btn_search_sku.configure(state=sku_state)
         self.sku_order_entry.configure(state=sku_state)
         self.btn_pick_period.configure(state=tk.NORMAL)
+        self.btn_estoque_pick_period.configure(state=tk.NORMAL)
         self._sync_client_registration_input_states()
         self._sync_generator_input_states()
 
@@ -2447,6 +2762,7 @@ class CFODesktopApp:
     def _on_tab_changed(self) -> None:
         if self.busy:
             return
+        self._refresh_local_fallback_visibility()
         self._update_export_sku_button_state()
         self._update_register_client_button_state()
         self._update_generate_link_button_state()
@@ -2462,20 +2778,46 @@ class CFODesktopApp:
         selected_tab_id = self.tabs.select()
         return selected_tab_id == str(self.sku_tab)
 
+    def _is_pedidos_tab_active(self) -> bool:
+        selected_tab_id = self.tabs.select()
+        return selected_tab_id == str(self.pedidos_tab)
+
+    def _is_estoque_tab_active(self) -> bool:
+        selected_tab_id = self.tabs.select()
+        return selected_tab_id == str(self.estoque_tab)
+
     def _update_export_sku_button_state(self) -> None:
-        try:
-            choice = self._get_current_choice()
-        except ValueError:
-            self.btn_export_sku.configure(state=tk.DISABLED, cursor="no")
-            return
+        can_export_pedidos = self._is_pedidos_tab_active()
+        can_export_estoque = self._is_estoque_tab_active()
 
-        behavior = self.platform_ui_registry.get(choice.platform_key)
-        can_use_sku = behavior is not None and behavior.supports_sku_workflow
+        self.btn_export.configure(
+            state=tk.NORMAL if can_export_pedidos else tk.DISABLED,
+            style="Secondary.TButton" if can_export_pedidos else "Sku.TButton",
+            cursor="hand2" if can_export_pedidos else "no",
+        )
+        self.btn_export_sku.configure(
+            state=tk.NORMAL if can_export_estoque else tk.DISABLED,
+            cursor="hand2" if can_export_estoque else "no",
+        )
 
-        if self._is_sku_tab_active() and can_use_sku:
-            self.btn_export_sku.configure(state=tk.NORMAL, cursor="hand2")
+    def _sync_client_registration_fields_scrollregion(self) -> None:
+        if self.client_registration_fields_canvas is None:
             return
-        self.btn_export_sku.configure(state=tk.DISABLED, cursor="no")
+        bbox = self.client_registration_fields_canvas.bbox("all")
+        self.client_registration_fields_canvas.configure(
+            scrollregion=bbox if bbox is not None else (0, 0, 0, 0)
+        )
+
+    def _sync_client_registration_fields_width(self, width: int | None = None) -> None:
+        if self.client_registration_fields_canvas is None or self.client_registration_fields_window_id is None:
+            return
+        target_width = width if width is not None else self.client_registration_fields_canvas.winfo_width()
+        if target_width <= 0:
+            return
+        self.client_registration_fields_canvas.itemconfigure(
+            self.client_registration_fields_window_id,
+            width=target_width,
+        )
 
     def _sync_client_registration_input_states(self) -> None:
         if self.busy:
@@ -2708,18 +3050,27 @@ class CFODesktopApp:
         self._run_task("Buscar SKU", task)
 
     def _current_selection(self) -> tuple[PlatformChoice, str, list[str] | None, str, str]:
-        choice = self.choice_by_label.get(self.platform_var.get())
+        if self._is_estoque_tab_active():
+            choice = self.estoque_choice_by_label.get(self.estoque_platform_var.get())
+            client = self.estoque_client_var.get().strip()
+            sub_clients = self._selected_estoque_sub_clients()
+            start_date_raw = self.estoque_start_date_var.get().strip()
+            end_date_raw = self.estoque_end_date_var.get().strip()
+        else:
+            choice = self.choice_by_label.get(self.platform_var.get())
+            client = self.client_var.get().strip()
+            sub_clients = self._selected_sub_clients()
+            start_date_raw = self.start_date_var.get().strip()
+            end_date_raw = self.end_date_var.get().strip()
+
         if choice is None:
             raise ValueError("Selecione uma plataforma valida.")
 
-        client = self.client_var.get().strip()
         if not client:
             raise ValueError("Selecione um cliente.")
 
-        sub_clients = self._selected_sub_clients()
-
-        start_date_obj = self._parse_ui_date(self.start_date_var.get().strip())
-        end_date_obj = self._parse_ui_date(self.end_date_var.get().strip())
+        start_date_obj = self._parse_ui_date(start_date_raw)
+        end_date_obj = self._parse_ui_date(end_date_raw)
         start_date_obj, end_date_obj = self._normalize_monthly_period(choice, start_date_obj, end_date_obj)
 
         start_date = start_date_obj.isoformat()
@@ -2801,6 +3152,86 @@ class CFODesktopApp:
             self.log(f"Nenhuma filial/alias cadastrada para {client}.")
         self._update_export_sku_button_state()
 
+    def _clients_for_estoque_choice(self, choice: PlatformChoice) -> list[str]:
+        resource = self._resolve_resource_for_choice(choice)
+        configured_clients = list(resource.client_tabs.keys())
+        if configured_clients:
+            return sorted(configured_clients)
+        return self._clients_for_platform(choice.platform_key)
+
+    def _refresh_estoque_platform_options(self) -> None:
+        self.estoque_platform_choices = self._build_estoque_platform_choices()
+        self.estoque_choice_by_label = {
+            choice.label: choice for choice in self.estoque_platform_choices
+        }
+        labels = [choice.label for choice in self.estoque_platform_choices]
+        self.estoque_platform_combo.configure(values=labels)
+
+        current = self.estoque_platform_var.get().strip()
+        if current in self.estoque_choice_by_label:
+            self.estoque_platform_var.set(current)
+            self.on_estoque_platform_change()
+            return
+
+        if labels:
+            self.estoque_platform_var.set(labels[0])
+            self.on_estoque_platform_change()
+            return
+
+        self.estoque_platform_var.set("")
+        self.estoque_client_var.set("")
+        self.estoque_client_combo.configure(values=[])
+        self._set_estoque_sub_client_options([])
+
+    def on_estoque_platform_change(self) -> None:
+        choice = self.estoque_choice_by_label.get(self.estoque_platform_var.get().strip())
+        if choice is None:
+            self.estoque_client_combo.configure(values=[])
+            self.estoque_client_var.set("")
+            self._set_estoque_sub_client_options([])
+            return
+
+        clients = self._clients_for_estoque_choice(choice)
+        self.estoque_client_combo.configure(values=clients)
+        if clients:
+            self.estoque_client_var.set(clients[0])
+            self.on_estoque_client_change()
+        else:
+            self.estoque_client_var.set("")
+            self._set_estoque_sub_client_options([])
+            self.log("Nenhum cliente configurado para esta plataforma (Estoque).")
+
+    def on_estoque_client_change(self) -> None:
+        choice = self.estoque_choice_by_label.get(self.estoque_platform_var.get().strip())
+        if choice is None:
+            self._set_estoque_sub_client_options([])
+            return
+
+        client = self.estoque_client_var.get().strip()
+        options: list[str] = []
+
+        try:
+            if choice.platform_key == "yampi":
+                if self.yampi_estoque_credentials_store is None:
+                    raise ValueError(
+                        "Arquivo de estoque nao encontrado: secrets/yampi_estoque.json"
+                    )
+                options.extend(self.yampi_estoque_credentials_store.alias_names_for_company(client))
+            elif self.remote_client is not None:
+                options.extend(self.remote_catalog_sub_clients.get((choice.platform_key, client), []))
+            else:
+                behavior = self.platform_ui_registry.get(choice.platform_key)
+                if behavior is not None:
+                    options.extend(behavior.sub_client_names(client))
+        except Exception as error:  # noqa: BLE001
+            self.log(f"Aviso ao carregar filiais/aliases de estoque: {error}")
+
+        self._set_estoque_sub_client_options(options)
+        if options:
+            self.log(f"Filiais/Aliases de estoque para {client}: {', '.join(options)}")
+        else:
+            self.log(f"Nenhuma filial/alias de estoque cadastrada para {client}.")
+
     def _set_sub_client_options(self, options: list[str]) -> None:
         self.sub_client_options = options
         # Permite atualizar os itens mesmo quando o listbox estava desabilitado
@@ -2879,6 +3310,82 @@ class CFODesktopApp:
             return
 
         self.sub_client_summary_var.set(f"{selected_count} selecionadas")
+
+    def _set_estoque_sub_client_options(self, options: list[str]) -> None:
+        self.estoque_sub_client_options = options
+        self.estoque_sub_client_listbox.configure(state=tk.NORMAL)
+        self.estoque_sub_client_listbox.delete(0, tk.END)
+        for option in options:
+            self.estoque_sub_client_listbox.insert(tk.END, option)
+
+        if not options:
+            self.estoque_sub_client_listbox.configure(state=tk.DISABLED)
+            self.btn_estoque_select_all_sub_clients.configure(state=tk.DISABLED)
+            self.btn_estoque_clear_sub_clients.configure(state=tk.DISABLED)
+            self.estoque_sub_client_summary_var.set(ALL_SUB_CLIENTS)
+            return
+
+        if not self.busy:
+            self.estoque_sub_client_listbox.configure(state=tk.NORMAL)
+            self.btn_estoque_select_all_sub_clients.configure(state=tk.NORMAL)
+            self.btn_estoque_clear_sub_clients.configure(state=tk.NORMAL)
+
+        self._select_all_estoque_sub_clients()
+
+    def _select_all_estoque_sub_clients(self) -> None:
+        if not self.estoque_sub_client_options:
+            self.estoque_sub_client_summary_var.set(ALL_SUB_CLIENTS)
+            return
+        self.estoque_sub_client_listbox.selection_set(0, tk.END)
+        self._update_estoque_sub_client_summary()
+
+    def _clear_estoque_sub_clients(self) -> None:
+        self.estoque_sub_client_listbox.selection_clear(0, tk.END)
+        self._update_estoque_sub_client_summary()
+
+    def _selected_estoque_sub_clients(self) -> list[str] | None:
+        if not self.estoque_sub_client_options:
+            return None
+
+        selected_indexes = list(self.estoque_sub_client_listbox.curselection())
+        if not selected_indexes:
+            raise ValueError("Selecione ao menos uma filial/alias ou clique em Todos (Estoque).")
+
+        if len(selected_indexes) == len(self.estoque_sub_client_options):
+            return None
+
+        return [self.estoque_sub_client_options[index] for index in selected_indexes]
+
+    def _update_estoque_sub_client_summary(self) -> None:
+        if not self.estoque_sub_client_options:
+            self.estoque_sub_client_summary_var.set(ALL_SUB_CLIENTS)
+            return
+
+        selected_indexes = list(self.estoque_sub_client_listbox.curselection())
+        selected_count = len(selected_indexes)
+        total = len(self.estoque_sub_client_options)
+
+        if total == 1:
+            if selected_count == 0:
+                self.estoque_sub_client_summary_var.set("Nenhuma selecionada")
+                return
+            self.estoque_sub_client_summary_var.set(self.estoque_sub_client_options[0])
+            return
+
+        if selected_count == 0:
+            self.estoque_sub_client_summary_var.set("Nenhuma selecionada")
+            return
+
+        if selected_count == total:
+            self.estoque_sub_client_summary_var.set(ALL_SUB_CLIENTS)
+            return
+
+        selected_names = [self.estoque_sub_client_options[index] for index in selected_indexes]
+        if selected_count <= 3:
+            self.estoque_sub_client_summary_var.set(", ".join(selected_names))
+            return
+
+        self.estoque_sub_client_summary_var.set(f"{selected_count} selecionadas")
 
     def _refresh_client_registration_modes(self) -> None:
         labels = [label for label, _mode in CLIENT_REGISTRATION_MODE_OPTIONS]
@@ -3301,6 +3808,8 @@ class CFODesktopApp:
                 text="Plataforma sem campos extras obrigatorios.",
                 style="Field.TLabel",
             ).grid(row=0, column=0, sticky=tk.W, padx=(0, 8), pady=2)
+            self._sync_client_registration_fields_scrollregion()
+            self._sync_client_registration_fields_width()
             return
 
         for index, field in enumerate(schema):
@@ -3365,6 +3874,8 @@ class CFODesktopApp:
 
         self.client_registration_fields_frame.columnconfigure(0, minsize=180, weight=0)
         self.client_registration_fields_frame.columnconfigure(1, weight=1)
+        self._sync_client_registration_fields_scrollregion()
+        self._sync_client_registration_fields_width()
 
     def _collect_client_registration_payload(self) -> dict[str, object]:
         platform_label = self.client_registration_platform_var.get().strip()
@@ -3423,6 +3934,12 @@ class CFODesktopApp:
                 continue
 
             credentials[name] = value
+
+        if platform_key.startswith("omie"):
+            alias_value = str(credentials.get("alias") or "").strip()
+            if not alias_value:
+                raise ValueError("Campo obrigatorio ausente: alias")
+            credentials["app_name"] = alias_value
 
         payload: dict[str, object] = {
             "registration_mode": registration_mode,
@@ -3502,6 +4019,10 @@ class CFODesktopApp:
         today = date.today()
         self._set_period_dates(today.replace(day=1), today)
 
+    def _set_default_estoque_dates_current_month(self) -> None:
+        today = date.today()
+        self._set_estoque_period_dates(today.replace(day=1), today)
+
     def _set_previous_month_period_based_on_today(self) -> None:
         today = date.today()
         first_day_current_month = today.replace(day=1)
@@ -3509,6 +4030,14 @@ class CFODesktopApp:
         first_day_previous_month = last_day_previous_month.replace(day=1)
 
         self._set_period_dates(first_day_previous_month, last_day_previous_month)
+
+    def _set_previous_estoque_month_period_based_on_today(self) -> None:
+        today = date.today()
+        first_day_current_month = today.replace(day=1)
+        last_day_previous_month = first_day_current_month - timedelta(days=1)
+        first_day_previous_month = last_day_previous_month.replace(day=1)
+
+        self._set_estoque_period_dates(first_day_previous_month, last_day_previous_month)
 
     @staticmethod
     def _count_months_covered(start_date_iso: str, end_date_iso: str) -> int:
@@ -3526,11 +4055,17 @@ class CFODesktopApp:
 
     def _reload_catalog_ui(self) -> None:
         labels = [choice.label for choice in self.platform_choices]
+        estoque_labels = [choice.label for choice in self.estoque_platform_choices]
         self.platform_combo.configure(values=labels)
+        self.estoque_platform_combo.configure(values=estoque_labels)
         self.platform_var.set("")
+        self.estoque_platform_var.set("")
         self.client_combo.configure(values=[])
+        self.estoque_client_combo.configure(values=[])
         self.client_var.set("")
+        self.estoque_client_var.set("")
         self._set_sub_client_options([])
+        self._set_estoque_sub_client_options([])
         self._clear_sku_preview()
         self.client_registration_client_var.set("")
         self.client_registration_client_name_var.set("")
@@ -3539,6 +4074,7 @@ class CFODesktopApp:
         self.generator_client_name_var.set("")
         self.generator_gid_var.set("")
         self.generator_link_var.set("")
+        self._refresh_local_fallback_visibility()
         self._load_initial_values()
 
     def _apply_remote_connection_in_ui_thread(
@@ -3552,6 +4088,37 @@ class CFODesktopApp:
         def apply() -> None:
             try:
                 self._activate_remote_catalog(client, catalog)
+                self._reload_catalog_ui()
+            except Exception as error:  # noqa: BLE001
+                errors.append(error)
+            finally:
+                completed.set()
+
+        self.root.after(0, apply)
+        completed.wait()
+        if errors:
+            raise errors[0]
+
+    def _apply_local_mode_in_ui_thread(self, config: AppConfig, pipeline: SyncPipeline) -> None:
+        completed = threading.Event()
+        errors: list[Exception] = []
+
+        def apply() -> None:
+            try:
+                self.remote_client = None
+                self.remote_catalog_sub_clients = {}
+                self.config = config
+                self.pipeline = pipeline
+                self.platform_ui_registry = build_platform_ui_registry(self.config)
+                self.platform_choices = self._build_platform_choices()
+                self.choice_by_label = {choice.label: choice for choice in self.platform_choices}
+                self.estoque_platform_choices = self._build_estoque_platform_choices()
+                self.estoque_choice_by_label = {
+                    choice.label: choice for choice in self.estoque_platform_choices
+                }
+                self._refresh_estoque_credentials_store()
+                self.server_status_var.set("Modo local ativo (secrets)")
+                self.status_var.set("Modo local ativo")
                 self._reload_catalog_ui()
             except Exception as error:  # noqa: BLE001
                 errors.append(error)
@@ -3582,6 +4149,20 @@ class CFODesktopApp:
 
         self._run_task("Conectar servidor", task)
 
+    def activate_local_mode(self) -> None:
+        def task() -> None:
+            config_path = app_config_path()
+            if not config_path.exists():
+                raise ValueError("Arquivo local ausente: secrets/app_config.json")
+
+            self.log(f"Ativando fallback local: {config_path}")
+            config = load_app_config(config_path)
+            pipeline = SyncPipeline(config)
+            self._apply_local_mode_in_ui_thread(config, pipeline)
+            self.log("Fallback local ativo. Operacoes usando arquivos da pasta secrets.")
+
+        self._run_task("Ativar fallback local", task)
+
     def disconnect_server(self) -> None:
         self.remote_client = None
         self.remote_catalog_sub_clients = {}
@@ -3590,11 +4171,94 @@ class CFODesktopApp:
         self.platform_ui_registry = build_platform_ui_registry(self.config)
         self.platform_choices = []
         self.choice_by_label = {}
+        self.estoque_platform_choices = []
+        self.estoque_choice_by_label = {}
+        self._refresh_estoque_credentials_store()
         self.server_status_var.set("Servidor desconectado")
         self.status_var.set("Conecte ao servidor na aba Configuracoes")
         self._clear_server_connection()
         self._reload_catalog_ui()
         self.log("Servidor desconectado e sessao remota limpa.")
+
+    @staticmethod
+    def _has_local_secrets_files() -> bool:
+        local_secrets = secrets_dir()
+        try:
+            return local_secrets.exists() and any(item.is_file() for item in local_secrets.iterdir())
+        except OSError:
+            return False
+
+    def _refresh_local_fallback_visibility(self) -> None:
+        if self.btn_use_local_secrets is None:
+            return
+
+        should_show = self._has_local_secrets_files()
+        is_visible = self.btn_use_local_secrets.winfo_manager() == "grid"
+        server_actions = self.btn_use_local_secrets.master
+        if isinstance(server_actions, ttk.Frame):
+            server_actions.columnconfigure(2, weight=1 if should_show else 0)
+        if should_show and not is_visible:
+            self.btn_use_local_secrets.grid(row=0, column=2, sticky=tk.EW)
+            return
+        if not should_show and is_visible:
+            self.btn_use_local_secrets.grid_remove()
+
+    def _set_update_notice(
+        self,
+        message: str,
+        *,
+        latest_version: str | None = None,
+    ) -> None:
+        notice = message.strip()
+        self.update_notice_var.set(notice)
+        if latest_version:
+            self.btn_update_app.configure(text=f"{UPDATE_APP_DEFAULT_LABEL} (v{latest_version})")
+        else:
+            self.btn_update_app.configure(text=UPDATE_APP_DEFAULT_LABEL)
+        if self.update_notice_label is None:
+            return
+        if notice:
+            self.update_notice_label.grid()
+            return
+        self.update_notice_label.grid_remove()
+
+    def _apply_update_notice_result(self, result) -> None:
+        if result.status == "update_available":
+            latest_version = str(result.latest_version or "").strip()
+            if latest_version:
+                self._set_update_notice(
+                    f"Atualizacao disponivel: v{latest_version}",
+                    latest_version=latest_version,
+                )
+                self.log(f"Aviso: atualizacao disponivel (v{latest_version}).")
+                return
+            self._set_update_notice("Atualizacao disponivel.")
+            self.log("Aviso: atualizacao disponivel.")
+            return
+        if result.status == "no_asset":
+            latest_version = str(result.latest_version or "").strip()
+            if latest_version:
+                self._set_update_notice(f"Nova versao v{latest_version} sem instalador compativel.")
+                return
+            self._set_update_notice("Nova versao disponivel sem instalador compativel.")
+            return
+        if result.status == "up_to_date":
+            self._set_update_notice("")
+            return
+        if result.status in {"disabled", "misconfigured", "error", "installer_started"}:
+            self._set_update_notice("")
+            return
+
+    def _check_updates_notice_async(self) -> None:
+        def worker() -> None:
+            try:
+                result = check_for_updates(update_config_path())
+            except Exception as error:  # noqa: BLE001
+                self.log(f"Aviso: falha ao verificar atualizacoes automaticamente ({error}).")
+                return
+            self.root.after(0, lambda: self._apply_update_notice_result(result))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def open_changelog(self) -> None:
         releases_url = get_releases_page_url(update_config_path())
@@ -3669,6 +4333,7 @@ class CFODesktopApp:
         def task() -> None:
             self.log("Verificando atualizacao no GitHub Releases...")
             result = check_for_updates(update_config_path())
+            self.root.after(0, lambda: self._apply_update_notice_result(result))
             if result.status == "disabled":
                 self.log(result.message)
                 self.root.after(0, lambda: messagebox.showinfo("Atualizacao", result.message))
@@ -3820,7 +4485,7 @@ class CFODesktopApp:
             )
             self._notify_export_completion()
 
-        self._run_task("Exportar SKU", task)
+        self._run_task("Exportar Estoque", task)
 
 
 def main() -> None:
