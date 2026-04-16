@@ -1,3 +1,20 @@
+## [1.3.0] - 16-04-2026
+
+### Added
+- Nova aba `Estoque` com fluxo dedicado por plataforma/cliente e exportacao alinhada ao comportamento da aba `Pedidos`.
+- Suporte a `yampi_estoque.json` com credenciais separadas para o fluxo de estoque Yampi.
+- Opcao de fallback local na aba `Configuracoes` para usar arquivos da pasta `secrets` quando o servidor estiver indisponivel.
+- Aviso visual de atualizacao disponivel na aba `Configuracoes` com verificacao automatica em background.
+
+### Changed
+- Acoes de exportacao foram renomeadas para `Exportar Pedidos` e `Exportar Estoque`, com habilitacao contextual por aba ativa.
+- Layout da aba `Configuracoes` reorganizado para melhor alinhamento dos botoes.
+- Cadastro Omie passou a definir `app_name` automaticamente com o valor de `alias`.
+
+### Fixed
+- Exportacao para Sheets agora usa `tab_name` como fallback quando o `gid` da aba nao estiver sincronizado.
+- Bloco de credenciais na aba `Clientes` recebeu rolagem para evitar corte em telas menores.
+
 ## [1.2.2] - 07-04-2026
 
 ### Added
