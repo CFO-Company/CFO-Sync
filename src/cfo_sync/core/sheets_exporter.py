@@ -504,14 +504,28 @@ class GoogleSheetsExporter:
         )
 
         # GID (sheetId) e a fonte de verdade para identificar a aba de destino.
-        gid = int(target_tab.gid)
-        for sheet in sheets_metadata.get("sheets", []):
-            properties = sheet.get("properties", {})
-            if properties.get("sheetId") == gid:
-                resolved_title = str(properties.get("title", "")).strip()
-                return resolved_title
+        gid_text = str(target_tab.gid).strip()
+        if gid_text:
+            try:
+                gid = int(gid_text)
+            except ValueError:
+                gid = None
+            if gid is not None:
+                for sheet in sheets_metadata.get("sheets", []):
+                    properties = sheet.get("properties", {})
+                    if properties.get("sheetId") == gid:
+                        resolved_title = str(properties.get("title", "")).strip()
+                        return resolved_title
 
-        raise ValueError(f"gid {target_tab.gid} nao encontrado na planilha {spreadsheet_id}.")
+        # Fallback: quando o GID nao esta atualizado na configuracao, usa o nome da aba.
+        fallback_tab_name = str(target_tab.tab_name).strip()
+        if fallback_tab_name:
+            return fallback_tab_name
+
+        raise ValueError(
+            f"gid {target_tab.gid} nao encontrado na planilha {spreadsheet_id} "
+            "e tab_name nao foi informado."
+        )
 
     def _get_sheet_properties_by_title(self, spreadsheet_id: str, tab_name: str) -> dict[str, Any]:
         metadata = (
