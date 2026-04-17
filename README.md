@@ -17,6 +17,7 @@ Aplicativo desktop para orquestrar coleta e exportacao de dados de plataformas s
   - `POST /v1/jobs`
   - `GET /v1/jobs/{id}`
   - `GET /v1/jobs/{id}/logs`
+  - `GET /v1/oauth/tiktok_ads/callback`
 - Autenticacao por Bearer token.
 - RBAC por plataforma/cliente via arquivo `server_access.json`.
 - Fila de jobs em background no servidor.
@@ -191,7 +192,7 @@ Resposta:
 ```json
 {
   "status": "ok",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "server_time": "2026-04-02T12:00:00+00:00"
 }
 ```
@@ -322,6 +323,10 @@ Response:
   ]
 }
 ```
+
+### GET /v1/oauth/tiktok_ads/callback
+
+Endpoint de callback OAuth do TikTok Ads para receber `auth_code`, trocar por `access_token` e atualizar `secrets/tiktok_ads_credentials.json` no servidor.
 
 ## Segurança recomendada (producao)
 

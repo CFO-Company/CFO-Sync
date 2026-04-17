@@ -1,3 +1,17 @@
+## [1.3.1] - 17-04-2026
+
+### Added
+- Novo callback `GET /v1/oauth/tiktok_ads/callback` no servidor para concluir OAuth do TikTok Ads e salvar `access_token` nas credenciais do servidor.
+- Novo runner de automacao `scripts/task_scheduler/tiktok_ads_mes_atual_3_anteriores.py` para exportacao mensal do TikTok Ads (mes atual + 3 anteriores).
+
+### Changed
+- Integracao TikTok Ads passou a montar payload de `report/integrated/get` com `service_type`, `report_type`, `data_level`, `dimensions` e `metrics` configuraveis por variaveis de ambiente.
+- Parser de campanhas TikTok Ads ajustado para aceitar respostas com `dimensions/metrics` aninhados, incluindo leitura de `stat_cost`.
+- Exportacao para Sheets em janelas por periodo agora respeita escopo de `sub_clients`, evitando remover linhas de outras contas/aliases fora da selecao.
+
+### Fixed
+- Yampi: tratamento robusto para respostas HTTP incompletas (`IncompleteRead`) com retry e fallback seguro de parse JSON.
+
 ## [1.3.0] - 16-04-2026
 
 ### Added
