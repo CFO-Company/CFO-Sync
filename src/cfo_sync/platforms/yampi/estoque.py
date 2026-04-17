@@ -37,23 +37,25 @@ def fetch_estoque(
             if not mes_ano:
                 continue
 
-            for item in _extract_items_from_order(order):
-                nome_produto = _extract_product_name(item)
-                sku = _extract_item_sku(item)
-                if not nome_produto and not sku:
+            for item in _extract_estoque_rows(order):
+                product = str(item.get("product") or "").strip()
+                sku = str(item.get("sku") or "").strip()
+                if not product and not sku:
                     continue
                 quantity = _to_int(item.get("quantity"))
                 if quantity <= 0:
                     continue
 
-                receita_total_item = _extract_item_revenue(item, quantity)
-                key = (mes_ano, sku if sku else f"__SEM_SKU__::{_normalize_text(nome_produto)}")
+                receita_total_item = _to_float(item.get("revenue"))
+                key = (mes_ano, sku if sku else f"__SEM_SKU__::{_normalize_text(product)}")
 
                 row = aggregated.get(key)
                 if row is None:
                     row = {
                         "mes_ano": mes_ano,
-                        "nome_produto": nome_produto,
+                        "product": product,
+                        # Compatibilidade com layouts antigos.
+                        "nome_produto": product,
                         "sku": sku,
                         "qtd_vendida": 0,
                         "receita_total_sku": 0.0,
@@ -68,8 +70,11 @@ def fetch_estoque(
                         "resource": resource.name,
                     }
                     aggregated[key] = row
-                elif not str(row.get("nome_produto") or "").strip() and nome_produto:
-                    row["nome_produto"] = nome_produto
+                elif product:
+                    current_product = str(row.get("product") or "").strip()
+                    if not current_product:
+                        row["product"] = product
+                        row["nome_produto"] = product
 
                 row["qtd_vendida"] = int(row["qtd_vendida"]) + quantity
                 row["receita_total_sku"] = float(row["receita_total_sku"]) + receita_total_item
@@ -82,7 +87,7 @@ def fetch_estoque(
         row["price_cost"] = round(float(row["price_cost"]), 2)
 
     rows.sort(key=lambda row: str(row.get("sku", "")).casefold())
-    rows.sort(key=lambda row: str(row.get("nome_produto", "")).casefold())
+    rows.sort(key=lambda row: str(row.get("product", "")).casefold())
     rows.sort(key=lambda row: _parse_month_year(str(row.get("mes_ano", ""))), reverse=True)
     return rows
 
@@ -140,6 +145,78 @@ def _extract_items_from_order(order: dict[str, Any]) -> list[dict[str, Any]]:
     if isinstance(items, list):
         return [item for item in items if isinstance(item, dict)]
     return []
+
+
+def _extract_spreadsheet_rows_from_order(order: dict[str, Any]) -> list[dict[str, Any]]:
+    spreadsheet = order.get("spreadsheet")
+    if isinstance(spreadsheet, dict):
+        rows = spreadsheet.get("data")
+        if isinstance(rows, list):
+            return [row for row in rows if isinstance(row, dict)]
+    return []
+
+
+def _extract_estoque_rows(order: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+
+    # Preferencia por spreadsheet.data: product e sku ja vem vinculados na mesma linha.
+    spreadsheet_rows = _extract_spreadsheet_rows_from_order(order)
+    for row in spreadsheet_rows:
+        sku = _first_text(
+            row.get("sku"),
+            row.get("item_sku"),
+            row.get("sku_id"),
+        )
+        product = _first_text(
+            row.get("product"),
+            row.get("name"),
+            row.get("title"),
+        )
+        quantity = _to_int(row.get("quantity"))
+        total_item = _to_float(row.get("total_item"))
+        if total_item <= 0:
+            price = _to_float(row.get("price"))
+            total_item = price * quantity if price > 0 and quantity > 0 else 0.0
+
+        rows.append(
+            {
+                "sku": sku,
+                "product": product,
+                "quantity": quantity,
+                "revenue": total_item,
+            }
+        )
+
+    if rows:
+        return rows
+
+    # Fallback para items quando spreadsheet.data nao estiver presente.
+    for item in _extract_items_from_order(order):
+        sku = _extract_item_sku(item)
+        product = _extract_product_name(item)
+        quantity = _to_int(item.get("quantity"))
+        revenue = _extract_item_revenue(item, quantity)
+        rows.append(
+            {
+                "sku": sku,
+                "product": product,
+                "quantity": quantity,
+                "revenue": revenue,
+            }
+        )
+    return rows
+
+
+def _first_text(*values: object) -> str:
+    for value in values:
+        if value in (None, ""):
+            continue
+        if isinstance(value, (dict, list, tuple, set)):
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
 
 
 def _extract_product_name(raw_item: dict[str, Any]) -> str:
