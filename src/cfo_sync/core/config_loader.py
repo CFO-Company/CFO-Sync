@@ -13,6 +13,7 @@ from cfo_sync.core.models import (
     ResourceConfig,
     SheetTabTarget,
     TikTokAdsConfig,
+    TikTokShopConfig,
     YampiConfig,
 )
 from cfo_sync.platforms.omie.credentials import build_omie_platform_config
@@ -111,6 +112,12 @@ def load_app_config(config_path: Path) -> AppConfig:
             credentials_file=(data.get("tiktok_ads") or {}).get(
                 "credentials_file",
                 "tiktok_ads_credentials.json",
+            ),
+        ),
+        tiktok_shop=TikTokShopConfig(
+            credentials_file=(data.get("tiktok_shop") or {}).get(
+                "credentials_file",
+                "tiktok_shop_credentials.json",
             ),
         ),
         platforms=platforms,

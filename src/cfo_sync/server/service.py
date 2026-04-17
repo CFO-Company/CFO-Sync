@@ -15,6 +15,10 @@ from cfo_sync.platforms.tiktok_ads.api import (
     fetch_authorized_advertiser_ids,
 )
 from cfo_sync.platforms.tiktok_ads.credentials import TikTokAdsCredentialsStore
+from cfo_sync.platforms.tiktok_shop.api import (
+    exchange_auth_code_for_access_token as exchange_tiktok_shop_auth_code_for_access_token,
+)
+from cfo_sync.platforms.tiktok_shop.credentials import TikTokShopCredentialsStore
 from cfo_sync.platforms.ui_registry import build_platform_ui_registry
 from cfo_sync.server.access import AccessTokenPolicy
 from cfo_sync.version import __version__
@@ -263,6 +267,74 @@ class CfoSyncServerService:
             "authorized_count": len(authorized_ids),
             "access_token_masked": _mask_secret(access_token),
             "warning": authorization_warning,
+        }
+
+    def complete_tiktok_shop_oauth_callback(
+        self,
+        *,
+        code: str,
+        state: str,
+    ) -> dict[str, object]:
+        auth_code = str(code or "").strip()
+        if not auth_code:
+            raise ValueError("auth_code nao informado no callback TikTok Shop.")
+
+        with self._state_lock:
+            config = self.config
+            credentials_path = config.credentials_dir / config.tiktok_shop.credentials_file
+            store = TikTokShopCredentialsStore.from_file(credentials_path)
+            app_key = str(store.auth.app_key or "").strip()
+            app_secret = str(store.auth.app_secret or "").strip()
+            redirect_uri = str(store.auth.redirect_uri or "").strip()
+            if not app_key or not app_secret:
+                raise ValueError(
+                    "Credenciais TikTok Shop incompletas: informe auth.app_key e auth.app_secret "
+                    "em tiktok_shop_credentials.json."
+                )
+            if not redirect_uri:
+                raise ValueError(
+                    "Credenciais TikTok Shop incompletas: informe auth.redirect_uri "
+                    "em tiktok_shop_credentials.json."
+                )
+
+            token_bundle = exchange_tiktok_shop_auth_code_for_access_token(
+                app_key=app_key,
+                app_secret=app_secret,
+                auth_code=auth_code,
+                redirect_uri=redirect_uri,
+            )
+            access_token = str(token_bundle.get("access_token") or "").strip()
+            refresh_token = str(token_bundle.get("refresh_token") or "").strip()
+            shop_cipher = str(token_bundle.get("shop_cipher") or "").strip()
+            shop_id = str(token_bundle.get("shop_id") or "").strip()
+            seller_name = str(token_bundle.get("seller_name") or "").strip()
+
+            updated_store = store.with_updated_tokens(
+                access_token=access_token,
+                refresh_token=refresh_token or None,
+                shop_cipher=shop_cipher or None,
+                shop_id=shop_id or None,
+            )
+            if seller_name:
+                updated_store = updated_store.with_upsert_account(
+                    company_name=seller_name,
+                    account_name=seller_name,
+                    shop_cipher=shop_cipher,
+                    shop_id=shop_id,
+                    access_token=access_token,
+                )
+            updated_store.save()
+            self._reload_state_locked()
+
+        return {
+            "platform_key": "tiktok_shop",
+            "state": state,
+            "redirect_uri": redirect_uri,
+            "shop_id": shop_id,
+            "shop_cipher": shop_cipher,
+            "seller_name": seller_name,
+            "access_token_masked": _mask_secret(access_token),
+            "refresh_token_masked": _mask_secret(refresh_token),
         }
 
     def _validate_access(self, policy: AccessTokenPolicy, platform_key: str, client: str) -> None:

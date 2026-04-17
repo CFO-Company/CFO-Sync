@@ -31,6 +31,11 @@ class TikTokAdsConfig:
 
 
 @dataclass(frozen=True)
+class TikTokShopConfig:
+    credentials_file: str
+
+
+@dataclass(frozen=True)
 class SheetTabTarget:
     gid: str
     tab_name: str = ""
@@ -64,6 +69,7 @@ class AppConfig:
     meta_ads: MetaAdsConfig
     google_ads: GoogleAdsConfig
     tiktok_ads: TikTokAdsConfig
+    tiktok_shop: TikTokShopConfig
     platforms: list[PlatformConfig]
 
 

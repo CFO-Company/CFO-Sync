@@ -93,6 +93,8 @@ class ClientRegistrationManager:
             return credentials_dir / app_config.google_ads.credentials_file
         if platform_key == "tiktok_ads":
             return credentials_dir / app_config.tiktok_ads.credentials_file
+        if platform_key == "tiktok_shop":
+            return credentials_dir / app_config.tiktok_shop.credentials_file
         if platform_key == "mercado_livre":
             return credentials_dir / "mercado_livre_credentials.json"
         if platform_key in {"omie", "omie_2026"}:
@@ -122,6 +124,8 @@ class ClientRegistrationManager:
                 _create_google_ads_client_credentials(payload, client_name, credentials)
             elif platform_key == "tiktok_ads":
                 _create_tiktok_ads_client_credentials(payload, client_name, credentials)
+            elif platform_key == "tiktok_shop":
+                _create_tiktok_shop_client_credentials(payload, client_name, credentials)
             elif platform_key == "mercado_livre":
                 _create_mercado_livre_client_credentials(payload, client_name, credentials)
             elif platform_key.startswith("omie"):
@@ -137,6 +141,8 @@ class ClientRegistrationManager:
                 _append_google_ads_credentials(payload, client_name, credentials)
             elif platform_key == "tiktok_ads":
                 _append_tiktok_ads_credentials(payload, client_name, credentials)
+            elif platform_key == "tiktok_shop":
+                _append_tiktok_shop_credentials(payload, client_name, credentials)
             elif platform_key == "mercado_livre":
                 _upsert_mercado_livre_credentials(payload, client_name, credentials)
             elif platform_key.startswith("omie"):
@@ -474,6 +480,54 @@ def _create_tiktok_ads_client_credentials(
         raise ValueError("Credenciais TikTok Ads invalidas: campo 'accounts' ausente.")
     _ensure_company_not_in_accounts(accounts, client_name, platform_label="TikTok Ads")
     _append_tiktok_ads_credentials(payload, client_name, credentials)
+
+
+def _append_tiktok_shop_credentials(
+    payload: dict[str, Any],
+    client_name: str,
+    credentials: dict[str, object],
+) -> None:
+    accounts = payload.get("accounts")
+    if not isinstance(accounts, list):
+        raise ValueError("Credenciais TikTok Shop invalidas: campo 'accounts' ausente.")
+
+    normalized_target = client_name.strip().casefold()
+    shop_cipher = _required_text(credentials.get("shop_cipher"), field_name="credentials.shop_cipher")
+    shop_id = _optional_text(credentials.get("shop_id"))
+    for account in accounts:
+        if not isinstance(account, dict):
+            continue
+        same_company = str(account.get("company_name") or "").strip().casefold() == normalized_target
+        same_shop_cipher = str(account.get("shop_cipher") or "").strip() == shop_cipher
+        same_shop_id = bool(shop_id) and str(account.get("shop_id") or "").strip() == shop_id
+        if same_company and (same_shop_cipher or same_shop_id):
+            duplicate_ref = shop_cipher if same_shop_cipher else shop_id
+            raise ValueError(
+                f"Conta TikTok Shop '{duplicate_ref}' ja cadastrada para cliente '{client_name}'."
+            )
+
+    accounts.append(
+        {
+            "company_name": client_name,
+            "account_name": _required_text(credentials.get("account_name"), field_name="credentials.account_name"),
+            "shop_cipher": shop_cipher,
+            "shop_id": shop_id,
+            "access_token": _optional_text(credentials.get("access_token")),
+        }
+    )
+    payload["accounts"] = accounts
+
+
+def _create_tiktok_shop_client_credentials(
+    payload: dict[str, Any],
+    client_name: str,
+    credentials: dict[str, object],
+) -> None:
+    accounts = payload.get("accounts")
+    if not isinstance(accounts, list):
+        raise ValueError("Credenciais TikTok Shop invalidas: campo 'accounts' ausente.")
+    _ensure_company_not_in_accounts(accounts, client_name, platform_label="TikTok Shop")
+    _append_tiktok_shop_credentials(payload, client_name, credentials)
 
 
 def _upsert_mercado_livre_credentials(

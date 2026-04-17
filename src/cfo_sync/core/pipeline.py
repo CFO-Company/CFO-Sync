@@ -23,6 +23,7 @@ class SyncPipeline:
         meta_ads_credentials_path = config.credentials_dir / config.meta_ads.credentials_file
         google_ads_credentials_path = config.credentials_dir / config.google_ads.credentials_file
         tiktok_ads_credentials_path = config.credentials_dir / config.tiktok_ads.credentials_file
+        tiktok_shop_credentials_path = config.credentials_dir / config.tiktok_shop.credentials_file
         resolved_omie_2026_credentials_path = omie_credentials_path or (
             config.credentials_dir / "omie_credentials.json"
         )
@@ -33,6 +34,7 @@ class SyncPipeline:
             meta_ads_credentials_path=meta_ads_credentials_path,
             google_ads_credentials_path=google_ads_credentials_path,
             tiktok_ads_credentials_path=tiktok_ads_credentials_path,
+            tiktok_shop_credentials_path=tiktok_shop_credentials_path,
             omie_2026_credentials_path=resolved_omie_2026_credentials_path,
             omie_2025_credentials_path=resolved_omie_2025_credentials_path,
             mercado_livre_credentials_path=mercado_livre_credentials_path,

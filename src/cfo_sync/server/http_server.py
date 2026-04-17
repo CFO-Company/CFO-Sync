@@ -144,6 +144,47 @@ class CfoSyncHttpServer:
                     self._write_html(HTTPStatus.OK, _oauth_tiktok_success_html(result))
                     return
 
+                if path == "/v1/oauth/tiktok/callback":
+                    params = parse_qs(parsed.query or "")
+                    oauth_error = str((params.get("error") or [""])[0] or "").strip()
+                    oauth_error_description = str(
+                        (params.get("error_description") or [""])[0] or ""
+                    ).strip()
+                    if oauth_error:
+                        message = f"Autorizacao recusada pelo TikTok Shop: {oauth_error}"
+                        if oauth_error_description:
+                            message += f" ({oauth_error_description})"
+                        self._write_html(
+                            HTTPStatus.BAD_REQUEST,
+                            _oauth_error_html(message),
+                        )
+                        return
+
+                    code = str((params.get("auth_code") or [""])[0] or "").strip()
+                    if not code:
+                        code = str((params.get("code") or [""])[0] or "").strip()
+                    state = str((params.get("state") or [""])[0] or "").strip()
+                    try:
+                        result = server.service.complete_tiktok_shop_oauth_callback(
+                            code=code,
+                            state=state,
+                        )
+                    except (ValueError, FileNotFoundError) as error:
+                        self._write_html(
+                            HTTPStatus.BAD_REQUEST,
+                            _oauth_error_html(str(error)),
+                        )
+                        return
+                    except Exception as error:  # noqa: BLE001
+                        self._write_html(
+                            HTTPStatus.INTERNAL_SERVER_ERROR,
+                            _oauth_error_html(f"Falha no callback OAuth: {error}"),
+                        )
+                        return
+
+                    self._write_html(HTTPStatus.OK, _oauth_tiktok_shop_success_html(result))
+                    return
+
                 policy = self._require_auth()
                 if policy is None:
                     return
@@ -401,6 +442,50 @@ def _oauth_tiktok_success_html(result: dict[str, object]) -> str:
         f"<p><strong>Redirect URI:</strong> <code>{redirect_uri}</code></p>"
         f"{state_html}"
         f"{warning_html}"
+        "<p>Voce pode fechar esta pagina e voltar ao aplicativo CFO Sync.</p>"
+        "</div></body></html>"
+    )
+
+
+def _oauth_tiktok_shop_success_html(result: dict[str, object]) -> str:
+    state = html.escape(str(result.get("state") or "").strip())
+    redirect_uri = html.escape(str(result.get("redirect_uri") or "").strip())
+    token_masked = html.escape(str(result.get("access_token_masked") or "").strip())
+    refresh_token_masked = html.escape(str(result.get("refresh_token_masked") or "").strip())
+    shop_id = html.escape(str(result.get("shop_id") or "").strip())
+    shop_cipher = html.escape(str(result.get("shop_cipher") or "").strip())
+    seller_name = html.escape(str(result.get("seller_name") or "").strip())
+
+    state_html = ""
+    if state:
+        state_html = f"<p><strong>State:</strong> <code>{state}</code></p>"
+
+    seller_html = ""
+    if seller_name:
+        seller_html = f"<p><strong>Loja:</strong> {seller_name}</p>"
+
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>Autorizacao concluida</title>"
+        "<style>"
+        "body{font-family:Segoe UI,Arial,sans-serif;background:#f5f7fa;margin:0;padding:24px;}"
+        ".card{max-width:760px;margin:0 auto;background:#fff;border:1px solid #dde3ea;"
+        "border-radius:12px;padding:24px;box-shadow:0 8px 24px rgba(0,0,0,.08)}"
+        "h1{margin:0 0 12px;color:#123;font-size:24px}"
+        "p{margin:8px 0;color:#334}"
+        "code{background:#eef2f6;padding:2px 6px;border-radius:6px;word-break:break-all}"
+        ".ok{color:#0b7a43;font-weight:600}"
+        "</style></head><body><div class='card'>"
+        "<h1>Autorizacao TikTok Shop concluida</h1>"
+        "<p class='ok'>access_token salvo com sucesso nas credenciais do servidor.</p>"
+        f"<p><strong>Token:</strong> <code>{token_masked}</code></p>"
+        f"<p><strong>Refresh token:</strong> <code>{refresh_token_masked}</code></p>"
+        f"<p><strong>Shop ID:</strong> <code>{shop_id}</code></p>"
+        f"<p><strong>Shop Cipher:</strong> <code>{shop_cipher}</code></p>"
+        f"{seller_html}"
+        f"<p><strong>Redirect URI:</strong> <code>{redirect_uri}</code></p>"
+        f"{state_html}"
         "<p>Voce pode fechar esta pagina e voltar ao aplicativo CFO Sync.</p>"
         "</div></body></html>"
     )

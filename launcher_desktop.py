@@ -28,6 +28,7 @@ from cfo_sync.core.models import (
     PlatformConfig,
     ResourceConfig,
     TikTokAdsConfig,
+    TikTokShopConfig,
     YampiConfig,
 )
 from cfo_sync.core.config_loader import load_app_config
@@ -230,6 +231,33 @@ CLIENT_REGISTRATION_SCHEMAS: dict[str, list[dict[str, object]]] = {
             "help": "Token especifico da conta (opcional).",
         },
     ],
+    "tiktok_shop": [
+        {
+            "name": "account_name",
+            "label": "Nome da conta",
+            "required": True,
+            "help": "Nome da conta/loja TikTok Shop.",
+        },
+        {
+            "name": "shop_cipher",
+            "label": "Shop cipher",
+            "required": True,
+            "help": "Identificador cifrado da loja (shop_cipher).",
+        },
+        {
+            "name": "shop_id",
+            "label": "Shop ID (opcional)",
+            "required": False,
+            "help": "ID numerico da loja, quando disponivel.",
+        },
+        {
+            "name": "access_token",
+            "label": "Access token (opcional)",
+            "required": False,
+            "secret": True,
+            "help": "Token especifico da loja (opcional).",
+        },
+    ],
     "__omie__": [
         {
             "name": "alias",
@@ -290,6 +318,7 @@ def _empty_app_config() -> AppConfig:
         meta_ads=MetaAdsConfig(credentials_file="meta_ads_credentials.json"),
         google_ads=GoogleAdsConfig(credentials_file="google_ads_credentials.json"),
         tiktok_ads=TikTokAdsConfig(credentials_file="tiktok_ads_credentials.json"),
+        tiktok_shop=TikTokShopConfig(credentials_file="tiktok_shop_credentials.json"),
         platforms=[],
     )
 
@@ -513,6 +542,7 @@ class CFODesktopApp:
                 meta_ads=MetaAdsConfig(credentials_file="meta_ads_credentials.json"),
                 google_ads=GoogleAdsConfig(credentials_file="google_ads_credentials.json"),
                 tiktok_ads=TikTokAdsConfig(credentials_file="tiktok_ads_credentials.json"),
+                tiktok_shop=TikTokShopConfig(credentials_file="tiktok_shop_credentials.json"),
                 platforms=platforms,
             ),
             sub_clients_map,
@@ -817,11 +847,16 @@ class CFODesktopApp:
 
     def _build_platform_choices(self) -> list[PlatformChoice]:
         choices: list[PlatformChoice] = []
+        hidden_resources = {"sku", "estoque"}
         for platform in self.config.platforms:
             if not self._clients_for_platform(platform.key):
                 continue
             platform_behavior = self.platform_ui_registry.get(platform.key)
             for resource in platform.resources:
+                resource_name = resource.name.strip().lower()
+                if resource_name in hidden_resources:
+                    # SKU e Estoque possuem abas dedicadas.
+                    continue
                 if platform_behavior and platform_behavior.uses_dedicated_resource_tab(resource.name):
                     # Recursos dedicados usam aba propria e exportacao especifica.
                     continue
@@ -866,6 +901,8 @@ class CFODesktopApp:
             return "Mercado Livre"
         if key == "tiktok_ads":
             return "TikTok ADS"
+        if key == "tiktok_shop":
+            return "TikTok Shop"
         if key == "meta_ads":
             return "Meta ADS"
         if key == "google_ads":
@@ -3153,6 +3190,9 @@ class CFODesktopApp:
         self._update_export_sku_button_state()
 
     def _clients_for_estoque_choice(self, choice: PlatformChoice) -> list[str]:
+        if choice.platform_key == "yampi" and self.yampi_estoque_credentials_store is not None:
+            return self.yampi_estoque_credentials_store.companies()
+
         resource = self._resolve_resource_for_choice(choice)
         configured_clients = list(resource.client_tabs.keys())
         if configured_clients:
@@ -3210,21 +3250,29 @@ class CFODesktopApp:
         client = self.estoque_client_var.get().strip()
         options: list[str] = []
 
+        def extend_fallback_options() -> None:
+            if self.remote_client is not None:
+                options.extend(self.remote_catalog_sub_clients.get((choice.platform_key, client), []))
+                return
+            behavior = self.platform_ui_registry.get(choice.platform_key)
+            if behavior is not None:
+                options.extend(behavior.sub_client_names(client))
+
         try:
             if choice.platform_key == "yampi":
-                if self.yampi_estoque_credentials_store is None:
-                    raise ValueError(
-                        "Arquivo de estoque nao encontrado: secrets/yampi_estoque.json"
-                    )
-                options.extend(self.yampi_estoque_credentials_store.alias_names_for_company(client))
-            elif self.remote_client is not None:
-                options.extend(self.remote_catalog_sub_clients.get((choice.platform_key, client), []))
+                if self.yampi_estoque_credentials_store is not None:
+                    options.extend(self.yampi_estoque_credentials_store.alias_names_for_company(client))
+                else:
+                    extend_fallback_options()
             else:
-                behavior = self.platform_ui_registry.get(choice.platform_key)
-                if behavior is not None:
-                    options.extend(behavior.sub_client_names(client))
+                extend_fallback_options()
         except Exception as error:  # noqa: BLE001
             self.log(f"Aviso ao carregar filiais/aliases de estoque: {error}")
+            if choice.platform_key == "yampi" and not options:
+                try:
+                    extend_fallback_options()
+                except Exception:
+                    pass
 
         self._set_estoque_sub_client_options(options)
         if options:

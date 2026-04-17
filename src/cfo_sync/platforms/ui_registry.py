@@ -6,6 +6,7 @@ from cfo_sync.platforms.mercado_livre.ui_behavior import MercadoLivreUIBehavior
 from cfo_sync.platforms.meta_ads.ui_behavior import MetaAdsUIBehavior
 from cfo_sync.platforms.omie.ui_behavior import OmieUIBehavior
 from cfo_sync.platforms.tiktok_ads.ui_behavior import TikTokAdsUIBehavior
+from cfo_sync.platforms.tiktok_shop.ui_behavior import TikTokShopUIBehavior
 from cfo_sync.platforms.ui_behavior import PlatformUIBehavior
 from cfo_sync.platforms.yampi.ui_behavior import YampiUIBehavior
 
@@ -53,6 +54,14 @@ def build_platform_ui_registry(config: AppConfig) -> dict[str, PlatformUIBehavio
         try:
             registry["tiktok_ads"] = TikTokAdsUIBehavior(
                 credentials_path=config.credentials_dir / config.tiktok_ads.credentials_file,
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
+    if "tiktok_shop" in configured_platform_keys:
+        try:
+            registry["tiktok_shop"] = TikTokShopUIBehavior(
+                credentials_path=config.credentials_dir / config.tiktok_shop.credentials_file,
             )
         except (OSError, ValueError, KeyError, TypeError):
             pass
