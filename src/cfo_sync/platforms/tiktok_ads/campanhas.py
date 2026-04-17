@@ -34,7 +34,8 @@ def fetch_campanhas(
         )
 
         for raw in raw_rows:
-            date_value = _resolve_iso_date(raw, fallback_date=since)
+            normalized_raw = _flatten_tiktok_report_row(raw)
+            date_value = _resolve_iso_date(normalized_raw, fallback_date=since)
             mes_ano = _to_month_year(date_value)
             row_key = (mes_ano, client, account.account_name)
 
@@ -48,7 +49,7 @@ def fetch_campanhas(
                 )
                 aggregated_rows[row_key] = row
 
-            metrics = _extract_metrics(raw)
+            metrics = _extract_metrics(normalized_raw)
             row["vendas_total"] = _round_currency(_to_float(row.get("vendas_total")) + metrics["vendas_total"])
             row["reembolso_total"] = _round_currency(
                 _to_float(row.get("reembolso_total")) + metrics["reembolso_total"]
@@ -172,10 +173,36 @@ def _extract_metrics(raw: dict[str, Any]) -> dict[str, float]:
                 "cost",
                 "amount_spent",
                 "metrics.spend",
+                "metrics.stat_cost",
                 "metrics.cost",
             ),
         ),
     }
+
+
+def _flatten_tiktok_report_row(raw: dict[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = dict(raw)
+    _merge_nested_block(normalized, raw.get("dimensions"), prefix="dimensions")
+    _merge_nested_block(normalized, raw.get("metrics"), prefix="metrics")
+    _merge_nested_block(normalized, raw.get("metric"), prefix="metrics")
+    _merge_nested_block(normalized, raw.get("stat_metrics"), prefix="metrics")
+    return normalized
+
+
+def _merge_nested_block(target: dict[str, Any], value: Any, prefix: str) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _merge_nested_block(target=target, value=item, prefix=prefix)
+        return
+    if not isinstance(value, dict):
+        return
+
+    for key, inner_value in value.items():
+        normalized_key = str(key or "").strip()
+        if not normalized_key:
+            continue
+        target.setdefault(normalized_key, inner_value)
+        target[f"{prefix}.{normalized_key}"] = inner_value
 
 
 def _resolve_iso_date(raw: dict[str, Any], fallback_date: str) -> str:
@@ -183,8 +210,11 @@ def _resolve_iso_date(raw: dict[str, Any], fallback_date: str) -> str:
         raw,
         (
             "stat_time_day",
+            "dimensions.stat_time_day",
             "date",
+            "dimensions.date",
             "stat_datetime",
+            "dimensions.stat_datetime",
             "report_date",
         ),
     )

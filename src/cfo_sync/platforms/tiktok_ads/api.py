@@ -162,6 +162,7 @@ def fetch_paginated_rows(
     page = 1
     while page <= MAX_PAGES_SAFETY:
         request_payload = _build_request_payload(
+            endpoint=endpoint,
             advertiser_id=advertiser_id,
             page=page,
             page_size=DEFAULT_PAGE_SIZE,
@@ -499,13 +500,14 @@ def _has_next_page(
 
 
 def _build_request_payload(
+    endpoint: str,
     advertiser_id: str,
     page: int,
     page_size: int,
     start_date: str,
     end_date: str,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "advertiser_id": advertiser_id,
         "page": page,
         "page_size": page_size,
@@ -513,6 +515,46 @@ def _build_request_payload(
         "start_date": start_date,
         "end_date": end_date,
     }
+    if _is_report_endpoint(endpoint):
+        payload.update(
+            {
+                "service_type": str(
+                    os.getenv("TIKTOK_ADS_REPORT_SERVICE_TYPE") or "AUCTION"
+                ).strip()
+                or "AUCTION",
+                "report_type": str(
+                    os.getenv("TIKTOK_ADS_REPORT_TYPE") or "BASIC"
+                ).strip()
+                or "BASIC",
+                "data_level": str(
+                    os.getenv("TIKTOK_ADS_REPORT_DATA_LEVEL") or "AUCTION_ADVERTISER"
+                ).strip()
+                or "AUCTION_ADVERTISER",
+                "dimensions": _csv_env_list(
+                    env_name="TIKTOK_ADS_REPORT_DIMENSIONS",
+                    default=["stat_time_day"],
+                ),
+                "metrics": _csv_env_list(
+                    env_name="TIKTOK_ADS_REPORT_METRICS",
+                    default=["spend"],
+                ),
+            }
+        )
+    return payload
+
+
+def _csv_env_list(env_name: str, default: list[str]) -> list[str]:
+    raw_value = str(os.getenv(env_name) or "").strip()
+    if not raw_value:
+        return list(default)
+
+    values = [item.strip() for item in raw_value.split(",") if item.strip()]
+    return values or list(default)
+
+
+def _is_report_endpoint(endpoint: str) -> bool:
+    text = str(endpoint or "").strip().lower()
+    return "/report/" in text and "/get" in text
 
 
 def _parse_date(raw_value: str | None, default_value: date) -> date:

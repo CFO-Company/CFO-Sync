@@ -70,7 +70,7 @@ def main() -> int:
     print(
         "Endpoints: GET /v1/health | GET /v1/catalog | POST /v1/jobs | "
         "GET /v1/jobs/{id} | POST /v1/clients | POST /v1/generators/link | "
-        "GET /v1/oauth/mercado_livre/callback"
+        "GET /v1/oauth/mercado_livre/callback | GET /v1/oauth/tiktok_ads/callback"
     )
     try:
         server.serve_forever()

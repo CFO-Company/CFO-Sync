@@ -9,6 +9,12 @@ from cfo_sync.core.client_registration import ClientRegistrationManager
 from cfo_sync.core.config_loader import load_app_config
 from cfo_sync.core.link_generator import GeneratorLinkManager
 from cfo_sync.core.pipeline import SyncPipeline
+from cfo_sync.platforms.tiktok_ads.api import (
+    TikTokAdsAPIError,
+    exchange_auth_code_for_access_token,
+    fetch_authorized_advertiser_ids,
+)
+from cfo_sync.platforms.tiktok_ads.credentials import TikTokAdsCredentialsStore
 from cfo_sync.platforms.ui_registry import build_platform_ui_registry
 from cfo_sync.server.access import AccessTokenPolicy
 from cfo_sync.version import __version__
@@ -200,6 +206,65 @@ class CfoSyncServerService:
             self._reload_state_locked()
         return result
 
+    def complete_tiktok_ads_oauth_callback(
+        self,
+        *,
+        code: str,
+        state: str,
+    ) -> dict[str, object]:
+        auth_code = str(code or "").strip()
+        if not auth_code:
+            raise ValueError("auth_code nao informado no callback TikTok Ads.")
+
+        with self._state_lock:
+            config = self.config
+            credentials_path = config.credentials_dir / config.tiktok_ads.credentials_file
+            store = TikTokAdsCredentialsStore.from_file(credentials_path)
+            app_id = str(store.auth.app_id or "").strip()
+            secret = str(store.auth.secret or "").strip()
+            redirect_uri = str(store.auth.redirect_uri or "").strip()
+            if not app_id or not secret:
+                raise ValueError(
+                    "Credenciais TikTok Ads incompletas: informe auth.app_id e auth.secret "
+                    "em tiktok_ads_credentials.json."
+                )
+            if not redirect_uri:
+                raise ValueError(
+                    "Credenciais TikTok Ads incompletas: informe auth.redirect_uri "
+                    "em tiktok_ads_credentials.json."
+                )
+
+            access_token = exchange_auth_code_for_access_token(
+                app_id=app_id,
+                secret=secret,
+                auth_code=auth_code,
+                redirect_uri=redirect_uri,
+            )
+            updated_store = store.with_updated_access_token(access_token)
+            updated_store.save()
+            self._reload_state_locked()
+
+        authorized_ids: list[str] = []
+        authorization_warning = ""
+        try:
+            authorized_ids = fetch_authorized_advertiser_ids(
+                access_token=access_token,
+                app_id=app_id,
+                secret=secret,
+            )
+        except TikTokAdsAPIError as error:
+            authorization_warning = str(error)
+
+        return {
+            "platform_key": "tiktok_ads",
+            "state": state,
+            "redirect_uri": redirect_uri,
+            "authorized_advertiser_ids": authorized_ids,
+            "authorized_count": len(authorized_ids),
+            "access_token_masked": _mask_secret(access_token),
+            "warning": authorization_warning,
+        }
+
     def _validate_access(self, policy: AccessTokenPolicy, platform_key: str, client: str) -> None:
         if not platform_key:
             raise ValueError("Campo obrigatorio ausente: platform_key")
@@ -281,3 +346,10 @@ def _registration_mode(value: object) -> str:
         "Modo de cadastro invalido. Use 'existing_client' para filial/alias "
         "ou 'new_client' para novo cliente."
     )
+
+
+def _mask_secret(value: str) -> str:
+    text = str(value or "").strip()
+    if len(text) <= 8:
+        return "*" * len(text)
+    return f"{text[:4]}...{text[-4:]}"
