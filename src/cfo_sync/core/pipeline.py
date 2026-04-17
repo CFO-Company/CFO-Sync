@@ -100,6 +100,7 @@ class SyncPipeline:
                 rows=rows,
                 start_date=start_date,
                 end_date=end_date,
+                sub_clients=resolved_sub_clients,
             )
         return exported
 

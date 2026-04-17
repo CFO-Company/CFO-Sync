@@ -4,6 +4,7 @@ import json
 import socket
 import time
 from datetime import date, timedelta
+from http.client import IncompleteRead
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -224,8 +225,32 @@ def _request_orders(
         request = Request(url=url, headers=headers, method="GET")
         try:
             with urlopen(request, timeout=30) as response:
-                content = response.read().decode("utf-8")
-                return json.loads(content)
+                try:
+                    content = response.read()
+                except IncompleteRead as error:
+                    partial = error.partial or b""
+                    if partial:
+                        try:
+                            return json.loads(partial.decode("utf-8"))
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            pass
+                    if backoff is not None:
+                        time.sleep(backoff)
+                        continue
+                    raise YampiAPIError(
+                        "Resposta incompleta da Yampi "
+                        f"(alias={alias}, params={params}, bytes={len(partial)})."
+                    ) from error
+
+                try:
+                    return json.loads(content.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                    if backoff is not None:
+                        time.sleep(backoff)
+                        continue
+                    raise YampiAPIError(
+                        f"Resposta invalida da Yampi (alias={alias}, params={params})."
+                    ) from error
         except HTTPError as error:
             body = error.read().decode("utf-8", errors="ignore") if error.fp else ""
             should_retry = error.code in {429, 500, 502, 503, 504}
@@ -235,13 +260,11 @@ def _request_orders(
             raise YampiAPIError(
                 f"Erro HTTP na Yampi (alias={alias}, status={error.code}): {body[:300]}"
             ) from error
-        except (URLError, TimeoutError, socket.timeout) as error:
+        except (URLError, TimeoutError, socket.timeout, IncompleteRead) as error:
             if backoff is not None:
                 time.sleep(backoff)
                 continue
             raise YampiAPIError(f"Erro de conexao na Yampi (alias={alias}): {error}") from error
-        except json.JSONDecodeError as error:
-            raise YampiAPIError(f"Resposta invalida da Yampi (alias={alias})") from error
 
     raise YampiAPIError(f"Falha inesperada ao chamar Yampi (alias={alias})")
 

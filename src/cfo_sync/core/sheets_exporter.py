@@ -26,6 +26,7 @@ class GoogleSheetsExporter:
         rows: list[RawRecord],
         start_date: str | None = None,
         end_date: str | None = None,
+        sub_clients: list[str] | None = None,
     ) -> int:
         target_tab = self._resolve_client_tab(resource=resource, client=client)
         if target_tab is None:
@@ -44,11 +45,13 @@ class GoogleSheetsExporter:
         replaced_by_period = self._replace_month_period_rows(
             spreadsheet_id=spreadsheet_id,
             tab_name=tab_name,
+            resource=resource,
             rows=mapped_rows,
             ordered_columns=ordered_columns,
             period_column=period_column,
             start_date=start_date,
             end_date=end_date,
+            sub_clients=sub_clients,
         )
         if replaced_by_period:
             return len(mapped_rows)
@@ -116,11 +119,13 @@ class GoogleSheetsExporter:
         self,
         spreadsheet_id: str,
         tab_name: str,
+        resource: ResourceConfig,
         rows: list[dict[str, object]],
         ordered_columns: list[str],
         period_column: str | None,
         start_date: str | None,
         end_date: str | None,
+        sub_clients: list[str] | None,
     ) -> bool:
         if not period_column or not start_date or not end_date:
             return False
@@ -128,6 +133,7 @@ class GoogleSheetsExporter:
         target_month_years = self._month_years_in_period(start_date=start_date, end_date=end_date)
         if not target_month_years:
             return False
+        scope_filters = self._resolve_period_scope_filters(resource=resource, sub_clients=sub_clients)
 
         service = self._get_service()
         read_response = service.spreadsheets().values().get(
@@ -181,6 +187,7 @@ class GoogleSheetsExporter:
             return False
 
         period_column_index = header.index(period_column)
+        header_index = {column: index for index, column in enumerate(header)}
         rows_to_delete: list[int] = []
         for row_number, existing_row in enumerate(existing_values[1:], start=2):
             raw_value = self._safe_get(existing_row, period_column_index)
@@ -188,7 +195,12 @@ class GoogleSheetsExporter:
             if month_year is None:
                 continue
             if month_year in target_month_years:
-                rows_to_delete.append(row_number)
+                if self._row_matches_scope_filters(
+                    values=existing_row,
+                    header_index=header_index,
+                    scope_filters=scope_filters,
+                ):
+                    rows_to_delete.append(row_number)
 
         if rows_to_delete:
             self._delete_rows_by_numbers(
@@ -265,6 +277,48 @@ class GoogleSheetsExporter:
             else:
                 current = date(current.year, current.month + 1, 1)
         return month_years
+
+    @staticmethod
+    def _resolve_period_scope_filters(
+        resource: ResourceConfig,
+        sub_clients: list[str] | None,
+    ) -> dict[str, set[str]]:
+        if not sub_clients:
+            return {}
+
+        selected_values = {
+            str(value).strip().casefold() for value in sub_clients if str(value).strip()
+        }
+        if not selected_values:
+            return {}
+
+        alias_column = str(resource.field_map.get("alias") or "").strip()
+        if alias_column:
+            return {alias_column: selected_values}
+
+        account_column = str(resource.field_map.get("conta") or "").strip()
+        if account_column:
+            return {account_column: selected_values}
+
+        return {}
+
+    @staticmethod
+    def _row_matches_scope_filters(
+        values: list[object],
+        header_index: dict[str, int],
+        scope_filters: dict[str, set[str]],
+    ) -> bool:
+        if not scope_filters:
+            return True
+
+        for column_name, allowed_values in scope_filters.items():
+            column_index = header_index.get(column_name)
+            if column_index is None:
+                return False
+            raw_value = GoogleSheetsExporter._safe_get(values, column_index)
+            if raw_value.casefold() not in allowed_values:
+                return False
+        return True
 
     @staticmethod
     def _extract_month_year(raw_value: str) -> tuple[int, int] | None:
