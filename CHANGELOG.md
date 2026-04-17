@@ -1,3 +1,13 @@
+## [1.3.2] - 17-04-2026
+
+### Added
+- Integracao TikTok Shop com OAuth callback no servidor, conector de pedidos e suporte no cadastro/configuracao de clientes.
+- Runner `scripts/task_scheduler/tiktok_shop_mes_atual_3_anteriores.py` para exportacao mensal do TikTok Shop.
+
+### Changed
+- Yampi Estoque passou a consolidar o export por `Mês/Ano + SKU`, somando `Qtd Vendida` e `Receita Total SKU` a partir de `orders`.
+- Layout do recurso `estoque` da Yampi alinhado para as colunas: `Mês/Ano`, `Nome Produto`, `SKU`, `Qtd Vendida` e `Receita Total SKU`.
+
 ## [1.3.1] - 17-04-2026
 
 ### Added
