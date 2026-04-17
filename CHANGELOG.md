@@ -1,3 +1,9 @@
+## [1.3.3] - 17-04-2026
+
+### Changed
+- Pipeline de release (`build-and-publish-release`) configurado para forcar actions JavaScript no Node.js 24 via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24`.
+- Yampi Estoque passou a vincular `product` diretamente ao `SKU` priorizando linhas de `spreadsheet.data` (com fallback para `items`), preservando a consistencia `SKU` x `Nome Produto`.
+
 ## [1.3.2] - 17-04-2026
 
 ### Added
