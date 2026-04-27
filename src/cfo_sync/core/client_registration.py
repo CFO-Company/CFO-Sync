@@ -548,46 +548,26 @@ def _upsert_mercado_livre_credentials(
     if not isinstance(company_payload, dict):
         company_payload = {}
 
-    auth_payload = company_payload.get("auth")
-    if not isinstance(auth_payload, dict):
-        auth_payload = {}
-
-    expires_in = credentials.get("expires_in")
-    try:
-        parsed_expires_in = int(expires_in) if expires_in is not None else 21600
-    except (TypeError, ValueError):
-        raise ValueError("credentials.expires_in invalido: use inteiro positivo.") from None
-    if parsed_expires_in <= 0:
-        parsed_expires_in = 21600
-
-    auth_payload.update(
-        {
-            "client_id": _required_text(credentials.get("client_id"), field_name="credentials.client_id"),
-            "client_secret": _required_text(
-                credentials.get("client_secret"),
-                field_name="credentials.client_secret",
-            ),
-            "access_token": _required_text(
-                credentials.get("access_token"),
-                field_name="credentials.access_token",
-            ),
-            "refresh_token": _required_text(
-                credentials.get("refresh_token"),
-                field_name="credentials.refresh_token",
-            ),
-            "alias": _optional_text(
-                credentials.get("account_alias")
-                or credentials.get("alias")
-                or credentials.get("filial")
-            ),
-            "user_id": _optional_text(credentials.get("user_id")),
-            "token_type": _optional_text(credentials.get("token_type")) or "bearer",
-            "expires_in": parsed_expires_in,
-            "access_token_expires_at": _optional_text(credentials.get("access_token_expires_at")),
-        }
+    accounts = _normalize_mercado_livre_accounts(company_payload)
+    new_auth_payload = _build_mercado_livre_auth_payload(credentials)
+    matching_index = _find_mercado_livre_account_index(
+        accounts=accounts,
+        auth_payload=new_auth_payload,
     )
 
-    company_payload["auth"] = auth_payload
+    account_entry = {"auth": new_auth_payload}
+    if matching_index is None:
+        accounts.append(account_entry)
+    else:
+        accounts[matching_index] = account_entry
+
+    company_payload["accounts"] = accounts
+    if accounts:
+        first_auth = accounts[0].get("auth")
+        if isinstance(first_auth, dict):
+            # Mantem compatibilidade com formato legado (company.auth unico).
+            company_payload["auth"] = dict(first_auth)
+
     companies[company_key] = company_payload
     payload["companies"] = companies
 
@@ -601,40 +581,11 @@ def _create_mercado_livre_client_credentials(
     if not isinstance(companies, dict):
         raise ValueError("Credenciais Mercado Livre invalidas: secao 'companies' ausente.")
     _ensure_new_company_key(companies, client_name, platform_label="Mercado Livre")
-
-    expires_in = credentials.get("expires_in")
-    try:
-        parsed_expires_in = int(expires_in) if expires_in is not None else 21600
-    except (TypeError, ValueError):
-        raise ValueError("credentials.expires_in invalido: use inteiro positivo.") from None
-    if parsed_expires_in <= 0:
-        parsed_expires_in = 21600
-
+    auth_payload = _build_mercado_livre_auth_payload(credentials)
     companies[client_name] = {
-        "auth": {
-            "client_id": _required_text(credentials.get("client_id"), field_name="credentials.client_id"),
-            "client_secret": _required_text(
-                credentials.get("client_secret"),
-                field_name="credentials.client_secret",
-            ),
-            "access_token": _required_text(
-                credentials.get("access_token"),
-                field_name="credentials.access_token",
-            ),
-            "refresh_token": _required_text(
-                credentials.get("refresh_token"),
-                field_name="credentials.refresh_token",
-            ),
-            "alias": _optional_text(
-                credentials.get("account_alias")
-                or credentials.get("alias")
-                or credentials.get("filial")
-            ),
-            "user_id": _optional_text(credentials.get("user_id")),
-            "token_type": _optional_text(credentials.get("token_type")) or "bearer",
-            "expires_in": parsed_expires_in,
-            "access_token_expires_at": _optional_text(credentials.get("access_token_expires_at")),
-        }
+        "accounts": [{"auth": auth_payload}],
+        # Mantem compatibilidade com formato legado (company.auth unico).
+        "auth": dict(auth_payload),
     }
     payload["companies"] = companies
 
@@ -723,6 +674,136 @@ def _build_omie_alias_payload(
         ),
         "gid": gid,
     }
+
+
+def _build_mercado_livre_auth_payload(credentials: dict[str, object]) -> dict[str, Any]:
+    expires_in = credentials.get("expires_in")
+    try:
+        parsed_expires_in = int(expires_in) if expires_in is not None else 21600
+    except (TypeError, ValueError):
+        raise ValueError("credentials.expires_in invalido: use inteiro positivo.") from None
+    if parsed_expires_in <= 0:
+        parsed_expires_in = 21600
+
+    return {
+        "client_id": _required_text(credentials.get("client_id"), field_name="credentials.client_id"),
+        "client_secret": _required_text(
+            credentials.get("client_secret"),
+            field_name="credentials.client_secret",
+        ),
+        "access_token": _required_text(
+            credentials.get("access_token"),
+            field_name="credentials.access_token",
+        ),
+        "refresh_token": _required_text(
+            credentials.get("refresh_token"),
+            field_name="credentials.refresh_token",
+        ),
+        "alias": _optional_text(
+            credentials.get("account_alias")
+            or credentials.get("alias")
+            or credentials.get("filial")
+        ),
+        "user_id": _optional_text(credentials.get("user_id")),
+        "token_type": _optional_text(credentials.get("token_type")) or "bearer",
+        "expires_in": parsed_expires_in,
+        "access_token_expires_at": _optional_text(credentials.get("access_token_expires_at")),
+    }
+
+
+def _normalize_mercado_livre_accounts(company_payload: Any) -> list[dict[str, Any]]:
+    if isinstance(company_payload, list):
+        normalized_accounts: list[dict[str, Any]] = []
+        for item in company_payload:
+            if not isinstance(item, dict):
+                continue
+            for account in _normalize_mercado_livre_accounts(item):
+                normalized_accounts.append(account)
+        return normalized_accounts
+
+    if not isinstance(company_payload, dict):
+        return []
+
+    accounts_raw = company_payload.get("accounts")
+    normalized_accounts: list[dict[str, Any]] = []
+    if isinstance(accounts_raw, list):
+        for item in accounts_raw:
+            if not isinstance(item, dict):
+                continue
+            auth_payload = item.get("auth")
+            if isinstance(auth_payload, dict):
+                normalized_accounts.append({"auth": dict(auth_payload)})
+                continue
+            if _looks_like_mercado_livre_auth(item):
+                normalized_accounts.append({"auth": dict(item)})
+        if normalized_accounts:
+            return normalized_accounts
+
+    auth_payload = company_payload.get("auth")
+    if isinstance(auth_payload, list):
+        for item in auth_payload:
+            if not isinstance(item, dict):
+                continue
+            normalized_accounts.append({"auth": dict(item)})
+        if normalized_accounts:
+            return normalized_accounts
+
+    if isinstance(auth_payload, dict):
+        return [{"auth": dict(auth_payload)}]
+
+    if _looks_like_mercado_livre_auth(company_payload):
+        return [{"auth": dict(company_payload)}]
+
+    return []
+
+
+def _find_mercado_livre_account_index(
+    *,
+    accounts: list[dict[str, Any]],
+    auth_payload: dict[str, Any],
+) -> int | None:
+    alias_target = _mercado_livre_alias(auth_payload)
+    if alias_target:
+        for index, account in enumerate(accounts):
+            current_auth = account.get("auth")
+            if not isinstance(current_auth, dict):
+                continue
+            if _mercado_livre_alias(current_auth) == alias_target:
+                return index
+
+    user_id_target = str(auth_payload.get("user_id") or "").strip().casefold()
+    if user_id_target:
+        for index, account in enumerate(accounts):
+            current_auth = account.get("auth")
+            if not isinstance(current_auth, dict):
+                continue
+            current_user_id = str(current_auth.get("user_id") or "").strip().casefold()
+            if current_user_id == user_id_target:
+                return index
+    return None
+
+
+def _mercado_livre_alias(auth_payload: dict[str, Any]) -> str:
+    return str(
+        auth_payload.get("account_alias")
+        or auth_payload.get("alias")
+        or auth_payload.get("filial")
+        or ""
+    ).strip().casefold()
+
+
+def _looks_like_mercado_livre_auth(payload: dict[str, Any]) -> bool:
+    return any(
+        key in payload
+        for key in (
+            "client_id",
+            "app_id",
+            "client_secret",
+            "secret_key",
+            "access_token",
+            "refresh_token",
+        )
+    )
 
 
 def _required_text(value: object, *, field_name: str) -> str:
@@ -885,7 +966,11 @@ def _read_json_file(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"Arquivo nao encontrado: {path}")
     try:
-        loaded = json.loads(path.read_text(encoding="utf-8-sig"))
+        raw_text = path.read_text(encoding="utf-8-sig")
+        if path.name.lower() == "mercado_livre_credentials.json":
+            loaded = json.loads(raw_text, object_pairs_hook=_json_object_pairs_with_duplicates)
+        else:
+            loaded = json.loads(raw_text)
     except json.JSONDecodeError as error:
         raise ValueError(f"JSON invalido em {path}: {error}") from error
     if not isinstance(loaded, dict):
@@ -899,3 +984,18 @@ def _write_json_file(path: Path, payload: dict[str, Any]) -> None:
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def _json_object_pairs_with_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        existing = result.get(key)
+        if existing is None:
+            result[key] = value
+            continue
+        if isinstance(existing, list):
+            existing.append(value)
+            result[key] = existing
+            continue
+        result[key] = [existing, value]
+    return result

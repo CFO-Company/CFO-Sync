@@ -19,8 +19,4 @@ class MercadoLivreUIBehavior(PlatformUIBehavior):
             )
         except (FileNotFoundError, ValueError):
             return []
-
-        alias = store.auth.account_alias.strip()
-        if not alias:
-            return []
-        return [alias]
+        return list(store.account_labels)

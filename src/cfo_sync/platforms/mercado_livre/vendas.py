@@ -40,9 +40,14 @@ def fetch_vendas(
     credentials_path: Path,
     start_date: str | None = None,
     end_date: str | None = None,
+    account_alias: str | None = None,
     account_label_override: str | None = None,
 ) -> list[RawRecord]:
-    auth = ensure_valid_access_token(credentials_path, client=client)
+    auth = ensure_valid_access_token(
+        credentials_path,
+        client=client,
+        account_alias=account_alias,
+    )
     period_start, period_end = normalize_period(start_date, end_date)
     seller_id, account_label = _resolve_account(access_token=auth.access_token, fallback_user_id=auth.user_id)
     explicit_alias = str(account_label_override or auth.account_alias or "").strip()

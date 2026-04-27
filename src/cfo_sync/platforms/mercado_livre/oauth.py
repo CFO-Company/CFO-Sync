@@ -26,15 +26,32 @@ def ensure_valid_access_token(
     credentials_path: Path,
     tolerance_seconds: int = 120,
     client: str | None = None,
+    account_alias: str | None = None,
 ) -> MercadoLivreAuth:
-    store = MercadoLivreCredentialsStore.from_file(credentials_path, company_name=client)
+    store = MercadoLivreCredentialsStore.from_file(
+        credentials_path,
+        company_name=client,
+        account_alias=account_alias,
+    )
     if not store.access_token_expired(tolerance_seconds=tolerance_seconds):
         return store.auth
-    return refresh_access_token(credentials_path, client=client)
+    return refresh_access_token(
+        credentials_path,
+        client=client,
+        account_alias=account_alias,
+    )
 
 
-def refresh_access_token(credentials_path: Path, client: str | None = None) -> MercadoLivreAuth:
-    store = MercadoLivreCredentialsStore.from_file(credentials_path, company_name=client)
+def refresh_access_token(
+    credentials_path: Path,
+    client: str | None = None,
+    account_alias: str | None = None,
+) -> MercadoLivreAuth:
+    store = MercadoLivreCredentialsStore.from_file(
+        credentials_path,
+        company_name=client,
+        account_alias=account_alias,
+    )
     payload = _refresh_token_request(store.auth)
 
     access_token = str(payload.get("access_token") or "").strip()
@@ -141,13 +158,22 @@ def _main() -> int:
         default=None,
         help="Nome do cliente quando o arquivo de credenciais usa secao 'companies'.",
     )
+    parser.add_argument(
+        "--account",
+        default=None,
+        help="Alias/filial da conta quando o cliente possui multiplas contas.",
+    )
     args = parser.parse_args()
 
     credentials_path = Path(args.credentials)
     auth = (
-        refresh_access_token(credentials_path, client=args.client)
+        refresh_access_token(credentials_path, client=args.client, account_alias=args.account)
         if args.force
-        else ensure_valid_access_token(credentials_path, client=args.client)
+        else ensure_valid_access_token(
+            credentials_path,
+            client=args.client,
+            account_alias=args.account,
+        )
     )
 
     print("Token Mercado Livre validado/atualizado com sucesso.")

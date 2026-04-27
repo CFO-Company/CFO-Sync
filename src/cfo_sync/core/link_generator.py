@@ -213,15 +213,36 @@ class GeneratorLinkManager:
             for company_payload in companies.values():
                 if not isinstance(company_payload, dict):
                     continue
-                auth_payload = company_payload.get("auth")
-                if not isinstance(auth_payload, dict):
-                    auth_payload = company_payload
-                client_id = _optional_text(auth_payload.get("client_id") or auth_payload.get("app_id"))
-                client_secret = _optional_text(
-                    auth_payload.get("client_secret") or auth_payload.get("secret_key")
-                )
-                if client_id and client_secret:
-                    return MercadoLivreAppCredentials(client_id=client_id, client_secret=client_secret)
+                auth_candidates: list[dict[str, Any]] = []
+
+                company_auth = company_payload.get("auth")
+                if isinstance(company_auth, dict):
+                    auth_candidates.append(company_auth)
+                elif isinstance(company_auth, list):
+                    for auth_item in company_auth:
+                        if isinstance(auth_item, dict):
+                            auth_candidates.append(auth_item)
+                elif _looks_like_mercado_livre_auth(company_payload):
+                    auth_candidates.append(company_payload)
+
+                accounts_payload = company_payload.get("accounts")
+                if isinstance(accounts_payload, list):
+                    for account in accounts_payload:
+                        if not isinstance(account, dict):
+                            continue
+                        account_auth = account.get("auth")
+                        if isinstance(account_auth, dict):
+                            auth_candidates.append(account_auth)
+                        elif _looks_like_mercado_livre_auth(account):
+                            auth_candidates.append(account)
+
+                for auth_payload in auth_candidates:
+                    client_id = _optional_text(auth_payload.get("client_id") or auth_payload.get("app_id"))
+                    client_secret = _optional_text(
+                        auth_payload.get("client_secret") or auth_payload.get("secret_key")
+                    )
+                    if client_id and client_secret:
+                        return MercadoLivreAppCredentials(client_id=client_id, client_secret=client_secret)
 
         raise ValueError(
             "Credenciais globais do app Mercado Livre nao encontradas. "
@@ -397,3 +418,17 @@ def _parse_int(value: object, *, default: int) -> int:
     if parsed <= 0:
         return default
     return parsed
+
+
+def _looks_like_mercado_livre_auth(payload: dict[str, object]) -> bool:
+    return any(
+        key in payload
+        for key in (
+            "client_id",
+            "app_id",
+            "client_secret",
+            "secret_key",
+            "access_token",
+            "refresh_token",
+        )
+    )
