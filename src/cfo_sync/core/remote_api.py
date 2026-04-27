@@ -4,7 +4,7 @@ import json
 import time
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 from urllib.request import Request, urlopen
 
 
@@ -46,6 +46,23 @@ class RemoteCFOClient:
 
     def generate_generator_link(self, payload: dict[str, object]) -> dict[str, object]:
         return self._request_json("POST", "/v1/generators/link", payload=payload)
+
+    def list_secret_files(self) -> dict[str, object]:
+        return self._request_json("GET", "/v1/secrets/files")
+
+    def read_secret_file(self, path: str) -> dict[str, object]:
+        encoded_path = quote(str(path or "").strip(), safe="")
+        return self._request_json("GET", f"/v1/secrets/file?path={encoded_path}")
+
+    def update_secret_file(self, path: str, content: str) -> dict[str, object]:
+        return self._request_json(
+            "POST",
+            "/v1/secrets/file",
+            payload={
+                "path": path,
+                "content": content,
+            },
+        )
 
     def get_job(self, job_id: str) -> dict[str, object]:
         return self._request_json("GET", f"/v1/jobs/{job_id}")

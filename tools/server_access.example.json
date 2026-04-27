@@ -6,7 +6,8 @@
       "allowed_platforms": ["*"],
       "allowed_clients": {
         "*": ["*"]
-      }
+      },
+      "can_manage_secrets": true
     }
   ]
 }

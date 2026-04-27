@@ -194,6 +194,38 @@ class CfoSyncHttpServer:
                     self._write_json(HTTPStatus.OK, payload)
                     return
 
+                if path == "/v1/secrets/files":
+                    try:
+                        payload = server.service.list_secret_json_files(policy=policy)
+                    except PermissionError as error:
+                        self._write_json(HTTPStatus.FORBIDDEN, {"error": str(error)})
+                        return
+                    except Exception as error:  # noqa: BLE001
+                        self._write_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error)})
+                        return
+                    self._write_json(HTTPStatus.OK, payload)
+                    return
+
+                if path == "/v1/secrets/file":
+                    params = parse_qs(parsed.query or "")
+                    relative_path = str((params.get("path") or [""])[0] or "").strip()
+                    try:
+                        payload = server.service.read_secret_json_file(relative_path, policy=policy)
+                    except PermissionError as error:
+                        self._write_json(HTTPStatus.FORBIDDEN, {"error": str(error)})
+                        return
+                    except FileNotFoundError as error:
+                        self._write_json(HTTPStatus.NOT_FOUND, {"error": str(error)})
+                        return
+                    except ValueError as error:
+                        self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+                        return
+                    except Exception as error:  # noqa: BLE001
+                        self._write_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error)})
+                        return
+                    self._write_json(HTTPStatus.OK, payload)
+                    return
+
                 if path.startswith("/v1/jobs/") and path.endswith("/logs"):
                     job_id = path.split("/")[3]
                     job = server.jobs.get(job_id)
@@ -281,6 +313,33 @@ class CfoSyncHttpServer:
                         self._write_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error)})
                         return
                     self._write_json(HTTPStatus.CREATED, result)
+                    return
+
+                if path == "/v1/secrets/file":
+                    payload = self._read_json_body()
+                    if payload is None:
+                        return
+                    relative_path = str(payload.get("path") or "").strip()
+                    content = str(payload.get("content") or "")
+                    try:
+                        result = server.service.update_secret_json_file(
+                            relative_path,
+                            content,
+                            policy=policy,
+                        )
+                    except PermissionError as error:
+                        self._write_json(HTTPStatus.FORBIDDEN, {"error": str(error)})
+                        return
+                    except FileNotFoundError as error:
+                        self._write_json(HTTPStatus.NOT_FOUND, {"error": str(error)})
+                        return
+                    except ValueError as error:
+                        self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+                        return
+                    except Exception as error:  # noqa: BLE001
+                        self._write_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error)})
+                        return
+                    self._write_json(HTTPStatus.OK, result)
                     return
 
                 self._write_json(HTTPStatus.NOT_FOUND, {"error": "Rota nao encontrada."})

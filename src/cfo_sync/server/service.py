@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
@@ -195,6 +196,75 @@ class CfoSyncServerService:
         with self._state_lock:
             return self.generator_manager.create_link(payload, external_base_url=external_base_url)
 
+    def list_secret_json_files(self, *, policy: AccessTokenPolicy) -> dict[str, object]:
+        self._validate_secrets_access(policy)
+        secrets_root = self._secrets_root()
+        files: list[dict[str, object]] = []
+        if secrets_root.exists():
+            for path in sorted(secrets_root.rglob("*.json"), key=lambda item: item.as_posix().casefold()):
+                if not path.is_file():
+                    continue
+                relative_path = path.relative_to(secrets_root).as_posix()
+                stat = path.stat()
+                files.append(
+                    {
+                        "path": relative_path,
+                        "name": path.name,
+                        "size_bytes": stat.st_size,
+                        "modified_at": datetime.fromtimestamp(
+                            stat.st_mtime,
+                            tz=timezone.utc,
+                        ).isoformat(),
+                    }
+                )
+        return {
+            "secrets_dir": str(secrets_root),
+            "files": files,
+        }
+
+    def read_secret_json_file(
+        self,
+        relative_path: str,
+        *,
+        policy: AccessTokenPolicy,
+    ) -> dict[str, object]:
+        self._validate_secrets_access(policy)
+        path = self._resolve_secret_json_path(relative_path)
+        if not path.exists() or not path.is_file():
+            raise FileNotFoundError("Arquivo JSON nao encontrado em secrets.")
+        content = path.read_text(encoding="utf-8-sig")
+        stat = path.stat()
+        return {
+            "path": path.relative_to(self._secrets_root()).as_posix(),
+            "name": path.name,
+            "size_bytes": stat.st_size,
+            "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            "content": content,
+        }
+
+    def update_secret_json_file(
+        self,
+        relative_path: str,
+        content: str,
+        *,
+        policy: AccessTokenPolicy,
+    ) -> dict[str, object]:
+        self._validate_secrets_access(policy)
+        path = self._resolve_secret_json_path(relative_path)
+        if not path.exists() or not path.is_file():
+            raise FileNotFoundError("Arquivo JSON nao encontrado em secrets.")
+
+        try:
+            json.loads(content)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"JSON invalido: {error}") from error
+
+        path.write_text(content.rstrip() + "\n", encoding="utf-8")
+        if path.resolve() == self.config_path.resolve():
+            with self._state_lock:
+                self._reload_state_locked()
+        return self.read_secret_json_file(relative_path, policy=policy)
+
     def complete_mercado_livre_oauth_callback(
         self,
         *,
@@ -348,6 +418,29 @@ class CfoSyncServerService:
             raise PermissionError(
                 f"Token sem permissao para cliente '{client}' na plataforma '{platform_key}'."
             )
+
+    def _validate_secrets_access(self, policy: AccessTokenPolicy) -> None:
+        if not policy.can_manage_secrets:
+            raise PermissionError(
+                "Token sem permissao para visualizar/editar secrets. "
+                "Ative can_manage_secrets no server_access.json."
+            )
+
+    def _secrets_root(self) -> Path:
+        return self.config_path.parent.resolve()
+
+    def _resolve_secret_json_path(self, relative_path: str) -> Path:
+        cleaned = str(relative_path or "").replace("\\", "/").strip().lstrip("/")
+        if not cleaned:
+            raise ValueError("Informe o arquivo JSON de secrets.")
+        if cleaned.endswith("/") or Path(cleaned).is_absolute():
+            raise ValueError("Caminho invalido para arquivo de secrets.")
+        path = (self._secrets_root() / cleaned).resolve()
+        if self._secrets_root() not in path.parents:
+            raise ValueError("Caminho fora da pasta secrets.")
+        if path.suffix.casefold() != ".json":
+            raise ValueError("Somente arquivos .json da pasta secrets podem ser acessados.")
+        return path
 
     def _validate_registration_access(
         self,

@@ -367,6 +367,11 @@ class CFODesktopApp:
         self.server_url_var = tk.StringVar(value="")
         self.server_token_var = tk.StringVar(value="")
         self.server_status_var = tk.StringVar(value="Servidor desconectado")
+        self.server_secret_path_var = tk.StringVar(value="")
+        self.server_secret_modified_var = tk.StringVar(value="-")
+        self.server_secret_size_var = tk.StringVar(value="-")
+        self.server_secret_files: list[dict[str, object]] = []
+        self.server_secret_loaded_path = ""
         self.client_registration_mode_var = tk.StringVar()
         self.client_registration_platform_var = tk.StringVar()
         self.client_registration_client_var = tk.StringVar()
@@ -961,6 +966,10 @@ class CFODesktopApp:
         self.generator_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
         self.sku_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
         self.settings_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
+        self.settings_tab.columnconfigure(1, weight=1)
+        self.server_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
+        self.server_tab.columnconfigure(0, weight=1)
+        self.server_tab.rowconfigure(0, weight=1)
 
         self.tabs.add(config_tab, text="Pedidos")
         self.tabs.add(self.estoque_tab, text="Estoque")
@@ -968,6 +977,7 @@ class CFODesktopApp:
         self.tabs.add(self.generator_tab, text="Gerador")
         self.tabs.add(self.sku_tab, text="SKU")
         self.tabs.add(self.settings_tab, text="Configurações")
+        self.tabs.add(self.server_tab, text="Server")
 
         ttk.Label(config_tab, text="Pedidos", style="CardTitle.TLabel").grid(
             row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 12)
@@ -1677,8 +1687,6 @@ class CFODesktopApp:
         self.sku_tree.configure(yscrollcommand=sku_scroll.set)
         self.sku_tree.bind("<Configure>", lambda event: self._resize_sku_columns(event.width))
 
-        self.settings_tab.columnconfigure(1, weight=1)
-
         ttk.Label(self.settings_tab, text="Configurações", style="CardTitle.TLabel").grid(
             row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 12)
         )
@@ -1776,8 +1784,132 @@ class CFODesktopApp:
             style="Field.TLabel",
         ).grid(row=6, column=1, sticky=tk.W, pady=(0, 8))
 
+        secrets_panel = ttk.Frame(self.server_tab, style="Card.TFrame")
+        secrets_panel.grid(row=0, column=0, sticky=tk.NSEW)
+        secrets_panel.columnconfigure(1, weight=1)
+        secrets_panel.rowconfigure(1, weight=1)
+
+        secrets_header = ttk.Frame(secrets_panel, style="Card.TFrame")
+        secrets_header.grid(row=0, column=0, columnspan=2, sticky=tk.EW, pady=(0, 8))
+        secrets_header.columnconfigure(0, weight=1)
+        ttk.Label(
+            secrets_header,
+            text="Secrets do servidor",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, sticky=tk.W)
+        self.btn_refresh_server_secrets = ttk.Button(
+            secrets_header,
+            text="Atualizar lista",
+            style="Secondary.TButton",
+            command=self.refresh_server_secret_files,
+        )
+        self.btn_refresh_server_secrets.grid(row=0, column=1, sticky=tk.E, padx=(8, 0))
+
+        secrets_list_frame = ttk.Frame(secrets_panel, style="Card.TFrame")
+        secrets_list_frame.grid(row=1, column=0, sticky=tk.NSEW, padx=(0, 10))
+        secrets_list_frame.rowconfigure(0, weight=1)
+        secrets_list_frame.columnconfigure(0, weight=1)
+        self.server_secrets_tree = ttk.Treeview(
+            secrets_list_frame,
+            columns=("modified",),
+            show="tree headings",
+            height=9,
+            style="Dark.Treeview",
+            selectmode="browse",
+        )
+        self.server_secrets_tree.heading("#0", text="Arquivo")
+        self.server_secrets_tree.heading("modified", text="Editado em")
+        self.server_secrets_tree.column("#0", width=260, minwidth=180, stretch=True)
+        self.server_secrets_tree.column("modified", width=150, minwidth=130, stretch=False)
+        self.server_secrets_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        secrets_list_scroll = ttk.Scrollbar(
+            secrets_list_frame,
+            orient=tk.VERTICAL,
+            command=self.server_secrets_tree.yview,
+            style="Modern.Vertical.TScrollbar",
+        )
+        secrets_list_scroll.grid(row=0, column=1, sticky=tk.NS)
+        self.server_secrets_tree.configure(yscrollcommand=secrets_list_scroll.set)
+
+        secrets_editor_frame = ttk.Frame(secrets_panel, style="Card.TFrame")
+        secrets_editor_frame.grid(row=1, column=1, sticky=tk.NSEW)
+        secrets_editor_frame.rowconfigure(2, weight=1)
+        secrets_editor_frame.columnconfigure(0, weight=1)
+
+        secrets_meta = ttk.Frame(secrets_editor_frame, style="Card.TFrame")
+        secrets_meta.grid(row=0, column=0, sticky=tk.EW, pady=(0, 6))
+        secrets_meta.columnconfigure(1, weight=1)
+        ttk.Label(secrets_meta, text="Arquivo", style="Field.TLabel").grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(
+            secrets_meta,
+            textvariable=self.server_secret_path_var,
+            style="FieldValue.TLabel",
+        ).grid(row=0, column=1, sticky=tk.W, padx=(8, 0))
+        ttk.Label(secrets_meta, text="Ultima edicao", style="Field.TLabel").grid(
+            row=1,
+            column=0,
+            sticky=tk.W,
+            pady=(4, 0),
+        )
+        ttk.Label(
+            secrets_meta,
+            textvariable=self.server_secret_modified_var,
+            style="FieldValue.TLabel",
+        ).grid(row=1, column=1, sticky=tk.W, padx=(8, 0), pady=(4, 0))
+        ttk.Label(secrets_meta, text="Tamanho", style="Field.TLabel").grid(
+            row=2,
+            column=0,
+            sticky=tk.W,
+            pady=(4, 0),
+        )
+        ttk.Label(
+            secrets_meta,
+            textvariable=self.server_secret_size_var,
+            style="FieldValue.TLabel",
+        ).grid(row=2, column=1, sticky=tk.W, padx=(8, 0), pady=(4, 0))
+
+        self.server_secret_editor = tk.Text(
+            secrets_editor_frame,
+            height=12,
+            bg=COLOR_SURFACE_ALT,
+            fg=COLOR_TEXT,
+            insertbackground=COLOR_TEXT,
+            selectbackground=COLOR_BUTTON_ALT_HOVER,
+            selectforeground=COLOR_TEXT,
+            relief=tk.FLAT,
+            padx=10,
+            pady=10,
+            highlightthickness=1,
+            highlightbackground=COLOR_BORDER,
+            highlightcolor=COLOR_ACCENT,
+            borderwidth=0,
+            font=("Consolas", 10),
+            undo=True,
+            wrap=tk.NONE,
+        )
+        self.server_secret_editor.grid(row=2, column=0, sticky=tk.NSEW)
+
+        secrets_editor_actions = ttk.Frame(secrets_editor_frame, style="Card.TFrame")
+        secrets_editor_actions.grid(row=3, column=0, sticky=tk.EW, pady=(8, 0))
+        secrets_editor_actions.columnconfigure(0, weight=1)
+        secrets_editor_actions.columnconfigure(1, weight=1)
+        self.btn_load_server_secret = ttk.Button(
+            secrets_editor_actions,
+            text="Carregar JSON",
+            style="Secondary.TButton",
+            command=self.load_selected_server_secret,
+        )
+        self.btn_load_server_secret.grid(row=0, column=0, sticky=tk.EW, padx=(0, 6))
+        self.btn_save_server_secret = ttk.Button(
+            secrets_editor_actions,
+            text="Salvar no servidor",
+            style="Primary.TButton",
+            command=self.save_selected_server_secret,
+        )
+        self.btn_save_server_secret.grid(row=0, column=1, sticky=tk.EW)
+
         app_actions = ttk.Frame(self.settings_tab, style="Card.TFrame")
-        app_actions.grid(row=7, column=1, sticky=tk.EW, pady=(8, 0))
+        app_actions.grid(row=8, column=1, sticky=tk.EW, pady=(8, 0))
         app_actions.columnconfigure(0, weight=1)
         app_actions.columnconfigure(1, weight=1)
 
@@ -1951,6 +2083,10 @@ class CFODesktopApp:
         self.notification_sound_combo.bind(
             "<<ComboboxSelected>>",
             lambda _event: self._on_notification_sound_change(),
+        )
+        self.server_secrets_tree.bind(
+            "<<TreeviewSelect>>",
+            lambda _event: self._on_server_secret_selection_change(),
         )
         self.tabs.bind("<<NotebookTabChanged>>", lambda _event: self._on_tab_changed())
         self.sku_order_entry.bind("<Return>", lambda _event: self.search_sku())
@@ -2715,6 +2851,10 @@ class CFODesktopApp:
             self.estoque_sub_client_listbox.configure(state=tk.DISABLED)
             self.notification_sound_combo.configure(state=tk.DISABLED)
             self.btn_refresh_sounds.configure(state=tk.DISABLED)
+            self.btn_refresh_server_secrets.configure(state=tk.DISABLED)
+            self.btn_load_server_secret.configure(state=tk.DISABLED)
+            self.btn_save_server_secret.configure(state=tk.DISABLED)
+            self.server_secret_editor.configure(state=tk.DISABLED)
             self.btn_search_sku.configure(state=tk.DISABLED)
             self.sku_order_entry.configure(state=tk.DISABLED)
             self.btn_pick_period.configure(state=tk.DISABLED)
@@ -2769,6 +2909,7 @@ class CFODesktopApp:
         self.estoque_sub_client_listbox.configure(state=estoque_controls_state)
         self.notification_sound_combo.configure(state="readonly")
         self.btn_refresh_sounds.configure(state=tk.NORMAL)
+        self._sync_server_secret_controls()
         sku_state = tk.NORMAL if self._platform_supports_sku_workflow() else tk.DISABLED
         self.btn_search_sku.configure(state=sku_state)
         self.sku_order_entry.configure(state=sku_state)
@@ -4057,6 +4198,185 @@ class CFODesktopApp:
 
         self._run_task("Atualizar catalogo", task)
 
+    def refresh_server_secret_files(self) -> None:
+        def task() -> None:
+            if self.remote_client is None:
+                raise ValueError("Conecte o servidor na aba Configuracoes e acesse a aba Server para visualizar secrets.")
+            payload = self.remote_client.list_secret_files()
+            files_raw = payload.get("files")
+            files = files_raw if isinstance(files_raw, list) else []
+            self._apply_server_secret_files_in_ui_thread(files)
+            self.log(f"Lista de secrets atualizada: {len(files)} arquivo(s) JSON.")
+
+        self._run_task("Atualizar secrets", task)
+
+    def load_selected_server_secret(self) -> None:
+        def task() -> None:
+            if self.remote_client is None:
+                raise ValueError("Conecte o servidor na aba Configuracoes e acesse a aba Server para visualizar secrets.")
+            path = self._selected_server_secret_path()
+            if not path:
+                raise ValueError("Selecione um arquivo JSON de secrets.")
+            payload = self.remote_client.read_secret_file(path)
+            self._apply_server_secret_file_in_ui_thread(payload)
+            self.log(f"Secret carregado: {path}")
+
+        self._run_task("Carregar secret", task)
+
+    def save_selected_server_secret(self) -> None:
+        def task() -> None:
+            if self.remote_client is None:
+                raise ValueError("Conecte o servidor na aba Configuracoes e acesse a aba Server para editar secrets.")
+            path = self.server_secret_loaded_path.strip()
+            if not path:
+                raise ValueError("Carregue um arquivo JSON antes de salvar.")
+            content = self.server_secret_editor.get("1.0", tk.END).strip()
+            if not content:
+                raise ValueError("O conteudo JSON nao pode ficar vazio.")
+            json.loads(content)
+            result = self.remote_client.update_secret_file(path, content)
+            self._apply_server_secret_file_in_ui_thread(result)
+            files_payload = self.remote_client.list_secret_files()
+            files_raw = files_payload.get("files")
+            files = files_raw if isinstance(files_raw, list) else []
+            self._apply_server_secret_files_in_ui_thread(files)
+            self.log(f"Secret salvo no servidor: {path}")
+            self.root.after(
+                0,
+                lambda: messagebox.showinfo("Secrets", f"Arquivo salvo no servidor: {path}"),
+            )
+
+        self._run_task("Salvar secret", task)
+
+    def _apply_server_secret_files_in_ui_thread(self, files: list[object]) -> None:
+        completed = threading.Event()
+        errors: list[Exception] = []
+
+        def apply() -> None:
+            try:
+                self.server_secret_files = [
+                    item for item in files if isinstance(item, dict)
+                ]
+                selected_path = self._selected_server_secret_path() or self.server_secret_loaded_path
+                self.server_secrets_tree.delete(*self.server_secrets_tree.get_children())
+                for item in self.server_secret_files:
+                    path = str(item.get("path") or "").strip()
+                    if not path:
+                        continue
+                    modified = self._format_remote_datetime(item.get("modified_at"))
+                    self.server_secrets_tree.insert(
+                        "",
+                        tk.END,
+                        iid=path,
+                        text=path,
+                        values=(modified,),
+                    )
+                if selected_path and self.server_secrets_tree.exists(selected_path):
+                    self.server_secrets_tree.selection_set(selected_path)
+                    self.server_secrets_tree.see(selected_path)
+                elif self.server_secret_loaded_path:
+                    self.server_secret_loaded_path = ""
+                    self.server_secret_path_var.set("")
+                    self.server_secret_modified_var.set("-")
+                    self.server_secret_size_var.set("-")
+                    self.server_secret_editor.configure(state=tk.NORMAL)
+                    self.server_secret_editor.delete("1.0", tk.END)
+                    self.server_secret_editor.configure(state=tk.DISABLED)
+                self._sync_server_secret_controls()
+            except Exception as error:  # noqa: BLE001
+                errors.append(error)
+            finally:
+                completed.set()
+
+        self.root.after(0, apply)
+        completed.wait()
+        if errors:
+            raise errors[0]
+
+    def _apply_server_secret_file_in_ui_thread(self, payload: dict[str, object]) -> None:
+        completed = threading.Event()
+        errors: list[Exception] = []
+
+        def apply() -> None:
+            try:
+                path = str(payload.get("path") or "").strip()
+                content = str(payload.get("content") or "")
+                self.server_secret_loaded_path = path
+                self.server_secret_path_var.set(path)
+                self.server_secret_modified_var.set(
+                    self._format_remote_datetime(payload.get("modified_at"))
+                )
+                size_bytes = payload.get("size_bytes")
+                self.server_secret_size_var.set(f"{size_bytes} bytes" if size_bytes is not None else "-")
+                self.server_secret_editor.configure(state=tk.NORMAL)
+                self.server_secret_editor.delete("1.0", tk.END)
+                self.server_secret_editor.insert("1.0", content)
+                self.server_secret_editor.edit_reset()
+                if path and self.server_secrets_tree.exists(path):
+                    self.server_secrets_tree.selection_set(path)
+                    self.server_secrets_tree.see(path)
+                self._sync_server_secret_controls()
+            except Exception as error:  # noqa: BLE001
+                errors.append(error)
+            finally:
+                completed.set()
+
+        self.root.after(0, apply)
+        completed.wait()
+        if errors:
+            raise errors[0]
+
+    def _on_server_secret_selection_change(self) -> None:
+        path = self._selected_server_secret_path()
+        if not path:
+            return
+        if path != self.server_secret_loaded_path:
+            self.server_secret_loaded_path = ""
+            self.server_secret_editor.configure(state=tk.NORMAL)
+            self.server_secret_editor.delete("1.0", tk.END)
+            self.server_secret_editor.edit_reset()
+        for item in self.server_secret_files:
+            if str(item.get("path") or "").strip() != path:
+                continue
+            self.server_secret_path_var.set(path)
+            self.server_secret_modified_var.set(self._format_remote_datetime(item.get("modified_at")))
+            size_bytes = item.get("size_bytes")
+            self.server_secret_size_var.set(f"{size_bytes} bytes" if size_bytes is not None else "-")
+            break
+        self._sync_server_secret_controls()
+
+    def _selected_server_secret_path(self) -> str:
+        selected = self.server_secrets_tree.selection()
+        if not selected:
+            return ""
+        return str(selected[0]).strip()
+
+    def _sync_server_secret_controls(self) -> None:
+        if self.busy:
+            return
+        has_remote = self.remote_client is not None
+        has_selected = bool(self._selected_server_secret_path())
+        has_loaded = bool(self.server_secret_loaded_path)
+        self.btn_refresh_server_secrets.configure(state=tk.NORMAL if has_remote else tk.DISABLED)
+        self.btn_load_server_secret.configure(
+            state=tk.NORMAL if has_remote and has_selected else tk.DISABLED
+        )
+        self.btn_save_server_secret.configure(
+            state=tk.NORMAL if has_remote and has_loaded else tk.DISABLED
+        )
+        self.server_secret_editor.configure(state=tk.NORMAL if has_remote and has_loaded else tk.DISABLED)
+
+    @staticmethod
+    def _format_remote_datetime(value: object) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return "-"
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return raw
+        return parsed.astimezone().strftime("%d/%m/%Y %H:%M:%S")
+
     def _reset_client_registration_form(self) -> None:
         self.client_registration_gid_var.set("")
         self.client_registration_client_name_var.set("")
@@ -4123,6 +4443,7 @@ class CFODesktopApp:
         self.generator_gid_var.set("")
         self.generator_link_var.set("")
         self._refresh_local_fallback_visibility()
+        self._sync_server_secret_controls()
         self._load_initial_values()
 
     def _apply_remote_connection_in_ui_thread(
@@ -4136,6 +4457,15 @@ class CFODesktopApp:
         def apply() -> None:
             try:
                 self._activate_remote_catalog(client, catalog)
+                self.server_secret_files = []
+                self.server_secret_loaded_path = ""
+                self.server_secret_path_var.set("")
+                self.server_secret_modified_var.set("-")
+                self.server_secret_size_var.set("-")
+                self.server_secrets_tree.delete(*self.server_secrets_tree.get_children())
+                self.server_secret_editor.configure(state=tk.NORMAL)
+                self.server_secret_editor.delete("1.0", tk.END)
+                self.server_secret_editor.configure(state=tk.DISABLED)
                 self._reload_catalog_ui()
             except Exception as error:  # noqa: BLE001
                 errors.append(error)
@@ -4155,6 +4485,15 @@ class CFODesktopApp:
             try:
                 self.remote_client = None
                 self.remote_catalog_sub_clients = {}
+                self.server_secret_files = []
+                self.server_secret_loaded_path = ""
+                self.server_secret_path_var.set("")
+                self.server_secret_modified_var.set("-")
+                self.server_secret_size_var.set("-")
+                self.server_secrets_tree.delete(*self.server_secrets_tree.get_children())
+                self.server_secret_editor.configure(state=tk.NORMAL)
+                self.server_secret_editor.delete("1.0", tk.END)
+                self.server_secret_editor.configure(state=tk.DISABLED)
                 self.config = config
                 self.pipeline = pipeline
                 self.platform_ui_registry = build_platform_ui_registry(self.config)
@@ -4214,6 +4553,15 @@ class CFODesktopApp:
     def disconnect_server(self) -> None:
         self.remote_client = None
         self.remote_catalog_sub_clients = {}
+        self.server_secret_files = []
+        self.server_secret_loaded_path = ""
+        self.server_secret_path_var.set("")
+        self.server_secret_modified_var.set("-")
+        self.server_secret_size_var.set("-")
+        self.server_secrets_tree.delete(*self.server_secrets_tree.get_children())
+        self.server_secret_editor.configure(state=tk.NORMAL)
+        self.server_secret_editor.delete("1.0", tk.END)
+        self.server_secret_editor.configure(state=tk.DISABLED)
         self.config = _empty_app_config()
         self.pipeline = None
         self.platform_ui_registry = build_platform_ui_registry(self.config)

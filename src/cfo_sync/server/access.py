@@ -12,6 +12,7 @@ class AccessTokenPolicy:
     token: str
     allowed_platforms: tuple[str, ...]
     allowed_clients: dict[str, tuple[str, ...]]
+    can_manage_secrets: bool = False
 
     def allows_platform(self, platform_key: str) -> bool:
         return _allows_value(self.allowed_platforms, platform_key)
@@ -81,6 +82,7 @@ def load_access_policies(path: Path) -> list[AccessTokenPolicy]:
                 token=token,
                 allowed_platforms=allowed_platforms,
                 allowed_clients=allowed_clients,
+                can_manage_secrets=bool(item.get("can_manage_secrets", False)),
             )
         )
     return policies
