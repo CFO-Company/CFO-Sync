@@ -111,10 +111,18 @@ Exemplo:
       "allowed_clients": {
         "yampi": ["Aurha", "Avozon"],
         "meta_ads": ["*"]
-      }
+      },
+      "can_manage_secrets": false
     }
   ]
 }
+```
+
+Para permitir visualizar/editar arquivos `.json` da pasta `secrets` pela tela
+`Server > Secrets do servidor`, marque apenas tokens administrativos com:
+
+```json
+"can_manage_secrets": true
 ```
 
 Se precisar recriar token/template do zero:
@@ -192,7 +200,7 @@ Resposta:
 ```json
 {
   "status": "ok",
-  "version": "1.3.1",
+  "version": "1.3.4",
   "server_time": "2026-04-02T12:00:00+00:00"
 }
 ```
@@ -220,6 +228,36 @@ Resposta (exemplo reduzido):
   ]
 }
 ```
+
+### GET /v1/secrets/files
+
+Auth: `Authorization: Bearer <token>` com `can_manage_secrets: true`
+
+Lista arquivos `.json` dentro da pasta `secrets`, incluindo `path`,
+`modified_at` e `size_bytes`.
+
+### GET /v1/secrets/file
+
+Auth: `Authorization: Bearer <token>` com `can_manage_secrets: true`
+
+Query: `?path=app_config.json`
+
+Retorna metadados e o conteudo do JSON.
+
+### POST /v1/secrets/file
+
+Auth: `Authorization: Bearer <token>` com `can_manage_secrets: true`
+
+Request:
+
+```json
+{
+  "path": "app_config.json",
+  "content": "{\"platforms\": []}"
+}
+```
+
+O servidor valida o JSON antes de salvar e bloqueia caminhos fora de `secrets`.
 
 ### POST /v1/jobs
 

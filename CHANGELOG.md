@@ -1,3 +1,16 @@
+## [1.3.4] - 27-04-2026
+
+### Added
+- Aba `Server` com visualizacao e edicao de arquivos JSON da pasta `secrets` no servidor.
+- Endpoints administrativos para listar, ler e salvar JSONs de `secrets` com permissao `can_manage_secrets`.
+
+### Changed
+- Mercado Livre passou a suportar multiplas filiais/aliases por cliente usando `accounts`.
+
+### Fixed
+- Cadastro de nova filial/alias do Mercado Livre agora adiciona a conta sem substituir a filial anterior.
+- Edicao de secrets no desktop evita salvar conteudo carregado em outro arquivo ao trocar a selecao.
+
 ## [1.3.3] - 17-04-2026
 
 ### Changed
