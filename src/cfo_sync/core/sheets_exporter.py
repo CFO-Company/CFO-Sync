@@ -41,7 +41,7 @@ class GoogleSheetsExporter:
         mapped_rows = [self._map_to_sheet_columns(resource, row) for row in rows]
         ordered_columns = list(resource.field_map.values())
 
-        period_column = resource.field_map.get("mes_ano") or resource.field_map.get("data")
+        period_column = self._resolve_period_column(resource)
         replaced_by_period = self._replace_month_period_rows(
             spreadsheet_id=spreadsheet_id,
             tab_name=tab_name,
@@ -130,9 +130,12 @@ class GoogleSheetsExporter:
         if not period_column or not start_date or not end_date:
             return False
 
-        target_month_years = self._month_years_in_period(start_date=start_date, end_date=end_date)
-        if not target_month_years:
+        period_start = self._parse_iso_date(start_date)
+        period_end = self._parse_iso_date(end_date)
+        if period_start is None or period_end is None or period_start > period_end:
             return False
+        target_month_years = self._month_years_in_period(start_date=start_date, end_date=end_date)
+        period_is_monthly = period_column == str(resource.field_map.get("mes_ano") or "").strip()
         scope_filters = self._resolve_period_scope_filters(resource=resource, sub_clients=sub_clients)
 
         service = self._get_service()
@@ -191,10 +194,12 @@ class GoogleSheetsExporter:
         rows_to_delete: list[int] = []
         for row_number, existing_row in enumerate(existing_values[1:], start=2):
             raw_value = self._safe_get(existing_row, period_column_index)
-            month_year = self._extract_month_year(raw_value)
-            if month_year is None:
-                continue
-            if month_year in target_month_years:
+            if period_is_monthly:
+                row_in_period = self._extract_month_year(raw_value) in target_month_years
+            else:
+                row_date = self._extract_date(raw_value)
+                row_in_period = row_date is not None and period_start <= row_date <= period_end
+            if row_in_period:
                 if self._row_matches_scope_filters(
                     values=existing_row,
                     header_index=header_index,
@@ -292,13 +297,16 @@ class GoogleSheetsExporter:
         if not selected_values:
             return {}
 
-        alias_column = str(resource.field_map.get("alias") or "").strip()
-        if alias_column:
-            return {alias_column: selected_values}
-
-        account_column = str(resource.field_map.get("conta") or "").strip()
-        if account_column:
-            return {account_column: selected_values}
+        for api_field in (
+            "alias",
+            "conta",
+            "account_name",
+            "nome_ca",
+            "customer_name",
+        ):
+            column_name = str(resource.field_map.get(api_field) or "").strip()
+            if column_name:
+                return {column_name: selected_values}
 
         return {}
 
@@ -352,6 +360,52 @@ class GoogleSheetsExporter:
             return parsed.month, parsed.year
         except ValueError:
             return None
+
+    @staticmethod
+    def _extract_date(raw_value: str) -> date | None:
+        text = str(raw_value or "").strip()
+        if not text:
+            return None
+
+        br_date_match = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", text)
+        if br_date_match:
+            day = int(br_date_match.group(1))
+            month = int(br_date_match.group(2))
+            year = int(br_date_match.group(3))
+            try:
+                return date(year, month, day)
+            except ValueError:
+                return None
+
+        iso_date_match = re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})", text)
+        if iso_date_match:
+            year = int(iso_date_match.group(1))
+            month = int(iso_date_match.group(2))
+            day = int(iso_date_match.group(3))
+            try:
+                return date(year, month, day)
+            except ValueError:
+                return None
+
+        try:
+            return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _parse_iso_date(raw_value: str) -> date | None:
+        try:
+            return date.fromisoformat(str(raw_value or "").strip())
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _resolve_period_column(resource: ResourceConfig) -> str | None:
+        for api_field in ("mes_ano", "data", "data_gasto", "date"):
+            column_name = str(resource.field_map.get(api_field) or "").strip()
+            if column_name:
+                return column_name
+        return None
 
     def _upsert_by_keys(
         self,
