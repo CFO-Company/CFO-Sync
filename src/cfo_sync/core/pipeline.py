@@ -28,6 +28,7 @@ class SyncPipeline:
             config.credentials_dir / "omie_credentials.json"
         )
         resolved_omie_2025_credentials_path = config.credentials_dir / "omie_2025.json"
+        resolved_omie_cfo_credentials_path = config.credentials_dir / "omie_cfo.json"
         mercado_livre_credentials_path = config.credentials_dir / "mercado_livre_credentials.json"
         self.connectors = build_platform_registry(
             yampi_credentials_path=yampi_credentials_path,
@@ -37,6 +38,7 @@ class SyncPipeline:
             tiktok_shop_credentials_path=tiktok_shop_credentials_path,
             omie_2026_credentials_path=resolved_omie_2026_credentials_path,
             omie_2025_credentials_path=resolved_omie_2025_credentials_path,
+            omie_cfo_credentials_path=resolved_omie_cfo_credentials_path,
             mercado_livre_credentials_path=mercado_livre_credentials_path,
         )
 

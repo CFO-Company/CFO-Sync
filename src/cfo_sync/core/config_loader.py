@@ -69,7 +69,7 @@ def load_app_config(config_path: Path) -> AppConfig:
     platforms = [
         platform
         for platform in platforms
-        if platform.key not in {"omie", "omie_2025", "omie_2026"}
+        if platform.key not in {"omie", "omie_2025", "omie_2026", "omie_cfo"}
     ]
 
     omie_2026_credentials_path = credentials_dir / "omie_credentials.json"
@@ -89,6 +89,15 @@ def load_app_config(config_path: Path) -> AppConfig:
     )
     if omie_2025_platform is not None:
         platforms.append(omie_2025_platform)
+
+    omie_cfo_credentials_path = credentials_dir / "omie_cfo.json"
+    omie_cfo_platform = build_omie_platform_config(
+        omie_cfo_credentials_path,
+        key="omie_cfo",
+        label="Omie CFO",
+    )
+    if omie_cfo_platform is not None:
+        platforms.append(omie_cfo_platform)
 
     return AppConfig(
         database_path=_resolve_path(data["database_path"], app_root),
