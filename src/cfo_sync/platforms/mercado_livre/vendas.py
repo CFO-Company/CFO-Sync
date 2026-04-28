@@ -13,7 +13,12 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from cfo_sync.core.models import RawRecord, ResourceConfig
-from cfo_sync.platforms.mercado_livre.oauth import MercadoLivreAPIError, ensure_valid_access_token
+from cfo_sync.platforms.mercado_livre.credentials import MercadoLivreAuth
+from cfo_sync.platforms.mercado_livre.oauth import (
+    MercadoLivreAPIError,
+    ensure_valid_access_token,
+    refresh_access_token,
+)
 
 
 BASE_URL = "https://api.mercadolibre.com"
@@ -48,6 +53,43 @@ def fetch_vendas(
         client=client,
         account_alias=account_alias,
     )
+    try:
+        return _fetch_vendas_with_auth(
+            auth=auth,
+            client=client,
+            resource=resource,
+            start_date=start_date,
+            end_date=end_date,
+            account_label_override=account_label_override,
+        )
+    except MercadoLivreAPIError as error:
+        if not _is_unauthorized_error(error):
+            raise
+
+    auth = refresh_access_token(
+        credentials_path,
+        client=client,
+        account_alias=account_alias,
+    )
+    return _fetch_vendas_with_auth(
+        auth=auth,
+        client=client,
+        resource=resource,
+        start_date=start_date,
+        end_date=end_date,
+        account_label_override=account_label_override,
+    )
+
+
+def _fetch_vendas_with_auth(
+    *,
+    auth: MercadoLivreAuth,
+    client: str,
+    resource: ResourceConfig,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    account_label_override: str | None = None,
+) -> list[RawRecord]:
     period_start, period_end = normalize_period(start_date, end_date)
     seller_id, account_label = _resolve_account(access_token=auth.access_token, fallback_user_id=auth.user_id)
     explicit_alias = str(account_label_override or auth.account_alias or "").strip()
@@ -292,6 +334,11 @@ def _is_limit_maximum_exceeded(error: MercadoLivreAPIError) -> bool:
     return "limit.maximum_exceeded" in text or (
         "limit must be a lower or equal than 10000" in text
     )
+
+
+def _is_unauthorized_error(error: MercadoLivreAPIError) -> bool:
+    text = str(error).casefold()
+    return "status=401" in text or "unauthorized" in text
 
 
 def _billing_fee_totals_by_month_and_field(
