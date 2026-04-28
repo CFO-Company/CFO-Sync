@@ -200,7 +200,7 @@ Resposta:
 ```json
 {
   "status": "ok",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "server_time": "2026-04-02T12:00:00+00:00"
 }
 ```
