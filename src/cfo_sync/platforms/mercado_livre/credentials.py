@@ -104,6 +104,17 @@ class MercadoLivreCredentialsStore:
             account_labels=resolved.account_labels,
         )
 
+    @classmethod
+    def companies(cls, credentials_path: Path) -> list[str]:
+        if not credentials_path.exists():
+            return []
+
+        data = _load_json_object_with_duplicates(credentials_path.read_text(encoding="utf-8-sig"))
+        companies = data.get("companies")
+        if not isinstance(companies, dict):
+            return []
+        return [str(name).strip() for name in companies.keys() if str(name).strip()]
+
     def save(self) -> None:
         auth_payload = self._auth_to_payload()
 

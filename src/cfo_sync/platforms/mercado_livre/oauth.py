@@ -16,6 +16,7 @@ from cfo_sync.platforms.mercado_livre.credentials import MercadoLivreAuth, Merca
 
 TOKEN_URL = "https://api.mercadolibre.com/oauth/token"
 RETRY_BACKOFF_SECONDS = (1.0, 3.0, 8.0)
+DEFAULT_REFRESH_TOLERANCE_SECONDS = 10 * 60
 
 
 class MercadoLivreAPIError(RuntimeError):
@@ -24,7 +25,7 @@ class MercadoLivreAPIError(RuntimeError):
 
 def ensure_valid_access_token(
     credentials_path: Path,
-    tolerance_seconds: int = 120,
+    tolerance_seconds: int = DEFAULT_REFRESH_TOLERANCE_SECONDS,
     client: str | None = None,
     account_alias: str | None = None,
 ) -> MercadoLivreAuth:

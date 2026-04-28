@@ -32,6 +32,7 @@ def build_platform_registry(
     tiktok_shop_credentials_path: Path,
     omie_2026_credentials_path: Path,
     omie_2025_credentials_path: Path,
+    omie_cfo_credentials_path: Path,
     mercado_livre_credentials_path: Path,
 ) -> dict[str, PlatformConnector]:
     registry: dict[str, PlatformConnector] = {
@@ -51,6 +52,12 @@ def build_platform_registry(
     if omie_2025_credentials_path.exists():
         try:
             registry["omie_2025"] = OmieConnector(credentials_path=omie_2025_credentials_path)
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
+    if omie_cfo_credentials_path.exists():
+        try:
+            registry["omie_cfo"] = OmieConnector(credentials_path=omie_cfo_credentials_path)
         except (OSError, ValueError, KeyError, TypeError):
             pass
 

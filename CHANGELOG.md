@@ -1,3 +1,8 @@
+## [1.3.5] - 28-04-2026
+
+### Changed
+- Versao do aplicativo atualizada para 1.3.5.
+
 ## [1.3.4] - 27-04-2026
 
 ### Added

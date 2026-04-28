@@ -14,6 +14,7 @@ from cfo_sync.platforms.yampi.ui_behavior import YampiUIBehavior
 def build_platform_ui_registry(config: AppConfig) -> dict[str, PlatformUIBehavior]:
     omie_2026_credentials_path = config.credentials_dir / "omie_credentials.json"
     omie_2025_credentials_path = config.credentials_dir / "omie_2025.json"
+    omie_cfo_credentials_path = config.credentials_dir / "omie_cfo.json"
     configured_platform_keys = {platform.key for platform in config.platforms}
 
     registry: dict[str, PlatformUIBehavior] = {}
@@ -72,6 +73,8 @@ def build_platform_ui_registry(config: AppConfig) -> dict[str, PlatformUIBehavio
 
         if platform.key == "omie_2025":
             credentials_path = omie_2025_credentials_path
+        elif platform.key == "omie_cfo":
+            credentials_path = omie_cfo_credentials_path
         else:
             credentials_path = omie_2026_credentials_path
 

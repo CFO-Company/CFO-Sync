@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+ADMIN_ONLY_PLATFORMS = {"omie_cfo"}
+
+
 @dataclass(frozen=True)
 class AccessTokenPolicy:
     name: str
@@ -15,9 +18,13 @@ class AccessTokenPolicy:
     can_manage_secrets: bool = False
 
     def allows_platform(self, platform_key: str) -> bool:
+        if platform_key in ADMIN_ONLY_PLATFORMS:
+            return self.can_manage_secrets
         return _allows_value(self.allowed_platforms, platform_key)
 
     def allows_client(self, platform_key: str, client_name: str) -> bool:
+        if platform_key in ADMIN_ONLY_PLATFORMS:
+            return self.can_manage_secrets
         direct = self.allowed_clients.get(platform_key)
         wildcard = self.allowed_clients.get("*")
         if direct is None and wildcard is None:

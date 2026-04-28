@@ -1,6 +1,6 @@
 #define MyAppName "CFO Sync"
 #ifndef MyAppVersion
-#define MyAppVersion "1.3.4"
+#define MyAppVersion "1.3.5"
 #endif
 #define MyAppPublisher "CFO Sync"
 #define MyAppExeName "CFO-Sync.exe"
