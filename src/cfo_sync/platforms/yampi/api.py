@@ -260,7 +260,7 @@ def _request_orders(
             raise YampiAPIError(
                 f"Erro HTTP na Yampi (alias={alias}, status={error.code}): {body[:300]}"
             ) from error
-        except (URLError, TimeoutError, socket.timeout, IncompleteRead) as error:
+        except (URLError, TimeoutError, socket.timeout, IncompleteRead, OSError) as error:
             if backoff is not None:
                 time.sleep(backoff)
                 continue
