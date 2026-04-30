@@ -49,5 +49,6 @@
   "Custo por inconformidade no Envios Full": "Fulfillment",
   "Custo por retirada de estoque Full": "Fulfillment",
   "Tarifa pelo serviço de armazenamento Full": "Fulfillment",
-  "Tarifa por estoque antigo no Full": "Fulfillment"
+  "Tarifa por estoque antigo no Full": "Fulfillment",
+  "Anulación del cargo por ofrecer cuotas": "Tarifas de Marketplace"
 }

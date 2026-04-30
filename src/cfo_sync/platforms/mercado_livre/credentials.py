@@ -147,12 +147,7 @@ class MercadoLivreCredentialsStore:
                 accounts = [{"auth": auth_payload}]
 
             updated_company_payload["accounts"] = accounts
-            first_auth = accounts[0].get("auth")
-            if isinstance(first_auth, dict):
-                # Mantem compatibilidade com formato legado (company.auth unico).
-                updated_company_payload["auth"] = dict(first_auth)
-            else:
-                updated_company_payload["auth"] = auth_payload
+            updated_company_payload.pop("auth", None)
 
             companies[self.company_name] = updated_company_payload
             payload["companies"] = companies

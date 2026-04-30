@@ -20,6 +20,11 @@ from cfo_sync.platforms.tiktok_shop.api import (
     exchange_auth_code_for_access_token as exchange_tiktok_shop_auth_code_for_access_token,
 )
 from cfo_sync.platforms.tiktok_shop.credentials import TikTokShopCredentialsStore
+from cfo_sync.platforms.mercado_livre.transaction_details import (
+    DEFAULT_SHEET_ID,
+    DEFAULT_SPREADSHEET_ID,
+    sync_transaction_detail_map,
+)
 from cfo_sync.platforms.ui_registry import build_platform_ui_registry
 from cfo_sync.server.access import AccessTokenPolicy
 from cfo_sync.version import __version__
@@ -122,6 +127,36 @@ class CfoSyncServerService:
         with self._state_lock:
             config = self.config
 
+        if action == "sync_mercado_livre_categories":
+            if platform_key != "mercado_livre":
+                raise ValueError("Atualizacao de categorias disponivel apenas para Mercado Livre.")
+            result = sync_transaction_detail_map(
+                credentials_path=config.credentials_dir / "mercado_livre_credentials.json",
+                start_date=start_date or date.today().replace(day=1).isoformat(),
+                end_date=end_date or date.today().isoformat(),
+                spreadsheet_id=DEFAULT_SPREADSHEET_ID,
+                sheet_id=DEFAULT_SHEET_ID,
+                google_credentials_path=config.credentials_dir / config.google_sheets.credentials_file,
+            )
+            log(
+                "Categorias Mercado Livre atualizadas: "
+                f"descobertos={result.discovered} inseridos={result.inserted} "
+                f"removidos={result.removed} inalterados={result.unchanged}"
+            )
+            if result.pending_review:
+                log("Categorias Mercado Livre para revisar:")
+                for detail in result.pending_review:
+                    log(f"- {detail}")
+            return {
+                "action": action,
+                "platform_key": platform_key,
+                "client": client,
+                "count": result.discovered,
+                "inserted": result.inserted,
+                "removed": result.removed,
+                "unchanged": result.unchanged,
+            }
+
         pipeline = SyncPipeline(config)
         if self._should_segment_omie_aliases(
             action=action,
@@ -179,7 +214,7 @@ class CfoSyncServerService:
                 "count": count,
             }
 
-        raise ValueError("Acao invalida. Use 'collect' ou 'export'.")
+        raise ValueError("Acao invalida. Use 'collect', 'export' ou 'sync_mercado_livre_categories'.")
 
     def _should_segment_omie_aliases(
         self,
