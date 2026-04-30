@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from threading import RLock
 from typing import Callable
@@ -123,6 +123,30 @@ class CfoSyncServerService:
             config = self.config
 
         pipeline = SyncPipeline(config)
+        if self._should_segment_omie_aliases(
+            action=action,
+            platform_key=platform_key,
+            client=client,
+            resource_names=resource_names,
+            sub_clients=sub_clients,
+        ):
+            aliases = self._resolve_omie_job_aliases(
+                platform_key=platform_key,
+                client=client,
+                sub_clients=sub_clients,
+            )
+            return self._run_segmented_omie_job(
+                pipeline=pipeline,
+                action=action,
+                platform_key=platform_key,
+                client=client,
+                start_date=start_date,
+                end_date=end_date,
+                resource_names=resource_names,
+                aliases=aliases,
+                log=log,
+            )
+
         if action == "collect":
             count = pipeline.collect(
                 platform_key=platform_key,
@@ -156,6 +180,118 @@ class CfoSyncServerService:
             }
 
         raise ValueError("Acao invalida. Use 'collect' ou 'export'.")
+
+    def _should_segment_omie_aliases(
+        self,
+        *,
+        action: str,
+        platform_key: str,
+        client: str,
+        resource_names: list[str] | None,
+        sub_clients: list[str] | None,
+    ) -> bool:
+        if action not in {"collect", "export"}:
+            return False
+        if not platform_key.startswith("omie"):
+            return False
+        if resource_names and "financeiro" not in resource_names:
+            return False
+        aliases = self._resolve_omie_job_aliases(
+            platform_key=platform_key,
+            client=client,
+            sub_clients=sub_clients,
+        )
+        return len(aliases) > 1
+
+    def _resolve_omie_job_aliases(
+        self,
+        *,
+        platform_key: str,
+        client: str,
+        sub_clients: list[str] | None,
+    ) -> list[str]:
+        if sub_clients:
+            return list(dict.fromkeys(name for name in sub_clients if name.strip()))
+
+        behavior = self.platform_ui_registry.get(platform_key)
+        if behavior is None:
+            return []
+        return list(dict.fromkeys(name for name in behavior.sub_client_names(client) if name.strip()))
+
+    def _run_segmented_omie_job(
+        self,
+        *,
+        pipeline: SyncPipeline,
+        action: str,
+        platform_key: str,
+        client: str,
+        start_date: str | None,
+        end_date: str | None,
+        resource_names: list[str] | None,
+        aliases: list[str],
+        log: Callable[[str], None],
+    ) -> dict[str, object]:
+        total_count = 0
+        failures: list[str] = []
+        period_segments = _month_period_segments(start_date=start_date, end_date=end_date)
+        total_segments = len(aliases) * len(period_segments)
+        log(
+            "Job Omie dividido em partes: "
+            f"aliases={len(aliases)} periodos={len(period_segments)} total={total_segments}."
+        )
+
+        segment_index = 0
+        for alias in aliases:
+            for segment_start, segment_end in period_segments:
+                segment_index += 1
+                period_label = f"{segment_start or ''}..{segment_end or ''}".strip(".")
+                log(
+                    f"Parte {segment_index}/{total_segments} iniciada: "
+                    f"alias={alias} periodo={period_label}"
+                )
+                try:
+                    if action == "collect":
+                        count = pipeline.collect(
+                            platform_key=platform_key,
+                            client=client,
+                            start_date=segment_start,
+                            end_date=segment_end,
+                            resource_names=resource_names,
+                            sub_clients=[alias],
+                        )
+                    else:
+                        count = pipeline.export_to_sheets(
+                            platform_key=platform_key,
+                            client=client,
+                            start_date=segment_start,
+                            end_date=segment_end,
+                            resource_names=resource_names,
+                            sub_clients=[alias],
+                        )
+                except Exception as error:  # noqa: BLE001
+                    failures.append(f"{alias} {period_label}: {error}")
+                    log(
+                        f"Parte {segment_index}/{total_segments} falhou: "
+                        f"alias={alias} periodo={period_label} erro={error}"
+                    )
+                    continue
+
+                total_count += count
+                log(
+                    f"Parte {segment_index}/{total_segments} concluida: "
+                    f"alias={alias} periodo={period_label} registros={count}"
+                )
+
+        if failures:
+            raise ValueError("Falha em uma ou mais partes Omie: " + " | ".join(failures))
+
+        return {
+            "action": action,
+            "platform_key": platform_key,
+            "client": client,
+            "count": total_count,
+            "segments": total_segments,
+        }
 
     def register_client(
         self,
@@ -499,6 +635,36 @@ def _optional_string_list(value: object) -> list[str] | None:
     if not cleaned:
         return None
     return cleaned
+
+
+def _month_period_segments(
+    *,
+    start_date: str | None,
+    end_date: str | None,
+) -> list[tuple[str | None, str | None]]:
+    if not start_date or not end_date:
+        return [(start_date, end_date)]
+
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+    except ValueError:
+        return [(start_date, end_date)]
+
+    if start > end:
+        return [(start_date, end_date)]
+
+    segments: list[tuple[str | None, str | None]] = []
+    current = start
+    while current <= end:
+        if current.month == 12:
+            next_month = date(current.year + 1, 1, 1)
+        else:
+            next_month = date(current.year, current.month + 1, 1)
+        segment_end = min(end, next_month.replace(day=1) - date.resolution)
+        segments.append((current.isoformat(), segment_end.isoformat()))
+        current = next_month
+    return segments
 
 
 def _registration_mode(value: object) -> str:
