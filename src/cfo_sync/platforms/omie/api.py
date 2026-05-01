@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import socket
 import time
 from typing import Any
@@ -59,7 +60,7 @@ def call_omie_api(
             if error.code == 500 and "5113" in response_text:
                 return None
             if error.code == 500 and _is_temporary_busy_error(response_text) and attempt < MAX_ATTEMPTS - 1:
-                time.sleep(BACKOFF_SECONDS[attempt])
+                time.sleep(_temporary_busy_retry_delay(response_text, attempt))
                 continue
             if error.code in RATE_LIMIT_STATUS_CODES and attempt < MAX_ATTEMPTS - 1:
                 time.sleep(BACKOFF_SECONDS[attempt])
@@ -102,7 +103,26 @@ def _is_temporary_busy_error(response_text: str) -> bool:
         "SOAP-ENV:Client-1880" in normalized
         or "Ja existe uma requisicao desse metodo sendo executada" in normalized
         or "Já existe uma requisição desse método sendo executada" in normalized
+        or "REDUNDANT" in normalized
+        or "Consumo redundante detectado" in normalized
     )
+
+
+def _temporary_busy_retry_delay(response_text: str, attempt: int) -> float:
+    wait_seconds = _extract_retry_after_seconds(response_text)
+    if wait_seconds is not None:
+        return wait_seconds + 2.0
+    return BACKOFF_SECONDS[attempt]
+
+
+def _extract_retry_after_seconds(response_text: str) -> float | None:
+    match = re.search(r"Aguarde\s+(\d+(?:[,.]\d+)?)\s+segundos?", str(response_text or ""), re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        return float(match.group(1).replace(",", "."))
+    except ValueError:
+        return None
 
 
 def _wait_for_request_spacing(request_key: str) -> None:

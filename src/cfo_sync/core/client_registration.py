@@ -562,11 +562,7 @@ def _upsert_mercado_livre_credentials(
         accounts[matching_index] = account_entry
 
     company_payload["accounts"] = accounts
-    if accounts:
-        first_auth = accounts[0].get("auth")
-        if isinstance(first_auth, dict):
-            # Mantem compatibilidade com formato legado (company.auth unico).
-            company_payload["auth"] = dict(first_auth)
+    company_payload.pop("auth", None)
 
     companies[company_key] = company_payload
     payload["companies"] = companies
@@ -584,8 +580,6 @@ def _create_mercado_livre_client_credentials(
     auth_payload = _build_mercado_livre_auth_payload(credentials)
     companies[client_name] = {
         "accounts": [{"auth": auth_payload}],
-        # Mantem compatibilidade com formato legado (company.auth unico).
-        "auth": dict(auth_payload),
     }
     payload["companies"] = companies
 

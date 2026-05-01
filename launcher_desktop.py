@@ -45,6 +45,11 @@ from cfo_sync.core.runtime_paths import (
     update_config_path,
 )
 from cfo_sync.core.updater import check_for_updates, download_and_launch_update, get_releases_page_url
+from cfo_sync.platforms.mercado_livre.transaction_details import (
+    DEFAULT_SHEET_ID,
+    DEFAULT_SPREADSHEET_ID,
+    sync_transaction_detail_map,
+)
 from cfo_sync.platforms.ui_registry import build_platform_ui_registry
 from cfo_sync.platforms.yampi.credentials import YampiCredentialsStore
 from cfo_sync.version import __version__
@@ -356,6 +361,7 @@ class CFODesktopApp:
         self.estoque_sub_client_summary_var = tk.StringVar(value=ALL_SUB_CLIENTS)
         self.start_date_var = tk.StringVar()
         self.end_date_var = tk.StringVar()
+        self.update_mercado_livre_categories_var = tk.BooleanVar(value=False)
         self.estoque_start_date_var = tk.StringVar()
         self.estoque_end_date_var = tk.StringVar()
         self.sku_order_number_var = tk.StringVar()
@@ -848,6 +854,26 @@ class CFODesktopApp:
                 ("disabled", COLOR_SURFACE_ALT),
             ],
             foreground=[("disabled", COLOR_MUTED)],
+        )
+
+        self.style.configure(
+            "Dark.TCheckbutton",
+            background=COLOR_SURFACE,
+            foreground=COLOR_TEXT,
+            focuscolor=COLOR_SURFACE,
+            padding=(0, 2),
+            font=("Segoe UI", 9),
+        )
+        self.style.map(
+            "Dark.TCheckbutton",
+            background=[("active", COLOR_SURFACE), ("disabled", COLOR_SURFACE)],
+            foreground=[("disabled", COLOR_MUTED), ("!disabled", COLOR_TEXT)],
+            indicatorcolor=[
+                ("selected", COLOR_ACCENT),
+                ("!selected", COLOR_SURFACE_ALT),
+                ("disabled", COLOR_BUTTON_DISABLED),
+            ],
+            bordercolor=[("focus", COLOR_ACCENT), ("!focus", COLOR_BORDER)],
         )
 
     def _build_platform_choices(self) -> list[PlatformChoice]:
@@ -1968,6 +1994,17 @@ class CFODesktopApp:
         )
         self.btn_export_sku.pack(fill=tk.X)
 
+        self.mercado_livre_categories_card = ttk.Frame(actions_card, style="Card.TFrame")
+        self.update_mercado_livre_categories_check = ttk.Checkbutton(
+            self.mercado_livre_categories_card,
+            text="Atualizar categorias",
+            variable=self.update_mercado_livre_categories_var,
+            style="Dark.TCheckbutton",
+        )
+        self.update_mercado_livre_categories_check.pack(anchor=tk.W)
+        self.mercado_livre_categories_card.pack_forget()
+        self._sync_mercado_livre_categories_checkbox()
+
         log_card = ttk.Frame(right_panel, style="Card.TFrame", padding=16)
         log_card.grid(row=1, column=0, sticky=tk.NSEW)
 
@@ -2858,6 +2895,7 @@ class CFODesktopApp:
             self.btn_search_sku.configure(state=tk.DISABLED)
             self.sku_order_entry.configure(state=tk.DISABLED)
             self.btn_pick_period.configure(state=tk.DISABLED)
+            self.update_mercado_livre_categories_check.configure(state=tk.DISABLED)
             self.btn_estoque_pick_period.configure(state=tk.DISABLED)
             self.client_registration_mode_combo.configure(state=tk.DISABLED)
             self.client_registration_platform_combo.configure(state=tk.DISABLED)
@@ -2914,6 +2952,7 @@ class CFODesktopApp:
         self.btn_search_sku.configure(state=sku_state)
         self.sku_order_entry.configure(state=sku_state)
         self.btn_pick_period.configure(state=tk.NORMAL)
+        self._sync_mercado_livre_categories_checkbox()
         self.btn_estoque_pick_period.configure(state=tk.NORMAL)
         self._sync_client_registration_input_states()
         self._sync_generator_input_states()
@@ -3294,6 +3333,7 @@ class CFODesktopApp:
         clients = self._clients_for_platform(choice.platform_key)
         self.client_combo.configure(values=clients)
         self._clear_sku_preview()
+        self._sync_mercado_livre_categories_checkbox()
         if clients:
             self.client_var.set(clients[0])
             self.on_client_change()
@@ -3306,6 +3346,22 @@ class CFODesktopApp:
             sku_state = tk.NORMAL if self._platform_supports_sku_workflow() else tk.DISABLED
             self.btn_search_sku.configure(state=sku_state)
             self.sku_order_entry.configure(state=sku_state)
+
+    def _sync_mercado_livre_categories_checkbox(self) -> None:
+        if not hasattr(self, "mercado_livre_categories_card"):
+            return
+
+        choice = self.choice_by_label.get(self.platform_var.get())
+        visible = choice is not None and choice.platform_key == "mercado_livre"
+        if visible:
+            self.mercado_livre_categories_card.pack(fill=tk.X, pady=(12, 0))
+            self.update_mercado_livre_categories_check.configure(
+                state=tk.DISABLED if self.busy else tk.NORMAL
+            )
+            return
+
+        self.update_mercado_livre_categories_var.set(False)
+        self.mercado_livre_categories_card.pack_forget()
 
     def on_client_change(self) -> None:
         choice = self.choice_by_label[self.platform_var.get()]
@@ -4725,6 +4781,53 @@ class CFODesktopApp:
         except Exception:  # noqa: BLE001
             return 0
 
+    def _should_update_mercado_livre_categories(self, choice: PlatformChoice) -> bool:
+        return (
+            choice.platform_key == "mercado_livre"
+            and not self._is_estoque_tab_active()
+            and bool(self.update_mercado_livre_categories_var.get())
+        )
+
+    def _update_mercado_livre_categories_before_export(
+        self,
+        *,
+        client: str,
+        start_date: str,
+        end_date: str,
+    ) -> None:
+        self.log("Atualizando categorias Mercado Livre antes da exportacao...")
+        if self.remote_client is not None:
+            count = self._run_remote_job(
+                action="sync_mercado_livre_categories",
+                platform_key="mercado_livre",
+                client=client,
+                start_date=start_date,
+                end_date=end_date,
+                resource_names=["vendas"],
+                sub_clients=None,
+            )
+            self.log(f"Categorias Mercado Livre atualizadas no servidor: detalhes={count}")
+            return
+
+        config = self.config
+        result = sync_transaction_detail_map(
+            credentials_path=config.credentials_dir / "mercado_livre_credentials.json",
+            start_date=start_date,
+            end_date=end_date,
+            spreadsheet_id=DEFAULT_SPREADSHEET_ID,
+            sheet_id=DEFAULT_SHEET_ID,
+            google_credentials_path=config.credentials_dir / config.google_sheets.credentials_file,
+        )
+        self.log(
+            "Categorias Mercado Livre atualizadas: "
+            f"descobertos={result.discovered} inseridos={result.inserted} "
+            f"removidos={result.removed} inalterados={result.unchanged}"
+        )
+        if result.pending_review:
+            self.log("Categorias Mercado Livre para revisar:")
+            for detail in result.pending_review:
+                self.log(f"- {detail}")
+
     def update_app(self) -> None:
         def task() -> None:
             self.log("Verificando atualizacao no GitHub Releases...")
@@ -4780,6 +4883,12 @@ class CFODesktopApp:
     def collect_data(self) -> None:
         def task() -> None:
             choice, client, sub_clients, start_date, end_date = self._current_selection()
+            if self._should_update_mercado_livre_categories(choice):
+                self._update_mercado_livre_categories_before_export(
+                    client=client,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
             if self.remote_client is not None:
                 count = self._run_remote_job(
                     action="collect",
@@ -4814,6 +4923,12 @@ class CFODesktopApp:
     def export_data(self) -> None:
         def task() -> None:
             choice, client, sub_clients, start_date, end_date = self._current_selection()
+            if self._should_update_mercado_livre_categories(choice):
+                self._update_mercado_livre_categories_before_export(
+                    client=client,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
             if self.remote_client is not None:
                 count = self._run_remote_job(
                     action="export",

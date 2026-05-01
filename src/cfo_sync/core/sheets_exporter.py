@@ -299,6 +299,7 @@ class GoogleSheetsExporter:
 
         for api_field in (
             "alias",
+            "origem",
             "conta",
             "account_name",
             "nome_ca",
