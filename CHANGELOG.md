@@ -1,3 +1,16 @@
+## [1.3.6] - 30-04-2026
+
+### Added
+- Automacao do De-Para de categorias do Mercado Livre, sincronizando `transaction_detail_map.json` e a aba de categorias no Sheets.
+- Checkbox `Atualizar categorias` para executar a atualizacao antes da coleta/exportacao de Mercado Livre.
+
+### Changed
+- Credenciais do Mercado Livre deixam de duplicar `auth` na raiz do cliente e passam a manter as contas em `accounts`.
+- Jobs Omie podem ser segmentados por alias e mes para reduzir conflitos e timeouts.
+
+### Fixed
+- Retentativas da Omie passam a respeitar mensagens de consumo redundante com tempo de espera informado.
+
 ## [1.3.5] - 28-04-2026
 
 ### Changed
