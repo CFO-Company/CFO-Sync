@@ -1,3 +1,8 @@
+## [1.3.7] - 04-05-2026
+
+### Fixed
+- Desktop remoto deixa de abortar coleta/exportacao quando um servidor antigo ainda nao suporta `sync_mercado_livre_categories`; o log orienta atualizar o servidor e continua sem atualizar categorias.
+
 ## [1.3.6] - 30-04-2026
 
 ### Added
