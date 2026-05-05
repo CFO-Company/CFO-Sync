@@ -13,7 +13,7 @@ from cfo_sync.platforms.ui_registry import build_platform_ui_registry
 def run_dashboard() -> None:
     st.set_page_config(page_title="CFO Sync", layout="wide")
     st.title("CFO Sync")
-    st.caption("Coleta de APIs por plataforma e exportacao para Google Sheets")
+    st.caption("Coleta de APIs por plataforma e exportação para Google Sheets")
 
     ensure_runtime_layout()
     config = load_app_config(app_config_path())
@@ -97,7 +97,7 @@ def run_dashboard() -> None:
                 resource_names=[selected_resource],
                 sub_clients=selected_sub_clients,
             )
-            st.success(f"{count} registros enviados para exportacao.")
+            st.success(f"{count} registros enviados para exportação.")
 
     st.divider()
     st.subheader("Arquitetura aplicada")

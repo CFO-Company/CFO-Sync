@@ -32,7 +32,7 @@ class GoogleSheetsExporter:
         if target_tab is None:
             available_clients = ", ".join(sorted(resource.client_tabs.keys()))
             raise ValueError(
-                f"Cliente '{client}' nao configurado em {platform_key}/{resource.name} para exportacao. "
+                f"Cliente '{client}' nao configurado em {platform_key}/{resource.name} para exportação. "
                 f"Clientes disponiveis: {available_clients}."
             )
 

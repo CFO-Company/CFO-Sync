@@ -156,12 +156,12 @@ def _main() -> int:
     parser.add_argument(
         "--print-auth-url",
         action="store_true",
-        help="Mostra URLs de autorizacao para obter auth_code.",
+        help="Mostra URLs de autorização para obter auth_code.",
     )
     parser.add_argument(
         "--state",
         default="cfo_sync",
-        help="Parametro state para URL de autorizacao.",
+        help="Parametro state para URL de autorização.",
     )
     parser.add_argument(
         "--run-local-callback",
@@ -193,7 +193,7 @@ def _main() -> int:
     parser.add_argument(
         "--open-browser",
         action="store_true",
-        help="Abre automaticamente a URL de autorizacao no navegador.",
+        help="Abre automaticamente a URL de autorização no navegador.",
     )
     args = parser.parse_args()
 
@@ -221,7 +221,7 @@ def _main() -> int:
         )
         print("Cadastre esta redirect_uri no app TikTok:")
         print(local_redirect_uri)
-        print("\nAbra uma URL de autorizacao e conclua o login:")
+        print("\nAbra uma URL de autorização e conclua o login:")
         for url in urls:
             print(url)
         if args.open_browser:
@@ -257,7 +257,7 @@ def _main() -> int:
         redirect_uri = str(args.redirect_uri or store.auth.redirect_uri).strip()
         if not app_id or not redirect_uri:
             raise ValueError(
-                "Para gerar URL de autorizacao, informe app_id e redirect_uri no JSON "
+                "Para gerar URL de autorização, informe app_id e redirect_uri no JSON "
                 "ou via --app-id/--redirect-uri."
             )
         for url in _build_authorization_urls(
@@ -382,7 +382,7 @@ def _wait_for_auth_code_local_callback(
             self._respond_html(
                 status=200,
                 body=(
-                    "<h1>Autorizacao concluida</h1>"
+                    "<h1>Autorização concluida</h1>"
                     "<p>Voce pode fechar esta aba.</p>"
                     f"<p><strong>auth_code:</strong> <code>{safe_code}</code></p>"
                 ),

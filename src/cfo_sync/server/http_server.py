@@ -71,7 +71,7 @@ class CfoSyncHttpServer:
                         (params.get("error_description") or [""])[0] or ""
                     ).strip()
                     if oauth_error:
-                        message = f"Autorizacao recusada pelo Mercado Livre: {oauth_error}"
+                        message = f"Autorização recusada pelo Mercado Livre: {oauth_error}"
                         if oauth_error_description:
                             message += f" ({oauth_error_description})"
                         self._write_html(
@@ -110,7 +110,7 @@ class CfoSyncHttpServer:
                         (params.get("error_description") or [""])[0] or ""
                     ).strip()
                     if oauth_error:
-                        message = f"Autorizacao recusada pelo TikTok Ads: {oauth_error}"
+                        message = f"Autorização recusada pelo TikTok Ads: {oauth_error}"
                         if oauth_error_description:
                             message += f" ({oauth_error_description})"
                         self._write_html(
@@ -151,7 +151,7 @@ class CfoSyncHttpServer:
                         (params.get("error_description") or [""])[0] or ""
                     ).strip()
                     if oauth_error:
-                        message = f"Autorizacao recusada pelo TikTok Shop: {oauth_error}"
+                        message = f"Autorização recusada pelo TikTok Shop: {oauth_error}"
                         if oauth_error_description:
                             message += f" ({oauth_error_description})"
                         self._write_html(
@@ -315,6 +315,15 @@ class CfoSyncHttpServer:
                     self._write_json(HTTPStatus.CREATED, result)
                     return
 
+                if path == "/v1/catalog/reload":
+                    try:
+                        payload = server.service.reload_catalog(policy)
+                    except Exception as error:  # noqa: BLE001
+                        self._write_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error)})
+                        return
+                    self._write_json(HTTPStatus.OK, payload)
+                    return
+
                 if path == "/v1/secrets/file":
                     payload = self._read_json_body()
                     if payload is None:
@@ -422,7 +431,7 @@ def _oauth_success_html(result: dict[str, object]) -> str:
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>Autorizacao concluida</title>"
+        "<title>Autorização concluida</title>"
         "<style>"
         "body{font-family:Segoe UI,Arial,sans-serif;background:#f5f7fa;margin:0;padding:24px;}"
         ".card{max-width:640px;margin:0 auto;background:#fff;border:1px solid #dde3ea;"
@@ -432,7 +441,7 @@ def _oauth_success_html(result: dict[str, object]) -> str:
         "code{background:#eef2f6;padding:2px 6px;border-radius:6px}"
         ".ok{color:#0b7a43;font-weight:600}"
         "</style></head><body><div class='card'>"
-        "<h1>Autorizacao concluida</h1>"
+        "<h1>Autorização concluida</h1>"
         "<p class='ok'>Conta Mercado Livre autorizada com sucesso.</p>"
         f"<p><strong>Plataforma:</strong> <code>{platform}</code></p>"
         f"<p><strong>Cliente:</strong> {client_name}</p>"
@@ -447,7 +456,7 @@ def _oauth_error_html(message: str) -> str:
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>Erro na autorizacao</title>"
+        "<title>Erro na autorização</title>"
         "<style>"
         "body{font-family:Segoe UI,Arial,sans-serif;background:#fff5f5;margin:0;padding:24px;}"
         ".card{max-width:640px;margin:0 auto;background:#fff;border:1px solid #ffd5d5;"
@@ -456,9 +465,9 @@ def _oauth_error_html(message: str) -> str:
         "p{margin:8px 0;color:#533}"
         "code{background:#fff1f1;padding:2px 6px;border-radius:6px}"
         "</style></head><body><div class='card'>"
-        "<h1>Erro na autorizacao</h1>"
+        "<h1>Erro na autorização</h1>"
         f"<p>{safe}</p>"
-        "<p>Gere um novo link de autorizacao no aplicativo e tente novamente.</p>"
+        "<p>Gere um novo link de autorização no aplicativo e tente novamente.</p>"
         "</div></body></html>"
     )
 
@@ -484,7 +493,7 @@ def _oauth_tiktok_success_html(result: dict[str, object]) -> str:
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>Autorizacao concluida</title>"
+        "<title>Autorização concluida</title>"
         "<style>"
         "body{font-family:Segoe UI,Arial,sans-serif;background:#f5f7fa;margin:0;padding:24px;}"
         ".card{max-width:760px;margin:0 auto;background:#fff;border:1px solid #dde3ea;"
@@ -494,7 +503,7 @@ def _oauth_tiktok_success_html(result: dict[str, object]) -> str:
         "code{background:#eef2f6;padding:2px 6px;border-radius:6px;word-break:break-all}"
         ".ok{color:#0b7a43;font-weight:600}"
         "</style></head><body><div class='card'>"
-        "<h1>Autorizacao TikTok Ads concluida</h1>"
+        "<h1>Autorização TikTok Ads concluida</h1>"
         "<p class='ok'>access_token salvo com sucesso nas credenciais do servidor.</p>"
         f"<p><strong>Token:</strong> <code>{token_masked}</code></p>"
         f"<p><strong>Advertisers autorizados:</strong> {authorized_count}</p>"
@@ -526,7 +535,7 @@ def _oauth_tiktok_shop_success_html(result: dict[str, object]) -> str:
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>Autorizacao concluida</title>"
+        "<title>Autorização concluida</title>"
         "<style>"
         "body{font-family:Segoe UI,Arial,sans-serif;background:#f5f7fa;margin:0;padding:24px;}"
         ".card{max-width:760px;margin:0 auto;background:#fff;border:1px solid #dde3ea;"
@@ -536,7 +545,7 @@ def _oauth_tiktok_shop_success_html(result: dict[str, object]) -> str:
         "code{background:#eef2f6;padding:2px 6px;border-radius:6px;word-break:break-all}"
         ".ok{color:#0b7a43;font-weight:600}"
         "</style></head><body><div class='card'>"
-        "<h1>Autorizacao TikTok Shop concluida</h1>"
+        "<h1>Autorização TikTok Shop concluida</h1>"
         "<p class='ok'>access_token salvo com sucesso nas credenciais do servidor.</p>"
         f"<p><strong>Token:</strong> <code>{token_masked}</code></p>"
         f"<p><strong>Refresh token:</strong> <code>{refresh_token_masked}</code></p>"

@@ -10,7 +10,7 @@ Set-Location $repoRoot
 
 $versionLine = Select-String -Path (Join-Path $repoRoot "pyproject.toml") -Pattern '^version\s*=\s*".+"'
 if (-not $versionLine) {
-    throw "Nao foi possivel ler a versao do pyproject.toml"
+    throw "Nao foi possivel ler a versão do pyproject.toml"
 }
 $appVersion = ($versionLine.Line -replace '^version\s*=\s*"(.*)"\s*$', '$1')
 

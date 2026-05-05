@@ -14,7 +14,7 @@ def extract_section(changelog_path: Path, version: str) -> str:
 
     start = _find_header_line(lines, version)
     if start is None:
-        raise ValueError(f"Versao {version} nao encontrada em {changelog_path}")
+        raise ValueError(f"Versão {version} nao encontrada em {changelog_path}")
 
     end = len(lines)
     for index in range(start + 1, len(lines)):
@@ -25,7 +25,7 @@ def extract_section(changelog_path: Path, version: str) -> str:
     section_lines = lines[start:end]
     section = "\n".join(section_lines).strip()
     if not section:
-        raise ValueError(f"Secao da versao {version} vazia em {changelog_path}")
+        raise ValueError(f"Secao da versão {version} vazia em {changelog_path}")
     return section + "\n"
 
 
@@ -42,8 +42,8 @@ def _find_header_line(lines: list[str], version: str) -> int | None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Extrai secao de uma versao do CHANGELOG.md")
-    parser.add_argument("--version", required=True, help="Versao alvo, ex: 1.0.1 ou v1.0.1")
+    parser = argparse.ArgumentParser(description="Extrai secao de uma versão do CHANGELOG.md")
+    parser.add_argument("--version", required=True, help="Versão alvo, ex: 1.0.1 ou v1.0.1")
     parser.add_argument(
         "--changelog",
         default="CHANGELOG.md",

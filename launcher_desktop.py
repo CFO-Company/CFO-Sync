@@ -85,7 +85,7 @@ COLOR_SCROLLBAR_THUMB_HOVER = "#44505E"
 PT_BR_MONTH_NAMES = (
     "Janeiro",
     "Fevereiro",
-    "Marco",
+    "Março",
     "Abril",
     "Maio",
     "Junho",
@@ -889,7 +889,7 @@ class CFODesktopApp:
                     # SKU e Estoque possuem abas dedicadas.
                     continue
                 if platform_behavior and platform_behavior.uses_dedicated_resource_tab(resource.name):
-                    # Recursos dedicados usam aba propria e exportacao especifica.
+                    # Recursos dedicados usam aba propria e exportação especifica.
                     continue
                 label = self._platform_resource_label(platform.key, platform.label, resource.name)
                 choices.append(
@@ -912,6 +912,8 @@ class CFODesktopApp:
     def _clients_for_platform(self, platform_key: str) -> list[str]:
         platform = next((item for item in self.config.platforms if item.key == platform_key), None)
         configured_clients = list(platform.clients) if platform is not None else []
+        if self.remote_client is not None:
+            return configured_clients
 
         behavior = self.platform_ui_registry.get(platform_key)
         if behavior is None:
@@ -957,7 +959,7 @@ class CFODesktopApp:
         ttk.Label(header_left, text="Painel de Sincronização", style="Title.TLabel").pack(anchor=tk.W)
         ttk.Label(
             header_left,
-            text=f"Versao {__version__} | Selecione plataforma, cliente e filial/alias para coletar e exportar.",
+            text=f"Versão {__version__} | Selecione plataforma, cliente e filial/alias para coletar e exportar.",
             style="Subtitle.TLabel",
         ).pack(anchor=tk.W, pady=(2, 0))
 
@@ -1480,14 +1482,6 @@ class CFODesktopApp:
         )
         self.btn_register_client.pack(side=tk.RIGHT)
 
-        self.btn_refresh_catalog = ttk.Button(
-            clients_actions,
-            text="Atualizar catalogo",
-            style="Secondary.TButton",
-            command=self.refresh_remote_catalog,
-        )
-        self.btn_refresh_catalog.pack(side=tk.RIGHT, padx=(0, 8))
-
         self.clients_tab.columnconfigure(1, weight=1)
         self.clients_tab.rowconfigure(4, weight=1)
 
@@ -1497,7 +1491,7 @@ class CFODesktopApp:
         ttk.Label(
             self.generator_tab,
             text=(
-                "Gere links de autorizacao por plataforma. "
+                "Gere links de autorização por plataforma. "
                 "O callback registra o cliente automaticamente no servidor."
             ),
             style="Field.TLabel",
@@ -1781,7 +1775,8 @@ class CFODesktopApp:
         server_actions.grid(row=5, column=1, sticky=tk.EW, pady=(4, 10))
         server_actions.columnconfigure(0, weight=1)
         server_actions.columnconfigure(1, weight=1)
-        server_actions.columnconfigure(2, weight=0)
+        server_actions.columnconfigure(2, weight=1)
+        server_actions.columnconfigure(3, weight=0)
         self.btn_connect_server = ttk.Button(
             server_actions,
             text="Conectar servidor",
@@ -1796,6 +1791,13 @@ class CFODesktopApp:
             command=self.disconnect_server,
         )
         self.btn_disconnect_server.grid(row=0, column=1, sticky=tk.EW, padx=(0, 6))
+        self.btn_refresh_catalog = ttk.Button(
+            server_actions,
+            text="Atualizar Credenciais",
+            style="Secondary.TButton",
+            command=self.refresh_remote_catalog,
+        )
+        self.btn_refresh_catalog.grid(row=0, column=2, sticky=tk.EW, padx=(0, 6))
         self.btn_use_local_secrets = ttk.Button(
             server_actions,
             text="Usar fallback local (secrets)",
@@ -1871,7 +1873,7 @@ class CFODesktopApp:
             textvariable=self.server_secret_path_var,
             style="FieldValue.TLabel",
         ).grid(row=0, column=1, sticky=tk.W, padx=(8, 0))
-        ttk.Label(secrets_meta, text="Ultima edicao", style="Field.TLabel").grid(
+        ttk.Label(secrets_meta, text="Última edição", style="Field.TLabel").grid(
             row=1,
             column=0,
             sticky=tk.W,
@@ -3387,7 +3389,11 @@ class CFODesktopApp:
         self._update_export_sku_button_state()
 
     def _clients_for_estoque_choice(self, choice: PlatformChoice) -> list[str]:
-        if choice.platform_key == "yampi" and self.yampi_estoque_credentials_store is not None:
+        if (
+            self.remote_client is None
+            and choice.platform_key == "yampi"
+            and self.yampi_estoque_credentials_store is not None
+        ):
             return self.yampi_estoque_credentials_store.companies()
 
         resource = self._resolve_resource_for_choice(choice)
@@ -3914,7 +3920,7 @@ class CFODesktopApp:
                 if "HTTP 404" in message and "Rota nao encontrada" in message:
                     raise ValueError(
                         "Servidor conectado sem suporte ao Gerador "
-                        "(/v1/generators/link). Atualize/reinicie o servidor para a versao com Gerador."
+                        "(/v1/generators/link). Atualize/reinicie o servidor para a versão com Gerador."
                     ) from error
                 raise
             authorization_url = str(result.get("authorization_url") or "").strip()
@@ -3943,7 +3949,7 @@ class CFODesktopApp:
             return
         try:
             self._open_path(link)
-            self.log("Link de autorizacao aberto no navegador.")
+            self.log("Link de autorização aberto no navegador.")
         except Exception as error:  # noqa: BLE001
             messagebox.showerror("Gerador", f"Nao foi possivel abrir o link.\n\n{error}")
 
@@ -3955,7 +3961,7 @@ class CFODesktopApp:
         self.root.clipboard_clear()
         self.root.clipboard_append(link)
         self.root.update()
-        self.log("Link de autorizacao copiado para a area de transferencia.")
+        self.log("Link de autorização copiado para a area de transferencia.")
 
     def _refresh_client_registration_platforms(self) -> None:
         available_platforms = [
@@ -4248,7 +4254,19 @@ class CFODesktopApp:
         def task() -> None:
             if self.remote_client is None:
                 raise ValueError("Conecte o servidor na aba Configuracoes para atualizar o catalogo.")
-            catalog = self.remote_client.fetch_catalog()
+            try:
+                catalog = self.remote_client.reload_catalog()
+                reloaded_at = str(catalog.get("reloaded_at") or "").strip()
+                if reloaded_at:
+                    self.log(f"Servidor recarregou secrets antes do catalogo: {reloaded_at}")
+            except RemoteApiError as error:
+                if "HTTP 404" not in str(error):
+                    raise
+                self.log(
+                    "Servidor sem endpoint de recarga de catalogo; usando atualizacao simples. "
+                    "Atualize/reinicie o servidor para recarregar secrets sob demanda."
+                )
+                catalog = self.remote_client.fetch_catalog()
             self._apply_remote_connection_in_ui_thread(self.remote_client, catalog)
             self.log("Catalogo remoto atualizado a partir do servidor.")
 
@@ -4648,9 +4666,9 @@ class CFODesktopApp:
         is_visible = self.btn_use_local_secrets.winfo_manager() == "grid"
         server_actions = self.btn_use_local_secrets.master
         if isinstance(server_actions, ttk.Frame):
-            server_actions.columnconfigure(2, weight=1 if should_show else 0)
+            server_actions.columnconfigure(3, weight=1 if should_show else 0)
         if should_show and not is_visible:
-            self.btn_use_local_secrets.grid(row=0, column=2, sticky=tk.EW)
+            self.btn_use_local_secrets.grid(row=0, column=3, sticky=tk.EW)
             return
         if not should_show and is_visible:
             self.btn_use_local_secrets.grid_remove()
@@ -4690,9 +4708,9 @@ class CFODesktopApp:
         if result.status == "no_asset":
             latest_version = str(result.latest_version or "").strip()
             if latest_version:
-                self._set_update_notice(f"Nova versao v{latest_version} sem instalador compativel.")
+                self._set_update_notice(f"Nova versão v{latest_version} sem instalador compativel.")
                 return
-            self._set_update_notice("Nova versao disponivel sem instalador compativel.")
+            self._set_update_notice("Nova versão disponivel sem instalador compativel.")
             return
         if result.status == "up_to_date":
             self._set_update_notice("")
@@ -4795,7 +4813,7 @@ class CFODesktopApp:
         start_date: str,
         end_date: str,
     ) -> None:
-        self.log("Atualizando categorias Mercado Livre antes da exportacao...")
+        self.log("Atualizando categorias Mercado Livre antes da exportação...")
         if self.remote_client is not None:
             count = self._run_remote_job(
                 action="sync_mercado_livre_categories",
@@ -4847,7 +4865,7 @@ class CFODesktopApp:
                 return
             if result.status == "no_asset":
                 message = (
-                    "Nova versao encontrada, mas sem instalador compativel para este sistema "
+                    "Nova versão encontrada, mas sem instalador compativel para este sistema "
                     "na release mais recente."
                 )
                 self.log(message)
@@ -4859,7 +4877,7 @@ class CFODesktopApp:
                 return
 
             self.log(
-                f"Baixando instalador da versao {result.latest_version} "
+                f"Baixando instalador da versão {result.latest_version} "
                 f"({result.asset_name})..."
             )
             launch_result = download_and_launch_update(update_config_path())
@@ -4953,13 +4971,13 @@ class CFODesktopApp:
             scope = self._format_scope(sub_clients)
             months = self._count_months_covered(start_date, end_date)
             self.log(
-                "Exportacao concluida: "
+                "Exportação concluida: "
                 f"{count} registros | {choice.label} | Cliente={client} | Filial/Alias={scope} | "
                 f"Periodo={start_date}..{end_date} | Meses={months}"
             )
             self._notify_export_completion()
 
-        self._run_task("Exportacao", task)
+        self._run_task("Exportação", task)
 
     def export_sku(self) -> None:
         if not self._is_sku_tab_active():
@@ -4974,7 +4992,7 @@ class CFODesktopApp:
             choice = self._get_current_choice()
             behavior = self.platform_ui_registry.get(choice.platform_key)
             if behavior is None or not behavior.supports_sku_workflow:
-                raise ValueError(f"Exportacao SKU nao disponivel para plataforma: {choice.platform_key}")
+                raise ValueError(f"Exportação SKU nao disponivel para plataforma: {choice.platform_key}")
 
             client = self.client_var.get().strip()
             if not client:
@@ -4991,7 +5009,7 @@ class CFODesktopApp:
                 rows=self.sku_preview_rows,
             )
             self.log(
-                f"Exportacao SKU concluida: {exported} linhas | Cliente={client} | "
+                f"Exportação SKU concluida: {exported} linhas | Cliente={client} | "
                 f"Pedido={self.sku_order_number_var.get().strip()}"
             )
             self._notify_export_completion()

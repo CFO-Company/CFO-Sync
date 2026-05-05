@@ -69,7 +69,7 @@ def search_stream(
             last_error = error
             if _is_unimplemented_error(error) and index < len(candidates) - 1:
                 logger.warning(
-                    "Google Ads SearchStream indisponivel em %s para customer_id=%s. Tentando proxima versao.",
+                    "Google Ads SearchStream indisponivel em %s para customer_id=%s. Tentando proxima versão.",
                     version,
                     resolved_customer_id,
                 )
