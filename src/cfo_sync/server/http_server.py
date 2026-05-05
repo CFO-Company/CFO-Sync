@@ -315,6 +315,15 @@ class CfoSyncHttpServer:
                     self._write_json(HTTPStatus.CREATED, result)
                     return
 
+                if path == "/v1/catalog/reload":
+                    try:
+                        payload = server.service.reload_catalog(policy)
+                    except Exception as error:  # noqa: BLE001
+                        self._write_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error)})
+                        return
+                    self._write_json(HTTPStatus.OK, payload)
+                    return
+
                 if path == "/v1/secrets/file":
                     payload = self._read_json_body()
                     if payload is None:

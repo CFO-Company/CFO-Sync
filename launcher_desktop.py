@@ -1484,7 +1484,7 @@ class CFODesktopApp:
 
         self.btn_refresh_catalog = ttk.Button(
             clients_actions,
-            text="Atualizar catalogo",
+            text="Forçar atualização do servidor",
             style="Secondary.TButton",
             command=self.refresh_remote_catalog,
         )
@@ -4254,7 +4254,19 @@ class CFODesktopApp:
         def task() -> None:
             if self.remote_client is None:
                 raise ValueError("Conecte o servidor na aba Configuracoes para atualizar o catalogo.")
-            catalog = self.remote_client.fetch_catalog()
+            try:
+                catalog = self.remote_client.reload_catalog()
+                reloaded_at = str(catalog.get("reloaded_at") or "").strip()
+                if reloaded_at:
+                    self.log(f"Servidor recarregou secrets antes do catalogo: {reloaded_at}")
+            except RemoteApiError as error:
+                if "HTTP 404" not in str(error):
+                    raise
+                self.log(
+                    "Servidor sem endpoint de recarga de catalogo; usando atualizacao simples. "
+                    "Atualize/reinicie o servidor para recarregar secrets sob demanda."
+                )
+                catalog = self.remote_client.fetch_catalog()
             self._apply_remote_connection_in_ui_thread(self.remote_client, catalog)
             self.log("Catalogo remoto atualizado a partir do servidor.")
 

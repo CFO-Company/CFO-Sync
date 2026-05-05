@@ -34,6 +34,9 @@ class RemoteCFOClient:
     def fetch_catalog(self) -> dict[str, object]:
         return self._request_json("GET", "/v1/catalog")
 
+    def reload_catalog(self) -> dict[str, object]:
+        return self._request_json("POST", "/v1/catalog/reload", payload={})
+
     def create_job(self, payload: dict[str, object]) -> str:
         response = self._request_json("POST", "/v1/jobs", payload=payload)
         job_id = str(response.get("job_id") or "").strip()

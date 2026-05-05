@@ -107,6 +107,13 @@ class CfoSyncServerService:
             "platforms": platforms,
         }
 
+    def reload_catalog(self, policy: AccessTokenPolicy) -> dict[str, object]:
+        with self._state_lock:
+            self._reload_state_locked()
+        payload = self.build_catalog(policy)
+        payload["reloaded_at"] = datetime.now(timezone.utc).isoformat()
+        return payload
+
     def run_job(
         self,
         payload: dict[str, object],
