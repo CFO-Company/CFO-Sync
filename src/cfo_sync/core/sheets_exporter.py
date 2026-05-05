@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 import re
 import unicodedata
@@ -11,6 +12,13 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
 from cfo_sync.core.models import RawRecord, ResourceConfig, SheetTabTarget
+
+
+@dataclass(frozen=True)
+class PeriodReplacePolicy:
+    period_fields: tuple[str, ...]
+    scope_fields: tuple[str, ...] = ()
+    period_granularity: str = "date"
 
 
 class GoogleSheetsExporter:
@@ -41,20 +49,31 @@ class GoogleSheetsExporter:
         mapped_rows = [self._map_to_sheet_columns(resource, row) for row in rows]
         ordered_columns = list(resource.field_map.values())
 
-        period_column = self._resolve_period_column(resource)
-        replaced_by_period = self._replace_month_period_rows(
-            spreadsheet_id=spreadsheet_id,
-            tab_name=tab_name,
+        replace_policy = self._resolve_period_replace_policy(
+            platform_key=platform_key,
             resource=resource,
-            rows=mapped_rows,
-            ordered_columns=ordered_columns,
-            period_column=period_column,
-            start_date=start_date,
-            end_date=end_date,
-            sub_clients=sub_clients,
         )
-        if replaced_by_period:
-            return len(mapped_rows)
+        if replace_policy is not None:
+            period_column = self._resolve_policy_column(resource, replace_policy.period_fields)
+            scope_filters = self._resolve_policy_scope_filters(
+                resource=resource,
+                policy=replace_policy,
+                sub_clients=sub_clients,
+            )
+            replaced_by_period = self._replace_period_rows(
+                spreadsheet_id=spreadsheet_id,
+                tab_name=tab_name,
+                resource=resource,
+                rows=mapped_rows,
+                ordered_columns=ordered_columns,
+                period_column=period_column,
+                period_is_monthly=replace_policy.period_granularity == "month",
+                start_date=start_date,
+                end_date=end_date,
+                scope_filters=scope_filters,
+            )
+            if replaced_by_period:
+                return len(mapped_rows)
 
         if platform_key.startswith("omie") and resource.name == "financeiro":
             return self._upsert_by_keys(
@@ -115,7 +134,7 @@ class GoogleSheetsExporter:
 
         return len(values)
 
-    def _replace_month_period_rows(
+    def _replace_period_rows(
         self,
         spreadsheet_id: str,
         tab_name: str,
@@ -123,9 +142,10 @@ class GoogleSheetsExporter:
         rows: list[dict[str, object]],
         ordered_columns: list[str],
         period_column: str | None,
+        period_is_monthly: bool,
         start_date: str | None,
         end_date: str | None,
-        sub_clients: list[str] | None,
+        scope_filters: dict[str, set[str]],
     ) -> bool:
         if not period_column or not start_date or not end_date:
             return False
@@ -135,8 +155,6 @@ class GoogleSheetsExporter:
         if period_start is None or period_end is None or period_start > period_end:
             return False
         target_month_years = self._month_years_in_period(start_date=start_date, end_date=end_date)
-        period_is_monthly = period_column == str(resource.field_map.get("mes_ano") or "").strip()
-        scope_filters = self._resolve_period_scope_filters(resource=resource, sub_clients=sub_clients)
 
         service = self._get_service()
         read_response = service.spreadsheets().values().get(
@@ -296,12 +314,14 @@ class GoogleSheetsExporter:
                 current = date(current.year, current.month + 1, 1)
         return month_years
 
-    @staticmethod
-    def _resolve_period_scope_filters(
+    @classmethod
+    def _resolve_policy_scope_filters(
+        cls,
         resource: ResourceConfig,
+        policy: PeriodReplacePolicy,
         sub_clients: list[str] | None,
     ) -> dict[str, set[str]]:
-        if not sub_clients:
+        if not sub_clients or not policy.scope_fields:
             return {}
 
         selected_values = {
@@ -310,17 +330,9 @@ class GoogleSheetsExporter:
         if not selected_values:
             return {}
 
-        for api_field in (
-            "alias",
-            "origem",
-            "conta",
-            "account_name",
-            "nome_ca",
-            "customer_name",
-        ):
-            column_name = str(resource.field_map.get(api_field) or "").strip()
-            if column_name:
-                return {column_name: selected_values}
+        scope_column = cls._resolve_policy_column(resource, policy.scope_fields)
+        if scope_column:
+            return {scope_column: selected_values}
 
         return {}
 
@@ -432,11 +444,72 @@ class GoogleSheetsExporter:
             return None
 
     @staticmethod
-    def _resolve_period_column(resource: ResourceConfig) -> str | None:
-        for api_field in ("mes_ano", "data", "data_gasto", "date"):
+    def _resolve_policy_column(resource: ResourceConfig, api_fields: tuple[str, ...]) -> str | None:
+        for api_field in api_fields:
             column_name = str(resource.field_map.get(api_field) or "").strip()
             if column_name:
                 return column_name
+        return None
+
+    @staticmethod
+    def _resolve_period_replace_policy(
+        platform_key: str,
+        resource: ResourceConfig,
+    ) -> PeriodReplacePolicy | None:
+        resource_name = resource.name
+
+        if platform_key == "yampi":
+            if resource_name == "financeiro":
+                return PeriodReplacePolicy(
+                    period_fields=("data",),
+                    scope_fields=("alias",),
+                    period_granularity="month",
+                )
+            if resource_name == "estoque":
+                return PeriodReplacePolicy(
+                    period_fields=("mes_ano", "created_at"),
+                    period_granularity="month",
+                )
+            return None
+
+        if platform_key.startswith("omie") and resource_name == "financeiro":
+            return PeriodReplacePolicy(
+                period_fields=("data",),
+                scope_fields=("origem", "alias"),
+            )
+
+        if platform_key == "mercado_livre" and resource_name == "vendas":
+            return PeriodReplacePolicy(
+                period_fields=("mes_ano", "data"),
+                scope_fields=("conta", "account_name"),
+                period_granularity="month",
+            )
+
+        if platform_key == "meta_ads" and resource_name in {"insights", "campanhas", "contas"}:
+            return PeriodReplacePolicy(
+                period_fields=("data_gasto", "data", "date"),
+                scope_fields=("nome_ca", "account_name", "customer_name"),
+            )
+
+        if platform_key == "google_ads" and resource_name in {"insights", "campanhas", "contas"}:
+            return PeriodReplacePolicy(
+                period_fields=("data_gasto", "data", "date"),
+                scope_fields=("nome_ca", "account_name", "customer_name"),
+            )
+
+        if platform_key == "tiktok_ads" and resource_name in {"insights", "campanhas", "contas"}:
+            return PeriodReplacePolicy(
+                period_fields=("mes_ano", "data", "date"),
+                scope_fields=("conta", "account_name"),
+                period_granularity="month",
+            )
+
+        if platform_key == "tiktok_shop" and resource_name in {"orders", "pedidos"}:
+            return PeriodReplacePolicy(
+                period_fields=("data", "date"),
+                scope_fields=("conta", "account_name", "shop_name"),
+            )
+
         return None
 
     def _upsert_by_keys(
