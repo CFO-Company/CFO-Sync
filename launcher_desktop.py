@@ -1775,7 +1775,8 @@ class CFODesktopApp:
         server_actions.grid(row=5, column=1, sticky=tk.EW, pady=(4, 10))
         server_actions.columnconfigure(0, weight=1)
         server_actions.columnconfigure(1, weight=1)
-        server_actions.columnconfigure(2, weight=0)
+        server_actions.columnconfigure(2, weight=1)
+        server_actions.columnconfigure(3, weight=0)
         self.btn_connect_server = ttk.Button(
             server_actions,
             text="Conectar servidor",
@@ -4665,9 +4666,9 @@ class CFODesktopApp:
         is_visible = self.btn_use_local_secrets.winfo_manager() == "grid"
         server_actions = self.btn_use_local_secrets.master
         if isinstance(server_actions, ttk.Frame):
-            server_actions.columnconfigure(2, weight=1 if should_show else 0)
+            server_actions.columnconfigure(3, weight=1 if should_show else 0)
         if should_show and not is_visible:
-            self.btn_use_local_secrets.grid(row=0, column=2, sticky=tk.EW)
+            self.btn_use_local_secrets.grid(row=0, column=3, sticky=tk.EW)
             return
         if not should_show and is_visible:
             self.btn_use_local_secrets.grid_remove()
