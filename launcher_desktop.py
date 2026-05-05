@@ -912,6 +912,8 @@ class CFODesktopApp:
     def _clients_for_platform(self, platform_key: str) -> list[str]:
         platform = next((item for item in self.config.platforms if item.key == platform_key), None)
         configured_clients = list(platform.clients) if platform is not None else []
+        if self.remote_client is not None:
+            return configured_clients
 
         behavior = self.platform_ui_registry.get(platform_key)
         if behavior is None:
@@ -3387,7 +3389,11 @@ class CFODesktopApp:
         self._update_export_sku_button_state()
 
     def _clients_for_estoque_choice(self, choice: PlatformChoice) -> list[str]:
-        if choice.platform_key == "yampi" and self.yampi_estoque_credentials_store is not None:
+        if (
+            self.remote_client is None
+            and choice.platform_key == "yampi"
+            and self.yampi_estoque_credentials_store is not None
+        ):
             return self.yampi_estoque_credentials_store.companies()
 
         resource = self._resolve_resource_for_choice(choice)
