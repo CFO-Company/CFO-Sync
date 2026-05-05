@@ -165,10 +165,11 @@ class GoogleSheetsExporter:
 
         header = [str(value) for value in existing_values[0]]
         if period_column not in header and len(existing_values) > 1:
-            return False
+            if self._resolve_header_column(header, period_column) is None:
+                return False
         header_changed = False
         for column in ordered_columns:
-            if column not in header:
+            if self._resolve_header_column(header, column) is None:
                 header.append(column)
                 header_changed = True
 
@@ -186,10 +187,15 @@ class GoogleSheetsExporter:
                 body={"values": [header]},
             ).execute()
 
-        if period_column not in header:
+        resolved_period_column = self._resolve_header_column(header, period_column)
+        if resolved_period_column is None:
             return False
 
-        period_column_index = header.index(period_column)
+        resolved_scope_filters = self._resolve_scope_filters_for_header(
+            header=header,
+            scope_filters=scope_filters,
+        )
+        period_column_index = header.index(resolved_period_column)
         header_index = {column: index for index, column in enumerate(header)}
         rows_to_delete: list[int] = []
         for row_number, existing_row in enumerate(existing_values[1:], start=2):
@@ -203,7 +209,7 @@ class GoogleSheetsExporter:
                 if self._row_matches_scope_filters(
                     values=existing_row,
                     header_index=header_index,
-                    scope_filters=scope_filters,
+                    scope_filters=resolved_scope_filters,
                 ):
                     rows_to_delete.append(row_number)
 
@@ -215,7 +221,14 @@ class GoogleSheetsExporter:
             )
 
         if rows:
-            appends = [self._to_sheet_row(mapped_row, ordered_columns=header) for mapped_row in rows]
+            appends = [
+                self._to_sheet_row_for_header(
+                    mapped_row=mapped_row,
+                    header=header,
+                    ordered_columns=ordered_columns,
+                )
+                for mapped_row in rows
+            ]
             self._append_rows(
                 spreadsheet_id=spreadsheet_id,
                 tab_name=tab_name,
@@ -328,6 +341,24 @@ class GoogleSheetsExporter:
             if raw_value.casefold() not in allowed_values:
                 return False
         return True
+
+    @classmethod
+    def _resolve_scope_filters_for_header(
+        cls,
+        header: list[str],
+        scope_filters: dict[str, set[str]],
+    ) -> dict[str, set[str]]:
+        if not scope_filters:
+            return {}
+
+        resolved: dict[str, set[str]] = {}
+        for column_name, allowed_values in scope_filters.items():
+            resolved_column = cls._resolve_header_column(header, column_name)
+            if resolved_column is None:
+                resolved[column_name] = allowed_values
+            else:
+                resolved[resolved_column] = allowed_values
+        return resolved
 
     @staticmethod
     def _extract_month_year(raw_value: str) -> tuple[int, int] | None:
@@ -442,7 +473,7 @@ class GoogleSheetsExporter:
         header = [str(value) for value in existing_values[0]]
         header_changed = False
         for column in ordered_columns:
-            if column not in header:
+            if self._resolve_header_column(header, column) is None:
                 header.append(column)
                 header_changed = True
 
@@ -460,10 +491,13 @@ class GoogleSheetsExporter:
                 body={"values": [header]},
             ).execute()
 
+        resolved_key_columns = tuple(
+            self._resolve_header_column(header, column) or column for column in key_columns
+        )
         header_index = {column: index for index, column in enumerate(header)}
         key_to_row: dict[tuple[str, ...], int] = {}
         for row_number, existing_row in enumerate(existing_values[1:], start=2):
-            row_key = self._row_key_from_values(existing_row, header_index, key_columns)
+            row_key = self._row_key_from_values(existing_row, header_index, resolved_key_columns)
             if row_key is not None:
                 key_to_row[row_key] = row_number
 
@@ -471,7 +505,11 @@ class GoogleSheetsExporter:
         appends: list[list[object]] = []
 
         for mapped_row in rows:
-            row_values = self._to_sheet_row(mapped_row, ordered_columns=header)
+            row_values = self._to_sheet_row_for_header(
+                mapped_row=mapped_row,
+                header=header,
+                ordered_columns=ordered_columns,
+            )
             row_key = self._row_key_from_mapping(mapped_row, key_columns)
 
             if row_key is not None and row_key in key_to_row:
@@ -667,6 +705,28 @@ class GoogleSheetsExporter:
     def _to_sheet_row(mapped_row: dict[str, object], ordered_columns: list[str]) -> list[object]:
         return [mapped_row.get(column) for column in ordered_columns]
 
+    @classmethod
+    def _to_sheet_row_for_header(
+        cls,
+        mapped_row: dict[str, object],
+        header: list[str],
+        ordered_columns: list[str],
+    ) -> list[object]:
+        normalized_mapped_columns = {
+            cls._normalize_column_label(column): column
+            for column in ordered_columns
+            if cls._normalize_column_label(column)
+        }
+        values: list[object] = []
+        for header_column in header:
+            if header_column in mapped_row:
+                values.append(mapped_row.get(header_column))
+                continue
+
+            mapped_column = normalized_mapped_columns.get(cls._normalize_column_label(header_column))
+            values.append(mapped_row.get(mapped_column) if mapped_column else None)
+        return values
+
     @staticmethod
     def _row_key_from_values(
         values: list[object],
@@ -693,6 +753,35 @@ class GoogleSheetsExporter:
         if index is None or index >= len(values):
             return ""
         return str(values[index]).strip()
+
+    @classmethod
+    def _resolve_header_column(cls, header: list[str], column_name: str) -> str | None:
+        if column_name in header:
+            return column_name
+
+        normalized_column = cls._normalize_column_label(column_name)
+        if not normalized_column:
+            return None
+
+        matches = [
+            header_column
+            for header_column in header
+            if cls._normalize_column_label(header_column) == normalized_column
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        return None
+
+    @staticmethod
+    def _normalize_column_label(value: str) -> str:
+        without_diacritics = "".join(
+            char
+            for char in unicodedata.normalize("NFKD", str(value or ""))
+            if not unicodedata.combining(char)
+        )
+        normalized = without_diacritics.casefold()
+        normalized = re.sub(r"[^a-z0-9]+", "", normalized)
+        return normalized
 
     @staticmethod
     def _next_row_index(
