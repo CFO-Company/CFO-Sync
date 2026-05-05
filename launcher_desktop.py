@@ -1793,7 +1793,7 @@ class CFODesktopApp:
         self.btn_disconnect_server.grid(row=0, column=1, sticky=tk.EW, padx=(0, 6))
         self.btn_refresh_catalog = ttk.Button(
             server_actions,
-            text="Atualizar Credenciais",
+            text="Forçar atualização do servidor",
             style="Secondary.TButton",
             command=self.refresh_remote_catalog,
         )
@@ -4815,15 +4815,25 @@ class CFODesktopApp:
     ) -> None:
         self.log("Atualizando categorias Mercado Livre antes da exportação...")
         if self.remote_client is not None:
-            count = self._run_remote_job(
-                action="sync_mercado_livre_categories",
-                platform_key="mercado_livre",
-                client=client,
-                start_date=start_date,
-                end_date=end_date,
-                resource_names=["vendas"],
-                sub_clients=None,
-            )
+            try:
+                count = self._run_remote_job(
+                    action="sync_mercado_livre_categories",
+                    platform_key="mercado_livre",
+                    client=client,
+                    start_date=start_date,
+                    end_date=end_date,
+                    resource_names=["vendas"],
+                    sub_clients=None,
+                )
+            except (RemoteApiError, ValueError) as error:
+                if self._is_unsupported_remote_category_sync_error(error):
+                    self.log(
+                        "Servidor remoto nao reconhece a atualizacao de categorias "
+                        "Mercado Livre. Atualize o CFO Sync no servidor; continuando sem "
+                        "atualizar categorias."
+                    )
+                    return
+                raise
             self.log(f"Categorias Mercado Livre atualizadas no servidor: detalhes={count}")
             return
 
@@ -4845,6 +4855,16 @@ class CFODesktopApp:
             self.log("Categorias Mercado Livre para revisar:")
             for detail in result.pending_review:
                 self.log(f"- {detail}")
+
+    @staticmethod
+    def _is_unsupported_remote_category_sync_error(error: Exception) -> bool:
+        message = str(error or "").casefold()
+        return (
+            "acao invalida" in message
+            and "collect" in message
+            and "export" in message
+            and "sync_mercado_livre_categories" not in message
+        )
 
     def update_app(self) -> None:
         def task() -> None:

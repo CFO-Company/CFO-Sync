@@ -1,3 +1,18 @@
+## [1.3.7] - 05-05-2026
+
+### Added
+- Botao na aba `Configuracoes` para forcar a recarga do catalogo de clientes a partir dos secrets do servidor.
+- Endpoint remoto para recarregar secrets do servidor antes de atualizar o catalogo no app.
+
+### Changed
+- Versao do aplicativo e do instalador atualizada para 1.3.7.
+- Exportacao do Meta Ads passa a enviar `Valor Gasto` como numero, sem prefixo `R$`.
+
+### Fixed
+- Desktop remoto deixa de abortar coleta/exportacao quando um servidor antigo ainda nao suporta `sync_mercado_livre_categories`; o log orienta atualizar o servidor e continua sem atualizar categorias.
+- Desktop conectado ao servidor passa a usar o catalogo remoto de clientes, evitando clientes antigos carregados dos secrets locais do executavel.
+- Deduplicacao do faturamento do Mercado Livre considera mais campos da transacao para reduzir inconsistencias em `Transporte - Mercadorias vendidas` e `Tarifas de Marketplace`.
+
 ## [1.3.6] - 30-04-2026
 
 ### Added
