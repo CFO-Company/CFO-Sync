@@ -182,7 +182,7 @@ def _to_business_row(
         "nome_bm": account.business_manager_name,
         "nome_ca": account.ad_account_name,
         "nome_anuncio": ad_name,
-        "valor_gasto": _format_brl(spend_value),
+        "valor_gasto": round(spend_value, 2),
         "data": parsed_date,
         "centro_custo": account.cost_center,
         "tipo_ra": tipo_ra,
@@ -195,12 +195,6 @@ def _format_date_ddmmyyyy(raw_date: str) -> str:
         return datetime.strptime(raw_date, "%Y-%m-%d").strftime("%d/%m/%Y")
     except ValueError:
         return raw_date
-
-
-def _format_brl(value: float) -> str:
-    text = f"{value:,.2f}"
-    text = text.replace(",", "X").replace(".", ",").replace("X", ".")
-    return f"R$ {text}"
 
 
 def _to_float(value: Any) -> float:
