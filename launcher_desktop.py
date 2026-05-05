@@ -1482,14 +1482,6 @@ class CFODesktopApp:
         )
         self.btn_register_client.pack(side=tk.RIGHT)
 
-        self.btn_refresh_catalog = ttk.Button(
-            clients_actions,
-            text="Forçar atualização do servidor",
-            style="Secondary.TButton",
-            command=self.refresh_remote_catalog,
-        )
-        self.btn_refresh_catalog.pack(side=tk.RIGHT, padx=(0, 8))
-
         self.clients_tab.columnconfigure(1, weight=1)
         self.clients_tab.rowconfigure(4, weight=1)
 
@@ -1798,6 +1790,13 @@ class CFODesktopApp:
             command=self.disconnect_server,
         )
         self.btn_disconnect_server.grid(row=0, column=1, sticky=tk.EW, padx=(0, 6))
+        self.btn_refresh_catalog = ttk.Button(
+            server_actions,
+            text="Forçar atualização do servidor",
+            style="Secondary.TButton",
+            command=self.refresh_remote_catalog,
+        )
+        self.btn_refresh_catalog.grid(row=0, column=2, sticky=tk.EW, padx=(0, 6))
         self.btn_use_local_secrets = ttk.Button(
             server_actions,
             text="Usar fallback local (secrets)",
