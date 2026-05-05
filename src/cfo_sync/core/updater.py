@@ -103,14 +103,14 @@ def check_for_updates(path: Path | None = None) -> UpdateCheckResult:
     if not latest_version:
         return UpdateCheckResult(
             status="error",
-            message="Release sem versao valida (tag_name).",
+            message="Release sem versão valida (tag_name).",
             current_version=current_version,
         )
 
     if not _is_newer_version(latest_version, current_version):
         return UpdateCheckResult(
             status="up_to_date",
-            message=f"Aplicativo ja esta na versao mais recente ({current_version}).",
+            message=f"Aplicativo ja esta na versão mais recente ({current_version}).",
             current_version=current_version,
             latest_version=latest_version,
             release_url=str(release.get("html_url") or ""),
@@ -129,7 +129,7 @@ def check_for_updates(path: Path | None = None) -> UpdateCheckResult:
 
     return UpdateCheckResult(
         status="update_available",
-        message=f"Nova versao disponivel: {latest_version}",
+        message=f"Nova versão disponivel: {latest_version}",
         current_version=current_version,
         latest_version=latest_version,
         release_url=str(release.get("html_url") or ""),

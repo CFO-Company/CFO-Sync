@@ -85,7 +85,7 @@ COLOR_SCROLLBAR_THUMB_HOVER = "#44505E"
 PT_BR_MONTH_NAMES = (
     "Janeiro",
     "Fevereiro",
-    "Marco",
+    "Março",
     "Abril",
     "Maio",
     "Junho",
@@ -889,7 +889,7 @@ class CFODesktopApp:
                     # SKU e Estoque possuem abas dedicadas.
                     continue
                 if platform_behavior and platform_behavior.uses_dedicated_resource_tab(resource.name):
-                    # Recursos dedicados usam aba propria e exportacao especifica.
+                    # Recursos dedicados usam aba propria e exportação especifica.
                     continue
                 label = self._platform_resource_label(platform.key, platform.label, resource.name)
                 choices.append(
@@ -959,7 +959,7 @@ class CFODesktopApp:
         ttk.Label(header_left, text="Painel de Sincronização", style="Title.TLabel").pack(anchor=tk.W)
         ttk.Label(
             header_left,
-            text=f"Versao {__version__} | Selecione plataforma, cliente e filial/alias para coletar e exportar.",
+            text=f"Versão {__version__} | Selecione plataforma, cliente e filial/alias para coletar e exportar.",
             style="Subtitle.TLabel",
         ).pack(anchor=tk.W, pady=(2, 0))
 
@@ -1499,7 +1499,7 @@ class CFODesktopApp:
         ttk.Label(
             self.generator_tab,
             text=(
-                "Gere links de autorizacao por plataforma. "
+                "Gere links de autorização por plataforma. "
                 "O callback registra o cliente automaticamente no servidor."
             ),
             style="Field.TLabel",
@@ -1873,7 +1873,7 @@ class CFODesktopApp:
             textvariable=self.server_secret_path_var,
             style="FieldValue.TLabel",
         ).grid(row=0, column=1, sticky=tk.W, padx=(8, 0))
-        ttk.Label(secrets_meta, text="Ultima edicao", style="Field.TLabel").grid(
+        ttk.Label(secrets_meta, text="Última edição", style="Field.TLabel").grid(
             row=1,
             column=0,
             sticky=tk.W,
@@ -3920,7 +3920,7 @@ class CFODesktopApp:
                 if "HTTP 404" in message and "Rota nao encontrada" in message:
                     raise ValueError(
                         "Servidor conectado sem suporte ao Gerador "
-                        "(/v1/generators/link). Atualize/reinicie o servidor para a versao com Gerador."
+                        "(/v1/generators/link). Atualize/reinicie o servidor para a versão com Gerador."
                     ) from error
                 raise
             authorization_url = str(result.get("authorization_url") or "").strip()
@@ -3949,7 +3949,7 @@ class CFODesktopApp:
             return
         try:
             self._open_path(link)
-            self.log("Link de autorizacao aberto no navegador.")
+            self.log("Link de autorização aberto no navegador.")
         except Exception as error:  # noqa: BLE001
             messagebox.showerror("Gerador", f"Nao foi possivel abrir o link.\n\n{error}")
 
@@ -3961,7 +3961,7 @@ class CFODesktopApp:
         self.root.clipboard_clear()
         self.root.clipboard_append(link)
         self.root.update()
-        self.log("Link de autorizacao copiado para a area de transferencia.")
+        self.log("Link de autorização copiado para a area de transferencia.")
 
     def _refresh_client_registration_platforms(self) -> None:
         available_platforms = [
@@ -4696,9 +4696,9 @@ class CFODesktopApp:
         if result.status == "no_asset":
             latest_version = str(result.latest_version or "").strip()
             if latest_version:
-                self._set_update_notice(f"Nova versao v{latest_version} sem instalador compativel.")
+                self._set_update_notice(f"Nova versão v{latest_version} sem instalador compativel.")
                 return
-            self._set_update_notice("Nova versao disponivel sem instalador compativel.")
+            self._set_update_notice("Nova versão disponivel sem instalador compativel.")
             return
         if result.status == "up_to_date":
             self._set_update_notice("")
@@ -4801,7 +4801,7 @@ class CFODesktopApp:
         start_date: str,
         end_date: str,
     ) -> None:
-        self.log("Atualizando categorias Mercado Livre antes da exportacao...")
+        self.log("Atualizando categorias Mercado Livre antes da exportação...")
         if self.remote_client is not None:
             try:
                 count = self._run_remote_job(
@@ -4873,7 +4873,7 @@ class CFODesktopApp:
                 return
             if result.status == "no_asset":
                 message = (
-                    "Nova versao encontrada, mas sem instalador compativel para este sistema "
+                    "Nova versão encontrada, mas sem instalador compativel para este sistema "
                     "na release mais recente."
                 )
                 self.log(message)
@@ -4885,7 +4885,7 @@ class CFODesktopApp:
                 return
 
             self.log(
-                f"Baixando instalador da versao {result.latest_version} "
+                f"Baixando instalador da versão {result.latest_version} "
                 f"({result.asset_name})..."
             )
             launch_result = download_and_launch_update(update_config_path())
@@ -4979,13 +4979,13 @@ class CFODesktopApp:
             scope = self._format_scope(sub_clients)
             months = self._count_months_covered(start_date, end_date)
             self.log(
-                "Exportacao concluida: "
+                "Exportação concluida: "
                 f"{count} registros | {choice.label} | Cliente={client} | Filial/Alias={scope} | "
                 f"Periodo={start_date}..{end_date} | Meses={months}"
             )
             self._notify_export_completion()
 
-        self._run_task("Exportacao", task)
+        self._run_task("Exportação", task)
 
     def export_sku(self) -> None:
         if not self._is_sku_tab_active():
@@ -5000,7 +5000,7 @@ class CFODesktopApp:
             choice = self._get_current_choice()
             behavior = self.platform_ui_registry.get(choice.platform_key)
             if behavior is None or not behavior.supports_sku_workflow:
-                raise ValueError(f"Exportacao SKU nao disponivel para plataforma: {choice.platform_key}")
+                raise ValueError(f"Exportação SKU nao disponivel para plataforma: {choice.platform_key}")
 
             client = self.client_var.get().strip()
             if not client:
@@ -5017,7 +5017,7 @@ class CFODesktopApp:
                 rows=self.sku_preview_rows,
             )
             self.log(
-                f"Exportacao SKU concluida: {exported} linhas | Cliente={client} | "
+                f"Exportação SKU concluida: {exported} linhas | Cliente={client} | "
                 f"Pedido={self.sku_order_number_var.get().strip()}"
             )
             self._notify_export_completion()

@@ -139,10 +139,10 @@ class GeneratorLinkManager:
             pending = self._pending_states.pop(cleaned_state, None)
         if pending is None:
             raise ValueError(
-                "State invalido ou expirado. Gere um novo link de autorizacao e tente novamente."
+                "State invalido ou expirado. Gere um novo link de autorização e tente novamente."
             )
         if pending.expires_at <= datetime.now(UTC):
-            raise ValueError("State expirado. Gere um novo link de autorizacao.")
+            raise ValueError("State expirado. Gere um novo link de autorização.")
 
         registration_payload = dict(pending.registration_payload)
         credentials = registration_payload.get("credentials")
