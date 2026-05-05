@@ -377,16 +377,15 @@ def _billing_fee_totals_by_month_and_field(
             if not isinstance(charge_info, dict):
                 continue
 
-            raw_id = charge_info.get("detail_id")
-            detail_id = str(raw_id).strip() if raw_id is not None else ""
-            if detail_id and detail_id in seen_detail_ids:
-                continue
-            if detail_id:
-                seen_detail_ids.add(detail_id)
-
             created_at = _to_date(charge_info.get("creation_date_time")) or billing_month_start
             if created_at < period_start or created_at > period_end:
                 continue
+
+            detail_key = _billing_detail_dedupe_key(charge_info)
+            if detail_key and detail_key in seen_detail_ids:
+                continue
+            if detail_key:
+                seen_detail_ids.add(detail_key)
 
             month_key = _month_key(created_at)
             totals = totals_by_month.setdefault(
@@ -418,6 +417,22 @@ def _billing_fee_totals_by_month_and_field(
         page += 1
 
     return totals_by_month
+
+
+def _billing_detail_dedupe_key(charge_info: dict[str, Any]) -> str:
+    raw_id = charge_info.get("detail_id")
+    detail_id = str(raw_id).strip() if raw_id is not None else ""
+    parts = [
+        detail_id,
+        str(charge_info.get("creation_date_time") or "").strip(),
+        str(charge_info.get("transaction_detail") or "").strip(),
+        str(charge_info.get("detail_amount") or "").strip(),
+        str(charge_info.get("detail_type") or "").strip(),
+        str(charge_info.get("charge_bonified_id") or "").strip(),
+    ]
+    if not any(parts):
+        return ""
+    return "|".join(parts)
 
 
 def _billing_target_field(
