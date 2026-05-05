@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import time
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
@@ -85,8 +86,22 @@ class RemoteCFOClient:
         timeout_seconds: float = 900.0,
     ) -> RemoteJobResult:
         started = time.monotonic()
+        last_transient_error: RemoteApiError | None = None
         while True:
-            payload = self.get_job(job_id)
+            try:
+                payload = self.get_job(job_id)
+                last_transient_error = None
+            except RemoteApiError as error:
+                if not _is_transient_poll_error(error):
+                    raise
+                last_transient_error = error
+                if time.monotonic() - started > timeout_seconds:
+                    raise RemoteApiError(
+                        f"Timeout aguardando job {job_id}. Ultimo erro: {error}"
+                    ) from error
+                time.sleep(max(2.0, poll_interval_seconds))
+                continue
+
             status = str(payload.get("status") or "").strip().lower()
             if status in {"completed", "failed"}:
                 return RemoteJobResult(
@@ -96,7 +111,8 @@ class RemoteCFOClient:
                     error=str(payload.get("error") or "").strip() or None,
                 )
             if time.monotonic() - started > timeout_seconds:
-                raise RemoteApiError(f"Timeout aguardando job {job_id}.")
+                suffix = f" Ultimo erro: {last_transient_error}" if last_transient_error else ""
+                raise RemoteApiError(f"Timeout aguardando job {job_id}.{suffix}")
             time.sleep(max(0.2, poll_interval_seconds))
 
     def _request_json(
@@ -126,6 +142,8 @@ class RemoteCFOClient:
         except HTTPError as error:
             message = _read_http_error_message(error)
             raise RemoteApiError(f"Falha HTTP {error.code}: {message}") from error
+        except (TimeoutError, socket.timeout) as error:
+            raise RemoteApiError(f"Timeout na API remota: {error}") from error
         except URLError as error:
             raise RemoteApiError(f"Falha de conexao com servidor: {error}") from error
         except Exception as error:  # noqa: BLE001
@@ -166,4 +184,17 @@ def _read_http_error_message(error: HTTPError) -> str:
     except Exception:  # noqa: BLE001
         pass
     return str(error.reason)
+
+
+def _is_transient_poll_error(error: RemoteApiError) -> bool:
+    message = str(error or "").casefold()
+    transient_fragments = (
+        "timeout",
+        "timed out",
+        "read operation timed out",
+        "temporarily unavailable",
+        "connection reset",
+        "connection aborted",
+    )
+    return any(fragment in message for fragment in transient_fragments)
 
