@@ -1,3 +1,10 @@
+## [1.3.8] - 05-05-2026
+
+### Fixed
+- Exportacao no Google Sheets passa a casar cabecalhos de forma tolerante, evitando duplicidade quando a planilha usa variacoes como `DATA`, `Data` ou `data`.
+- Politicas de substituicao por periodo agora sao explicitas por plataforma e recurso, evitando que uma regra generica de limpeza afete fluxos com chaves diferentes.
+- Yampi financeiro passa a substituir linhas antigas por mes e alias antes de inserir os novos valores.
+
 ## [1.3.7] - 05-05-2026
 
 ### Added
