@@ -1,4 +1,4 @@
-## [1.3.8] - 05-05-2026
+## [1.3.9] - 07-05-2026
 
 ### Fixed
 - Exportacao no Google Sheets passa a casar cabecalhos de forma tolerante, evitando duplicidade quando a planilha usa variacoes como `DATA`, `Data` ou `data`.
