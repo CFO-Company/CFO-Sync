@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from cfo_sync.core.models import AppConfig
+from cfo_sync.platforms.bling.ui_behavior import BlingUIBehavior
 from cfo_sync.platforms.google_ads.ui_behavior import GoogleAdsUIBehavior
 from cfo_sync.platforms.mercado_livre.ui_behavior import MercadoLivreUIBehavior
 from cfo_sync.platforms.meta_ads.ui_behavior import MetaAdsUIBehavior
@@ -63,6 +64,14 @@ def build_platform_ui_registry(config: AppConfig) -> dict[str, PlatformUIBehavio
         try:
             registry["tiktok_shop"] = TikTokShopUIBehavior(
                 credentials_path=config.credentials_dir / config.tiktok_shop.credentials_file,
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
+    if "bling" in configured_platform_keys:
+        try:
+            registry["bling"] = BlingUIBehavior(
+                credentials_path=config.credentials_dir / config.bling.credentials_file,
             )
         except (OSError, ValueError, KeyError, TypeError):
             pass

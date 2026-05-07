@@ -97,6 +97,8 @@ class ClientRegistrationManager:
             return credentials_dir / app_config.tiktok_shop.credentials_file
         if platform_key == "mercado_livre":
             return credentials_dir / "mercado_livre_credentials.json"
+        if platform_key == "bling":
+            return credentials_dir / "bling_credentials.json"
         if platform_key in {"omie", "omie_2026"}:
             return credentials_dir / "omie_credentials.json"
         if platform_key == "omie_2025":
@@ -128,6 +130,8 @@ class ClientRegistrationManager:
                 _create_tiktok_shop_client_credentials(payload, client_name, credentials)
             elif platform_key == "mercado_livre":
                 _create_mercado_livre_client_credentials(payload, client_name, credentials)
+            elif platform_key == "bling":
+                _create_bling_client_credentials(payload, client_name, credentials)
             elif platform_key.startswith("omie"):
                 _create_omie_client_credentials(payload, client_name, gid, credentials)
             else:
@@ -145,6 +149,8 @@ class ClientRegistrationManager:
                 _append_tiktok_shop_credentials(payload, client_name, credentials)
             elif platform_key == "mercado_livre":
                 _upsert_mercado_livre_credentials(payload, client_name, credentials)
+            elif platform_key == "bling":
+                _upsert_bling_credentials(payload, client_name, credentials)
             elif platform_key.startswith("omie"):
                 _append_omie_credentials(payload, client_name, gid, credentials)
             else:
@@ -584,6 +590,55 @@ def _create_mercado_livre_client_credentials(
     payload["companies"] = companies
 
 
+def _upsert_bling_credentials(
+    payload: dict[str, Any],
+    client_name: str,
+    credentials: dict[str, object],
+) -> None:
+    auth_payload = payload.get("auth")
+    if not isinstance(auth_payload, dict):
+        auth_payload = {}
+    auth_payload["client_id"] = _optional_text(
+        credentials.get("client_id") or auth_payload.get("client_id")
+    )
+    auth_payload["client_secret"] = _optional_text(
+        credentials.get("client_secret") or auth_payload.get("client_secret")
+    )
+    auth_payload["redirect_uri"] = _optional_text(
+        credentials.get("redirect_uri") or auth_payload.get("redirect_uri")
+    )
+    payload["auth"] = auth_payload
+
+    accounts = payload.get("accounts")
+    if not isinstance(accounts, list):
+        accounts = []
+
+    account_payload = _build_bling_account_payload(client_name, credentials)
+    matching_index = _find_bling_account_index(
+        accounts=accounts,
+        company_name=client_name,
+        account_name=str(account_payload.get("account_name") or ""),
+    )
+    if matching_index is None:
+        accounts.append(account_payload)
+    else:
+        accounts[matching_index] = account_payload
+    payload["accounts"] = accounts
+
+
+def _create_bling_client_credentials(
+    payload: dict[str, Any],
+    client_name: str,
+    credentials: dict[str, object],
+) -> None:
+    accounts = payload.get("accounts")
+    if not isinstance(accounts, list):
+        accounts = []
+    _ensure_company_not_in_accounts(accounts, client_name, platform_label="Bling")
+    payload["accounts"] = accounts
+    _upsert_bling_credentials(payload, client_name, credentials)
+
+
 def _append_omie_credentials(
     payload: dict[str, Any],
     client_name: str,
@@ -784,6 +839,56 @@ def _mercado_livre_alias(auth_payload: dict[str, Any]) -> str:
         or auth_payload.get("filial")
         or ""
     ).strip().casefold()
+
+
+def _build_bling_account_payload(client_name: str, credentials: dict[str, object]) -> dict[str, Any]:
+    expires_in = credentials.get("expires_in")
+    try:
+        parsed_expires_in = int(expires_in) if expires_in is not None else 21600
+    except (TypeError, ValueError):
+        raise ValueError("credentials.expires_in invalido: use inteiro positivo.") from None
+    if parsed_expires_in <= 0:
+        parsed_expires_in = 21600
+
+    account_name = _optional_text(
+        credentials.get("account_name")
+        or credentials.get("account_alias")
+        or credentials.get("alias")
+    ) or client_name
+
+    return {
+        "company_name": client_name,
+        "account_name": account_name,
+        "access_token": _required_text(
+            credentials.get("access_token"),
+            field_name="credentials.access_token",
+        ),
+        "refresh_token": _required_text(
+            credentials.get("refresh_token"),
+            field_name="credentials.refresh_token",
+        ),
+        "token_type": _optional_text(credentials.get("token_type")) or "Bearer",
+        "expires_in": parsed_expires_in,
+        "access_token_expires_at": _optional_text(credentials.get("access_token_expires_at")),
+    }
+
+
+def _find_bling_account_index(
+    *,
+    accounts: list[Any],
+    company_name: str,
+    account_name: str,
+) -> int | None:
+    company_target = str(company_name or "").strip().casefold()
+    account_target = str(account_name or "").strip().casefold()
+    for index, account in enumerate(accounts):
+        if not isinstance(account, dict):
+            continue
+        current_company = str(account.get("company_name") or "").strip().casefold()
+        current_account = str(account.get("account_name") or "").strip().casefold()
+        if current_company == company_target and current_account == account_target:
+            return index
+    return None
 
 
 def _looks_like_mercado_livre_auth(payload: dict[str, Any]) -> bool:

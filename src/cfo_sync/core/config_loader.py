@@ -6,6 +6,7 @@ from pathlib import Path
 
 from cfo_sync.core.models import (
     AppConfig,
+    BlingConfig,
     GoogleAdsConfig,
     GoogleSheetsConfig,
     MetaAdsConfig,
@@ -127,6 +128,12 @@ def load_app_config(config_path: Path) -> AppConfig:
             credentials_file=(data.get("tiktok_shop") or {}).get(
                 "credentials_file",
                 "tiktok_shop_credentials.json",
+            ),
+        ),
+        bling=BlingConfig(
+            credentials_file=(data.get("bling") or {}).get(
+                "credentials_file",
+                "bling_credentials.json",
             ),
         ),
         platforms=platforms,

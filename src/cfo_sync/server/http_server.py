@@ -103,6 +103,45 @@ class CfoSyncHttpServer:
                     self._write_html(HTTPStatus.OK, _oauth_success_html(result))
                     return
 
+                if path == "/v1/oauth/bling/callback":
+                    params = parse_qs(parsed.query or "")
+                    oauth_error = str((params.get("error") or [""])[0] or "").strip()
+                    oauth_error_description = str(
+                        (params.get("error_description") or params.get("error_message") or [""])[0] or ""
+                    ).strip()
+                    if oauth_error:
+                        message = f"Autorização recusada pelo Bling: {oauth_error}"
+                        if oauth_error_description:
+                            message += f" ({oauth_error_description})"
+                        self._write_html(
+                            HTTPStatus.BAD_REQUEST,
+                            _oauth_error_html(message),
+                        )
+                        return
+
+                    code = str((params.get("code") or [""])[0] or "").strip()
+                    state = str((params.get("state") or [""])[0] or "").strip()
+                    try:
+                        result = server.service.complete_bling_oauth_callback(
+                            code=code,
+                            state=state,
+                        )
+                    except (ValueError, FileNotFoundError) as error:
+                        self._write_html(
+                            HTTPStatus.BAD_REQUEST,
+                            _oauth_error_html(str(error)),
+                        )
+                        return
+                    except Exception as error:  # noqa: BLE001
+                        self._write_html(
+                            HTTPStatus.INTERNAL_SERVER_ERROR,
+                            _oauth_error_html(f"Falha no callback OAuth Bling: {error}"),
+                        )
+                        return
+
+                    self._write_html(HTTPStatus.OK, _oauth_bling_success_html(result))
+                    return
+
                 if path == "/v1/oauth/tiktok_ads/callback":
                     params = parse_qs(parsed.query or "")
                     oauth_error = str((params.get("error") or [""])[0] or "").strip()
@@ -468,6 +507,44 @@ def _oauth_error_html(message: str) -> str:
         "<h1>Erro na autorização</h1>"
         f"<p>{safe}</p>"
         "<p>Gere um novo link de autorização no aplicativo e tente novamente.</p>"
+        "</div></body></html>"
+    )
+
+
+def _oauth_bling_success_html(result: dict[str, object]) -> str:
+    state = html.escape(str(result.get("state") or "").strip())
+    redirect_uri = html.escape(str(result.get("redirect_uri") or "").strip())
+    token_masked = html.escape(str(result.get("access_token_masked") or "").strip())
+    refresh_token_masked = html.escape(str(result.get("refresh_token_masked") or "").strip())
+    expires_at = html.escape(str(result.get("access_token_expires_at") or "").strip())
+    token_count = html.escape(str(result.get("token_count") or 0))
+
+    state_html = ""
+    if state:
+        state_html = f"<p><strong>State:</strong> <code>{state}</code></p>"
+
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>Autorização concluida</title>"
+        "<style>"
+        "body{font-family:Segoe UI,Arial,sans-serif;background:#f5f7fa;margin:0;padding:24px;}"
+        ".card{max-width:760px;margin:0 auto;background:#fff;border:1px solid #dde3ea;"
+        "border-radius:12px;padding:24px;box-shadow:0 8px 24px rgba(0,0,0,.08)}"
+        "h1{margin:0 0 12px;color:#123;font-size:24px}"
+        "p{margin:8px 0;color:#334}"
+        "code{background:#eef2f6;padding:2px 6px;border-radius:6px;word-break:break-all}"
+        ".ok{color:#0b7a43;font-weight:600}"
+        "</style></head><body><div class='card'>"
+        "<h1>Autorização Bling concluida</h1>"
+        "<p class='ok'>Tokens salvos com sucesso nas credenciais do servidor.</p>"
+        f"<p><strong>Access token:</strong> <code>{token_masked}</code></p>"
+        f"<p><strong>Refresh token:</strong> <code>{refresh_token_masked}</code></p>"
+        f"<p><strong>Expira em:</strong> <code>{expires_at}</code></p>"
+        f"<p><strong>Autorizações Bling salvas:</strong> {token_count}</p>"
+        f"<p><strong>Redirect URI:</strong> <code>{redirect_uri}</code></p>"
+        f"{state_html}"
+        "<p>Voce pode fechar esta pagina e voltar ao aplicativo CFO Sync.</p>"
         "</div></body></html>"
     )
 

@@ -10,6 +10,12 @@ from cfo_sync.core.client_registration import ClientRegistrationManager
 from cfo_sync.core.config_loader import load_app_config
 from cfo_sync.core.link_generator import GeneratorLinkManager
 from cfo_sync.core.pipeline import SyncPipeline
+from cfo_sync.platforms.bling.credentials import merge_credentials_payload_from_oauth
+from cfo_sync.platforms.bling.oauth import (
+    exchange_bling_code_for_tokens,
+    load_bling_app_credentials,
+    save_bling_token_bundle,
+)
 from cfo_sync.platforms.tiktok_ads.api import (
     TikTokAdsAPIError,
     exchange_auth_code_for_access_token,
@@ -457,6 +463,65 @@ class CfoSyncServerService:
             result = self.registration_manager.register_client(registration_payload)
             self._reload_state_locked()
         return result
+
+    def complete_bling_oauth_callback(
+        self,
+        *,
+        code: str,
+        state: str,
+    ) -> dict[str, object]:
+        auth_code = str(code or "").strip()
+        if not auth_code:
+            raise ValueError("code nao informado no callback Bling.")
+
+        with self._state_lock:
+            credentials = load_bling_app_credentials(self.config.credentials_dir)
+            token_payload = exchange_bling_code_for_tokens(
+                client_id=credentials["client_id"],
+                client_secret=credentials["client_secret"],
+                code=auth_code,
+            )
+            saved = save_bling_token_bundle(
+                credentials_dir=self.config.credentials_dir,
+                token_payload=token_payload,
+                state=state,
+                redirect_uri=credentials["redirect_uri"],
+            )
+            bling_credentials_path = self.config.credentials_dir / self.config.bling.credentials_file
+            existing_bling_credentials: dict[str, object] = {}
+            if bling_credentials_path.exists():
+                existing_payload = json.loads(bling_credentials_path.read_text(encoding="utf-8-sig"))
+                if isinstance(existing_payload, dict):
+                    existing_bling_credentials = existing_payload
+            bling_credentials_path.write_text(
+                json.dumps(
+                    merge_credentials_payload_from_oauth(
+                        existing_bling_credentials,
+                        client_id=credentials["client_id"],
+                        client_secret=credentials["client_secret"],
+                        redirect_uri=credentials["redirect_uri"],
+                        token_payload=token_payload,
+                        company_name="Bling",
+                        account_name="Bling",
+                    ),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self._reload_state_locked()
+
+        return {
+            "platform_key": "bling",
+            "state": state,
+            "redirect_uri": credentials["redirect_uri"],
+            "token_count": saved["token_count"],
+            "token_type": saved["token_type"],
+            "access_token_expires_at": saved["access_token_expires_at"],
+            "access_token_masked": _mask_secret(str(token_payload.get("access_token") or "")),
+            "refresh_token_masked": _mask_secret(str(token_payload.get("refresh_token") or "")),
+        }
 
     def complete_tiktok_ads_oauth_callback(
         self,
