@@ -14,16 +14,30 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from cfo_sync.core.config_loader import load_app_config
+from cfo_sync.platforms.bling.oauth import (
+    BLING_CALLBACK_PATH,
+    exchange_bling_code_for_tokens,
+    load_bling_app_credentials,
+)
 
 
 MERCADO_LIVRE_AUTH_URL = "https://auth.mercadolivre.com.br/authorization"
 MERCADO_LIVRE_TOKEN_URL = "https://api.mercadolibre.com/oauth/token"
+BLING_AUTH_URL = "https://www.bling.com.br/Api/v3/oauth/authorize"
 STATE_TTL_MINUTES = 20
 TOKEN_RETRY_BACKOFF_SECONDS = (1.0, 3.0, 8.0)
 
 
 @dataclass(frozen=True)
 class PendingMercadoLivreState:
+    state: str
+    expires_at: datetime
+    redirect_uri: str
+    registration_payload: dict[str, object]
+
+
+@dataclass(frozen=True)
+class PendingBlingState:
     state: str
     expires_at: datetime
     redirect_uri: str
@@ -41,6 +55,7 @@ class GeneratorLinkManager:
         self.app_config_path = app_config_path
         self._state_lock = RLock()
         self._pending_states: dict[str, PendingMercadoLivreState] = {}
+        self._pending_bling_states: dict[str, PendingBlingState] = {}
 
     def create_link(
         self,
@@ -49,12 +64,22 @@ class GeneratorLinkManager:
         external_base_url: str,
     ) -> dict[str, object]:
         platform_key = _required_text(payload.get("platform_key"), field_name="platform_key")
-        if platform_key != "mercado_livre":
-            raise ValueError(
-                f"Gerador ainda nao suportado para plataforma '{platform_key}'. "
-                "No momento use Mercado Livre."
-            )
+        if platform_key == "mercado_livre":
+            return self._create_mercado_livre_link(payload, external_base_url=external_base_url)
+        if platform_key == "bling":
+            return self._create_bling_link(payload, external_base_url=external_base_url)
+        raise ValueError(
+            f"Gerador ainda nao suportado para plataforma '{platform_key}'. "
+            "No momento use Mercado Livre ou Bling."
+        )
 
+    def _create_mercado_livre_link(
+        self,
+        payload: dict[str, object],
+        *,
+        external_base_url: str,
+    ) -> dict[str, object]:
+        platform_key = "mercado_livre"
         registration_mode = _registration_mode(payload.get("registration_mode"))
         requested_client_name = _required_text(payload.get("client_name"), field_name="client_name")
         gid = _parse_gid(payload.get("gid"), field_name="gid")
@@ -62,28 +87,12 @@ class GeneratorLinkManager:
         credentials_payload = raw_credentials if isinstance(raw_credentials, dict) else {}
 
         app_config = load_app_config(self.app_config_path)
-        platform = next((item for item in app_config.platforms if item.key == platform_key), None)
-        if platform is None:
-            raise ValueError(f"Plataforma nao registrada: {platform_key}")
-
-        if registration_mode == "new_client":
-            client_name = _resolve_new_name(
-                candidates=platform.clients,
-                requested=requested_client_name,
-                conflict_message=(
-                    f"Cliente '{requested_client_name}' ja existe na plataforma '{platform_key}'. "
-                    "Use o modo de filial/alias para atualizar credenciais."
-                ),
-            )
-        else:
-            client_name = _resolve_existing_name(
-                candidates=platform.clients,
-                requested=requested_client_name,
-                not_found_message=(
-                    f"Cliente '{requested_client_name}' nao encontrado na plataforma '{platform_key}'. "
-                    "Selecione um cliente existente."
-                ),
-            )
+        client_name = self._resolve_client_name(
+            app_config=app_config,
+            platform_key=platform_key,
+            registration_mode=registration_mode,
+            requested_client_name=requested_client_name,
+        )
 
         app_credentials = self._resolve_mercado_livre_app_credentials(
             credentials_dir=app_config.credentials_dir,
@@ -130,6 +139,108 @@ class GeneratorLinkManager:
             "expires_at": expires_at.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         }
 
+    def _create_bling_link(
+        self,
+        payload: dict[str, object],
+        *,
+        external_base_url: str,
+    ) -> dict[str, object]:
+        platform_key = "bling"
+        registration_mode = _registration_mode(payload.get("registration_mode"))
+        requested_client_name = _required_text(payload.get("client_name"), field_name="client_name")
+        gid = _parse_gid(payload.get("gid"), field_name="gid")
+        raw_credentials = payload.get("credentials")
+        credentials_payload = raw_credentials if isinstance(raw_credentials, dict) else {}
+
+        app_config = load_app_config(self.app_config_path)
+        client_name = self._resolve_client_name(
+            app_config=app_config,
+            platform_key=platform_key,
+            registration_mode=registration_mode,
+            requested_client_name=requested_client_name,
+        )
+        app_credentials = load_bling_app_credentials(app_config.credentials_dir)
+        redirect_uri = _build_bling_callback_uri(external_base_url)
+        configured_redirect = str(app_credentials.get("redirect_uri") or "").strip().rstrip("/")
+        if configured_redirect != redirect_uri.rstrip("/"):
+            raise ValueError(
+                "Redirect URI do app Bling diferente do servidor atual. "
+                f"Configure '{redirect_uri}' em secrets/bling_oauth_app.json e no app Bling."
+            )
+
+        state = secrets.token_urlsafe(32)
+        expires_at = datetime.now(UTC) + timedelta(minutes=STATE_TTL_MINUTES)
+        account_alias = _optional_text(
+            credentials_payload.get("account_alias")
+            or credentials_payload.get("account_name")
+            or credentials_payload.get("alias")
+        ) or client_name
+
+        registration_payload: dict[str, object] = {
+            "registration_mode": registration_mode,
+            "platform_key": platform_key,
+            "client_name": client_name,
+            "gid": gid,
+            "credentials": {
+                "client_id": app_credentials["client_id"],
+                "client_secret": app_credentials["client_secret"],
+                "redirect_uri": app_credentials["redirect_uri"],
+                "account_alias": account_alias,
+            },
+        }
+
+        pending = PendingBlingState(
+            state=state,
+            expires_at=expires_at,
+            redirect_uri=redirect_uri,
+            registration_payload=registration_payload,
+        )
+        with self._state_lock:
+            self._cleanup_expired_states_locked()
+            self._pending_bling_states[state] = pending
+
+        authorization_url = _build_bling_authorization_url(
+            client_id=app_credentials["client_id"],
+            state=state,
+        )
+        return {
+            "platform_key": platform_key,
+            "registration_mode": registration_mode,
+            "client_name": client_name,
+            "authorization_url": authorization_url,
+            "expires_at": expires_at.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        }
+
+    def _resolve_client_name(
+        self,
+        *,
+        app_config: Any,
+        platform_key: str,
+        registration_mode: str,
+        requested_client_name: str,
+    ) -> str:
+        platform = next((item for item in app_config.platforms if item.key == platform_key), None)
+        if platform is None:
+            raise ValueError(f"Plataforma nao registrada: {platform_key}")
+
+        if registration_mode == "new_client":
+            return _resolve_new_name(
+                candidates=platform.clients,
+                requested=requested_client_name,
+                conflict_message=(
+                    f"Cliente '{requested_client_name}' ja existe na plataforma '{platform_key}'. "
+                    "Use o modo de filial/alias para atualizar credenciais."
+                ),
+            )
+        return _resolve_existing_name(
+            candidates=platform.clients,
+            requested=requested_client_name,
+            not_found_message=(
+                f"Cliente '{requested_client_name}' nao encontrado na plataforma '{platform_key}'. "
+                "Selecione um cliente existente."
+            ),
+        )
+
     def consume_mercado_livre_callback(self, *, code: str, state: str) -> dict[str, object]:
         cleaned_code = _required_text(code, field_name="code")
         cleaned_state = _required_text(state, field_name="state")
@@ -174,6 +285,57 @@ class GeneratorLinkManager:
                 ),
                 "user_id": _optional_text(token_payload.get("user_id")),
                 "token_type": _optional_text(token_payload.get("token_type")) or "bearer",
+                "expires_in": expires_in,
+                "access_token_expires_at": (
+                    expires_at.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+                ),
+            }
+        )
+        registration_payload["credentials"] = merged_credentials
+        return registration_payload
+
+    def consume_bling_callback(self, *, code: str, state: str) -> dict[str, object]:
+        cleaned_code = _required_text(code, field_name="code")
+        cleaned_state = _required_text(state, field_name="state")
+
+        with self._state_lock:
+            self._cleanup_expired_states_locked()
+            pending = self._pending_bling_states.pop(cleaned_state, None)
+        if pending is None:
+            raise ValueError(
+                "State Bling invalido ou expirado. Gere um novo link de autorização e tente novamente."
+            )
+        if pending.expires_at <= datetime.now(UTC):
+            raise ValueError("State Bling expirado. Gere um novo link de autorização.")
+
+        registration_payload = dict(pending.registration_payload)
+        credentials = registration_payload.get("credentials")
+        if not isinstance(credentials, dict):
+            raise ValueError("Payload interno do gerador Bling invalido: credentials ausente.")
+
+        token_payload = exchange_bling_code_for_tokens(
+            client_id=_required_text(credentials.get("client_id"), field_name="credentials.client_id"),
+            client_secret=_required_text(
+                credentials.get("client_secret"),
+                field_name="credentials.client_secret",
+            ),
+            code=cleaned_code,
+        )
+        expires_in = _parse_int(token_payload.get("expires_in"), default=21600)
+        expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
+
+        merged_credentials = dict(credentials)
+        merged_credentials.update(
+            {
+                "access_token": _required_text(
+                    token_payload.get("access_token"),
+                    field_name="token_payload.access_token",
+                ),
+                "refresh_token": _required_text(
+                    token_payload.get("refresh_token"),
+                    field_name="token_payload.refresh_token",
+                ),
+                "token_type": _optional_text(token_payload.get("token_type")) or "Bearer",
                 "expires_in": expires_in,
                 "access_token_expires_at": (
                     expires_at.replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -254,11 +416,23 @@ class GeneratorLinkManager:
         expired = [state for state, item in self._pending_states.items() if item.expires_at <= now]
         for state in expired:
             self._pending_states.pop(state, None)
+        expired_bling = [
+            state
+            for state, item in self._pending_bling_states.items()
+            if item.expires_at <= now
+        ]
+        for state in expired_bling:
+            self._pending_bling_states.pop(state, None)
 
 
 def _build_mercado_livre_callback_uri(external_base_url: str) -> str:
     base = _required_text(external_base_url, field_name="external_base_url").rstrip("/")
     return f"{base}/v1/oauth/mercado_livre/callback"
+
+
+def _build_bling_callback_uri(external_base_url: str) -> str:
+    base = _required_text(external_base_url, field_name="external_base_url").rstrip("/")
+    return f"{base}{BLING_CALLBACK_PATH}"
 
 
 def _build_mercado_livre_authorization_url(
@@ -276,6 +450,17 @@ def _build_mercado_livre_authorization_url(
         }
     )
     return f"{MERCADO_LIVRE_AUTH_URL}?{query}"
+
+
+def _build_bling_authorization_url(*, client_id: str, state: str) -> str:
+    query = urlencode(
+        {
+            "response_type": "code",
+            "client_id": client_id,
+            "state": state,
+        }
+    )
+    return f"{BLING_AUTH_URL}?{query}"
 
 
 def _exchange_mercado_livre_code_for_tokens(

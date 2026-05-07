@@ -311,6 +311,14 @@ GENERATOR_SCHEMAS: dict[str, list[dict[str, object]]] = {
             "required": True,
             "help": "Nome da filial/alias que identifica a conta autorizada.",
         }
+    ],
+    "bling": [
+        {
+            "name": "account_alias",
+            "label": "Alias/Filial",
+            "required": False,
+            "help": "Nome da conta Bling que aparecera na selecao. Se vazio, usa o nome do cliente.",
+        }
     ]
 }
 

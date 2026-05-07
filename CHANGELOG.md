@@ -1,6 +1,8 @@
 ## [1.3.9] - 07-05-2026
 
 ### Fixed
+- Gerador passa a suportar links OAuth do Bling com cadastro automatico por `state`.
+- API administrativa de secrets permite criar novos arquivos JSON validados dentro de `secrets`.
 - Rotulo do Bling no desktop deixa de duplicar o nome da plataforma.
 - Interface volta a iniciar quando a configuracao remota ainda nao inclui o bloco `bling`.
 - Exportacao no Google Sheets passa a casar cabecalhos de forma tolerante, evitando duplicidade quando a planilha usa variacoes como `DATA`, `Data` ou `data`.
