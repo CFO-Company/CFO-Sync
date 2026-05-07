@@ -943,6 +943,8 @@ class CFODesktopApp:
             return "Meta ADS"
         if key == "google_ads":
             return "Google ADS"
+        if key == "bling":
+            return "Bling"
         return f"{platform_label} - {resource_name.title()}"
 
     def _build_ui(self) -> None:

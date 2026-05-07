@@ -1,6 +1,7 @@
 ## [1.3.9] - 07-05-2026
 
 ### Fixed
+- Rotulo do Bling no desktop deixa de duplicar o nome da plataforma.
 - Interface volta a iniciar quando a configuracao remota ainda nao inclui o bloco `bling`.
 - Exportacao no Google Sheets passa a casar cabecalhos de forma tolerante, evitando duplicidade quando a planilha usa variacoes como `DATA`, `Data` ou `data`.
 - Politicas de substituicao por periodo agora sao explicitas por plataforma e recurso, evitando que uma regra generica de limpeza afete fluxos com chaves diferentes.
