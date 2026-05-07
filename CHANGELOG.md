@@ -1,6 +1,7 @@
 ## [1.3.9] - 07-05-2026
 
 ### Fixed
+- Interface volta a iniciar quando a configuracao remota ainda nao inclui o bloco `bling`.
 - Exportacao no Google Sheets passa a casar cabecalhos de forma tolerante, evitando duplicidade quando a planilha usa variacoes como `DATA`, `Data` ou `data`.
 - Politicas de substituicao por periodo agora sao explicitas por plataforma e recurso, evitando que uma regra generica de limpeza afete fluxos com chaves diferentes.
 - Yampi financeiro passa a substituir linhas antigas por mes e alias antes de inserir os novos valores.

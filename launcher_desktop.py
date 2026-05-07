@@ -22,6 +22,7 @@ if str(SRC_DIR) not in sys.path:
 
 from cfo_sync.core.models import (
     AppConfig,
+    BlingConfig,
     GoogleAdsConfig,
     GoogleSheetsConfig,
     MetaAdsConfig,
@@ -324,6 +325,7 @@ def _empty_app_config() -> AppConfig:
         google_ads=GoogleAdsConfig(credentials_file="google_ads_credentials.json"),
         tiktok_ads=TikTokAdsConfig(credentials_file="tiktok_ads_credentials.json"),
         tiktok_shop=TikTokShopConfig(credentials_file="tiktok_shop_credentials.json"),
+        bling=BlingConfig(credentials_file="bling_credentials.json"),
         platforms=[],
     )
 
@@ -554,6 +556,7 @@ class CFODesktopApp:
                 google_ads=GoogleAdsConfig(credentials_file="google_ads_credentials.json"),
                 tiktok_ads=TikTokAdsConfig(credentials_file="tiktok_ads_credentials.json"),
                 tiktok_shop=TikTokShopConfig(credentials_file="tiktok_shop_credentials.json"),
+                bling=BlingConfig(credentials_file="bling_credentials.json"),
                 platforms=platforms,
             ),
             sub_clients_map,

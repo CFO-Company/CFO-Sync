@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +37,7 @@ class TikTokShopConfig:
 
 @dataclass(frozen=True)
 class BlingConfig:
-    credentials_file: str
+    credentials_file: str = "bling_credentials.json"
 
 
 @dataclass(frozen=True)
@@ -75,8 +75,8 @@ class AppConfig:
     google_ads: GoogleAdsConfig
     tiktok_ads: TikTokAdsConfig
     tiktok_shop: TikTokShopConfig
-    bling: BlingConfig
     platforms: list[PlatformConfig]
+    bling: BlingConfig = field(default_factory=BlingConfig)
 
 
 RawRecord = dict[str, Any]
