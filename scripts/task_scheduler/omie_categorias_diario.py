@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import traceback
 from dataclasses import dataclass
@@ -19,12 +20,12 @@ from cfo_sync.core.config_loader import load_app_config
 from cfo_sync.core.models import SheetTabTarget
 from cfo_sync.core.runtime_paths import app_config_path, ensure_runtime_layout
 from cfo_sync.core.sheets_exporter import GoogleSheetsExporter
-from cfo_sync.platforms.omie.api import call_omie_api
+from cfo_sync.platforms.omie.api import OmieAPIError, call_omie_api
 from cfo_sync.platforms.omie.credentials import OmieCredential, OmieCredentialsStore
 
 
-DEFAULT_SPREADSHEET_ID = "14W1swSXAdvOzz1A8DwZug02aKRQnhROQyaqr1D2Mq-E"
-DEFAULT_GID = "2087624295"
+DEFAULT_SPREADSHEET_ID = ""
+DEFAULT_GID = ""
 DEFAULT_CREDENTIAL_FILES = ("omie_credentials.json",)
 
 COLUMNS = [
@@ -145,11 +146,23 @@ def _category_from_payload(credential: OmieCredential, payload: dict[str, Any]) 
 
 def _fetch_categories(credentials: list[OmieCredential], logger: logging.Logger) -> list[CategoryRow]:
     rows: list[CategoryRow] = []
+    failures: list[str] = []
 
     for credential in credentials:
         origem = str(credential.app_name or credential.alias_name or credential.company_name).strip()
         logger.info("FETCH_START origem=%s empresa=%s alias=%s", origem, credential.company_name, credential.alias_name)
-        payloads = _paginate_categories(credential)
+        try:
+            payloads = _paginate_categories(credential)
+        except OmieAPIError as error:
+            failures.append(origem)
+            logger.error(
+                "FETCH_ERROR origem=%s empresa=%s alias=%s erro=%s",
+                origem,
+                credential.company_name,
+                credential.alias_name,
+                error,
+            )
+            continue
         logger.info("FETCH_OK origem=%s categorias=%s", origem, len(payloads))
 
         for payload in payloads:
@@ -157,6 +170,12 @@ def _fetch_categories(credentials: list[OmieCredential], logger: logging.Logger)
             if row is None:
                 continue
             rows.append(row)
+
+    if not rows:
+        failed_text = ", ".join(failures)
+        raise ValueError(f"Nenhuma categoria Omie coletada. Falhas: {failed_text}")
+    if failures:
+        logger.warning("FETCH_PARTIAL_OK contas_com_erro=%s", len(failures))
 
     return sorted(
         rows,
@@ -242,9 +261,8 @@ def _sync_sheet(
     rows: list[list[object]] = [COLUMNS]
 
     for category in categories:
-        existing = _pop_matching_existing(
+        existing = _pop_existing_by_key(
             candidates=existing_by_key.get(category.key, []),
-            category=category,
             used_existing_ids=used_existing_ids,
         )
         if existing is None:
@@ -255,7 +273,7 @@ def _sync_sheet(
             update_date = timestamp
         else:
             unchanged += 1
-            update_date = existing.get("data_atualizacao") or timestamp
+            update_date = timestamp
 
         rows.append(
             [
@@ -304,6 +322,11 @@ def _run(
     gid: str,
     credential_files: list[str],
 ) -> int:
+    if not spreadsheet_id:
+        raise ValueError("Informe --spreadsheet-id ou CFO_SYNC_OMIE_CATEGORIAS_SPREADSHEET_ID.")
+    if not gid:
+        raise ValueError("Informe --gid ou CFO_SYNC_OMIE_CATEGORIAS_GID.")
+
     ensure_runtime_layout()
     logger, log_path = _build_logger(log_dir=log_dir)
     run_start = perf_counter()
@@ -312,8 +335,8 @@ def _run(
         "RUN_START script=omie_categorias_diario python=%s log=%s spreadsheet_id=%s gid=%s",
         sys.version.split()[0],
         str(log_path),
-        spreadsheet_id,
-        gid,
+        _mask_identifier(spreadsheet_id),
+        _mask_identifier(gid),
     )
 
     config = load_app_config(app_config_path())
@@ -349,12 +372,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--spreadsheet-id",
-        default=DEFAULT_SPREADSHEET_ID,
+        default=os.getenv("CFO_SYNC_OMIE_CATEGORIAS_SPREADSHEET_ID", DEFAULT_SPREADSHEET_ID),
         help="ID da planilha de destino.",
     )
     parser.add_argument(
         "--gid",
-        default=DEFAULT_GID,
+        default=os.getenv("CFO_SYNC_OMIE_CATEGORIAS_GID", DEFAULT_GID),
         help="GID da aba de categorias.",
     )
     parser.add_argument(
@@ -413,6 +436,13 @@ def _safe_get(values: list[object], index: int | None) -> str:
     return str(values[index]).strip()
 
 
+def _mask_identifier(value: str) -> str:
+    text = str(value or "").strip()
+    if len(text) <= 8:
+        return "*" * len(text)
+    return f"{text[:4]}...{text[-4:]}"
+
+
 def _normalize_header(value: str) -> str:
     return str(value or "").strip().casefold()
 
@@ -432,30 +462,17 @@ def _existing_comparable_values(existing: dict[str, str]) -> tuple[str, str, str
     )
 
 
-def _pop_matching_existing(
+def _pop_existing_by_key(
     candidates: list[dict[str, str]],
-    category: CategoryRow,
     used_existing_ids: set[int],
 ) -> dict[str, str] | None:
-    exact_match: dict[str, str] | None = None
-    fallback_match: dict[str, str] | None = None
-
     for candidate in candidates:
         candidate_id = id(candidate)
         if candidate_id in used_existing_ids:
             continue
-
-        if fallback_match is None:
-            fallback_match = candidate
-
-        if _existing_comparable_values(candidate) == category.comparable_values():
-            exact_match = candidate
-            break
-
-    selected = exact_match or fallback_match
-    if selected is not None:
-        used_existing_ids.add(id(selected))
-    return selected
+        used_existing_ids.add(candidate_id)
+        return candidate
+    return None
 
 
 def _category_code_sort_key(value: str) -> tuple[int, tuple[int, ...] | str]:

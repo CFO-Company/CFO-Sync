@@ -7,9 +7,10 @@ from cfo_sync.platforms.ui_behavior import PlatformUIBehavior
 
 
 class BlingUIBehavior(PlatformUIBehavior):
-    def __init__(self, credentials_path: Path) -> None:
+    def __init__(self, credentials_path: Path, oauth_app_path: Path | None = None) -> None:
         super().__init__(platform_key="bling")
         self.credentials_path = credentials_path
+        self.oauth_app_path = oauth_app_path
 
     def companies(self, configured_clients: list[str]) -> list[str]:
         store = self._load_store()
@@ -29,6 +30,9 @@ class BlingUIBehavior(PlatformUIBehavior):
 
     def _load_store(self) -> BlingCredentialsStore | None:
         try:
-            return BlingCredentialsStore.from_file(self.credentials_path)
+            return BlingCredentialsStore.from_file(
+                self.credentials_path,
+                oauth_app_path=self.oauth_app_path,
+            )
         except (FileNotFoundError, ValueError, KeyError, TypeError):
             return None

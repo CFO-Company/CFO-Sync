@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,7 +11,7 @@ from cfo_sync.core.models import PlatformConfig, ResourceConfig, SheetTabTarget
 from cfo_sync.core.runtime_paths import default_omie_credentials_path
 
 
-OMIE_DEFAULT_SPREADSHEET_ID = "14W1swSXAdvOzz1A8DwZug02aKRQnhROQyaqr1D2Mq-E"
+OMIE_DEFAULT_SPREADSHEET_ID = ""
 OMIE_CREDENTIALS_PATH = default_omie_credentials_path()
 
 OMIE_FIELD_MAP = {
@@ -46,9 +47,17 @@ class OmieCredential:
 
 
 class OmieCredentialsStore:
-    def __init__(self, credentials: list[OmieCredential], spreadsheet_id: str) -> None:
+    def __init__(
+        self,
+        credentials: list[OmieCredential],
+        spreadsheet_id: str,
+        futuro_spreadsheet_id: str = "",
+        futuro_tab_gids: dict[str, str] | None = None,
+    ) -> None:
         self._credentials = credentials
         self.spreadsheet_id = spreadsheet_id
+        self.futuro_spreadsheet_id = futuro_spreadsheet_id
+        self.futuro_tab_gids = futuro_tab_gids or {}
 
     @classmethod
     def from_file(cls, credentials_path: Path) -> "OmieCredentialsStore":
@@ -60,7 +69,16 @@ class OmieCredentialsStore:
     @classmethod
     def _from_json_file(cls, credentials_path: Path) -> "OmieCredentialsStore":
         data = json.loads(credentials_path.read_text(encoding="utf-8-sig"))
-        spreadsheet_id = str(data.get("spreadsheet_id") or OMIE_DEFAULT_SPREADSHEET_ID).strip()
+        spreadsheet_id = str(
+            data.get("spreadsheet_id") or os.getenv("CFO_SYNC_OMIE_SPREADSHEET_ID") or OMIE_DEFAULT_SPREADSHEET_ID
+        ).strip()
+        futuro_config = data.get("omie_futuro") or data.get("futuro") or {}
+        if not isinstance(futuro_config, dict):
+            futuro_config = {}
+        futuro_spreadsheet_id = str(
+            futuro_config.get("spreadsheet_id") or os.getenv("CFO_SYNC_OMIE_FUTURO_SPREADSHEET_ID") or ""
+        ).strip()
+        futuro_tab_gids = _parse_futuro_tab_gids(futuro_config.get("tab_gids"))
         credentials: list[OmieCredential] = []
 
         for company_name, aliases in data.get("companies", {}).items():
@@ -86,7 +104,12 @@ class OmieCredentialsStore:
         if not credentials:
             raise ValueError(f"Nenhuma credencial Omie valida encontrada em: {credentials_path}")
 
-        return cls(credentials=credentials, spreadsheet_id=spreadsheet_id)
+        return cls(
+            credentials=credentials,
+            spreadsheet_id=spreadsheet_id,
+            futuro_spreadsheet_id=futuro_spreadsheet_id,
+            futuro_tab_gids=futuro_tab_gids,
+        )
 
     def companies(self) -> list[str]:
         return sorted({item.company_name for item in self._credentials})
@@ -131,6 +154,9 @@ def build_omie_platform_config(
         return None
 
     spreadsheet_id = store.spreadsheet_id or OMIE_DEFAULT_SPREADSHEET_ID
+    if not spreadsheet_id:
+        return None
+
     spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
 
     client_tabs = {
@@ -159,6 +185,53 @@ def build_omie_platform_config(
     )
 
 
+def build_omie_futuro_platform_config(
+    credentials_path: Path = OMIE_CREDENTIALS_PATH,
+    *,
+    key: str = "omie_futuro",
+    label: str = "Omie Futuro",
+) -> PlatformConfig | None:
+    resolved_path = resolve_omie_credentials_path(credentials_path)
+    if resolved_path is None:
+        return None
+
+    try:
+        store = OmieCredentialsStore.from_file(resolved_path)
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return None
+
+    spreadsheet_id = store.futuro_spreadsheet_id
+    if not spreadsheet_id:
+        return None
+
+    spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+    client_tabs: dict[str, SheetTabTarget] = {}
+    for company_name in store.companies():
+        for suffix in ("Pagar", "Receber"):
+            tab_name = f"{company_name} {suffix}"
+            client_tabs[tab_name] = SheetTabTarget(
+                gid=_omie_futuro_gid_for_tab(company_name, suffix, store.futuro_tab_gids),
+                tab_name=tab_name,
+                spreadsheet_id=spreadsheet_id,
+            )
+
+    resource = ResourceConfig(
+        name="pedidos",
+        endpoint="/api/v1/financas/futuro",
+        spreadsheet_url=spreadsheet_url,
+        spreadsheet_id=spreadsheet_id,
+        field_map=OMIE_FIELD_MAP,
+        client_tabs=client_tabs,
+    )
+
+    return PlatformConfig(
+        key=key,
+        label=label,
+        clients=store.companies(),
+        resources=[resource],
+    )
+
+
 def _parse_yes_no(raw_value: str) -> bool:
     normalized = normalize("NFKD", str(raw_value or "").strip()).encode("ascii", "ignore").decode("ascii")
     normalized = normalized.upper()
@@ -173,3 +246,39 @@ def _parse_bool_like(value: object) -> bool:
     if isinstance(value, bool):
         return value
     return _parse_yes_no(str(value or ""))
+
+
+def _normalize_tab_key(value: str) -> str:
+    normalized = normalize("NFKD", str(value or "").strip()).encode("ascii", "ignore").decode("ascii")
+    return " ".join(normalized.casefold().split())
+
+
+def _omie_futuro_gid_for_tab(company_name: str, suffix: str, tab_gids: dict[str, str]) -> str:
+    tab_key = _normalize_tab_key(f"{company_name} {suffix}")
+    exact_gid = tab_gids.get(tab_key)
+    if exact_gid:
+        return exact_gid
+
+    return ""
+
+
+def _parse_futuro_tab_gids(value: object) -> dict[str, str]:
+    result: dict[str, str] = {}
+    if isinstance(value, dict):
+        for tab_name, gid in value.items():
+            normalized_name = _normalize_tab_key(str(tab_name or ""))
+            cleaned_gid = str(gid or "").strip()
+            if normalized_name and cleaned_gid:
+                result[normalized_name] = cleaned_gid
+
+    env_value = os.getenv("CFO_SYNC_OMIE_FUTURO_TAB_GIDS", "")
+    for pair in env_value.split(";"):
+        if "=" not in pair:
+            continue
+        tab_name, gid = pair.split("=", maxsplit=1)
+        normalized_name = _normalize_tab_key(tab_name)
+        cleaned_gid = gid.strip()
+        if normalized_name and cleaned_gid:
+            result[normalized_name] = cleaned_gid
+
+    return result

@@ -15,8 +15,9 @@ logger = logging.getLogger(__name__)
 class BlingConnector:
     platform_key = "bling"
 
-    def __init__(self, credentials_path: Path) -> None:
+    def __init__(self, credentials_path: Path, oauth_app_path: Path | None = None) -> None:
         self.credentials_path = credentials_path
+        self.oauth_app_path = oauth_app_path
 
     def fetch(
         self,
@@ -62,7 +63,10 @@ class BlingConnector:
 
     def _load_store(self) -> BlingCredentialsStore | None:
         try:
-            return BlingCredentialsStore.from_file(self.credentials_path)
+            return BlingCredentialsStore.from_file(
+                self.credentials_path,
+                oauth_app_path=self.oauth_app_path,
+            )
         except (FileNotFoundError, ValueError, KeyError, TypeError) as error:
             logger.warning("Bling indisponivel: %s", error)
             return None

@@ -2,13 +2,20 @@ param(
     [string]$TaskName = "CFO Sync Omie Categorias Diario",
     [string]$RepoRoot = "",
     [string]$At = "06:00",
-    [string]$SpreadsheetId = "14W1swSXAdvOzz1A8DwZug02aKRQnhROQyaqr1D2Mq-E",
-    [string]$Gid = "2087624295",
+    [string]$SpreadsheetId = "",
+    [string]$Gid = "",
     [string[]]$CredentialFile = @("omie_credentials.json"),
     [string]$PowerShellPath = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $SpreadsheetId) {
+    throw "Informe -SpreadsheetId para registrar a tarefa de categorias Omie."
+}
+if (-not $Gid) {
+    throw "Informe -Gid para registrar a tarefa de categorias Omie."
+}
 
 if (-not $RepoRoot) {
     $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -79,6 +86,6 @@ Register-ScheduledTask `
 Write-Host "Tarefa agendada registrada: $TaskName"
 Write-Host "Horario diario: $At"
 Write-Host "Script: $scriptPath"
-Write-Host "Planilha: $SpreadsheetId"
-Write-Host "GID: $Gid"
+Write-Host "Planilha: configurada"
+Write-Host "GID: configurado"
 Write-Host "Credenciais Omie: $($CredentialFile -join ', ')"

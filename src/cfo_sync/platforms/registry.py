@@ -32,16 +32,21 @@ def build_platform_registry(
     tiktok_ads_credentials_path: Path,
     tiktok_shop_credentials_path: Path,
     bling_credentials_path: Path,
+    bling_oauth_app_path: Path,
     omie_2026_credentials_path: Path,
     omie_2025_credentials_path: Path,
     omie_cfo_credentials_path: Path,
+    omie_futuro_credentials_path: Path,
     mercado_livre_credentials_path: Path,
 ) -> dict[str, PlatformConnector]:
     registry: dict[str, PlatformConnector] = {
         "yampi": YampiConnector(credentials_path=yampi_credentials_path),
         "meta_ads": MetaAdsConnector(credentials_path=meta_ads_credentials_path),
         "google_ads": GoogleAdsConnector(credentials_path=google_ads_credentials_path),
-        "bling": BlingConnector(credentials_path=bling_credentials_path),
+        "bling": BlingConnector(
+            credentials_path=bling_credentials_path,
+            oauth_app_path=bling_oauth_app_path,
+        ),
     }
 
     if omie_2026_credentials_path.exists():
@@ -49,6 +54,12 @@ def build_platform_registry(
             omie_2026_connector = OmieConnector(credentials_path=omie_2026_credentials_path)
             registry["omie"] = omie_2026_connector
             registry["omie_2026"] = omie_2026_connector
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
+    if omie_futuro_credentials_path.exists():
+        try:
+            registry["omie_futuro"] = OmieConnector(credentials_path=omie_futuro_credentials_path)
         except (OSError, ValueError, KeyError, TypeError):
             pass
 

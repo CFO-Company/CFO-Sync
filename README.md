@@ -64,6 +64,17 @@ Dentro de `C:\srv\secrets`, mantenha os arquivos sensiveis do ETL, por exemplo:
 - `omie_credentials.json`
 - `omie_2025.json`
 - `mercado_livre_credentials.json`
+- `bling_credentials.json`
+- `bling_oauth_app.json`
+
+Para o Bling, registre no `app_config.json` apenas os nomes dos arquivos privados:
+
+```json
+"bling": {
+  "credentials_file": "bling_credentials.json",
+  "oauth_app_file": "bling_oauth_app.json"
+}
+```
 
 Importante:
 - essa pasta deve existir apenas no servidor;
@@ -171,10 +182,10 @@ Parar stack:
 docker compose --env-file .\settings\docker-server.env -f .\settings\docker-compose.server.yml down
 ```
 
-### Agente servidor Gauss
+### Relatorio servidor Gauss
 
-O Gauss e o agente read-only do servidor. Ele gera um relatorio sanitizado para
-Dev, QA e Implantacao analisarem o ambiente sem expor secrets.
+O Gauss gera um relatorio sanitizado para analisar o ambiente do servidor sem
+expor secrets.
 
 No servidor, rode a partir do repositorio:
 
@@ -214,13 +225,13 @@ python .\scripts\task_scheduler\omie_categorias_diario.py
 
 Destino padrao:
 
-- Planilha: `14W1swSXAdvOzz1A8DwZug02aKRQnhROQyaqr1D2Mq-E`
-- GID: `2087624295`
+- Planilha: informe por `--spreadsheet-id` ou `CFO_SYNC_OMIE_CATEGORIAS_SPREADSHEET_ID`
+- GID: informe por `--gid` ou `CFO_SYNC_OMIE_CATEGORIAS_GID`
 
 Para registrar a tarefa diaria no Windows:
 
 ```powershell
-.\tools\install_omie_categorias_daily_task.ps1 -At "06:00"
+.\tools\install_omie_categorias_daily_task.ps1 -At "06:00" -SpreadsheetId "<ID_DA_PLANILHA>" -Gid "<GID_DA_ABA>"
 ```
 
 Se precisar usar outro arquivo de credenciais Omie:
@@ -258,7 +269,7 @@ Resposta:
 ```json
 {
   "status": "ok",
-  "version": "1.3.9",
+  "version": "1.3.10",
   "server_time": "2026-04-02T12:00:00+00:00"
 }
 ```

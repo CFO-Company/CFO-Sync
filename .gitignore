@@ -4,6 +4,7 @@
 .env
 .env.*
 data/*.db
+data/test-temp/
 settings/*.json
 !settings/desktop_settings.json
 !settings/update_config.json

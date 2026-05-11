@@ -17,7 +17,10 @@ from cfo_sync.core.models import (
     TikTokShopConfig,
     YampiConfig,
 )
-from cfo_sync.platforms.omie.credentials import build_omie_platform_config
+from cfo_sync.platforms.omie.credentials import (
+    build_omie_futuro_platform_config,
+    build_omie_platform_config,
+)
 
 
 def _extract_spreadsheet_id(spreadsheet_url: str) -> str:
@@ -70,7 +73,7 @@ def load_app_config(config_path: Path) -> AppConfig:
     platforms = [
         platform
         for platform in platforms
-        if platform.key not in {"omie", "omie_2025", "omie_2026", "omie_cfo"}
+        if platform.key not in {"omie", "omie_2025", "omie_2026", "omie_cfo", "omie_futuro"}
     ]
 
     omie_2026_credentials_path = credentials_dir / "omie_credentials.json"
@@ -81,6 +84,15 @@ def load_app_config(config_path: Path) -> AppConfig:
     )
     if omie_2026_platform is not None:
         platforms.append(omie_2026_platform)
+
+    omie_futuro_credentials_path = credentials_dir / "omie_futuro.json"
+    omie_futuro_platform = build_omie_futuro_platform_config(
+        omie_futuro_credentials_path,
+        key="omie_futuro",
+        label="Omie Futuro",
+    )
+    if omie_futuro_platform is not None:
+        platforms.append(omie_futuro_platform)
 
     omie_2025_credentials_path = credentials_dir / "omie_2025.json"
     omie_2025_platform = build_omie_platform_config(
@@ -134,6 +146,10 @@ def load_app_config(config_path: Path) -> AppConfig:
             credentials_file=(data.get("bling") or {}).get(
                 "credentials_file",
                 "bling_credentials.json",
+            ),
+            oauth_app_file=(data.get("bling") or {}).get(
+                "oauth_app_file",
+                "bling_oauth_app.json",
             ),
         ),
         platforms=platforms,

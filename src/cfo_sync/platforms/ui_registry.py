@@ -16,6 +16,7 @@ def build_platform_ui_registry(config: AppConfig) -> dict[str, PlatformUIBehavio
     omie_2026_credentials_path = config.credentials_dir / "omie_credentials.json"
     omie_2025_credentials_path = config.credentials_dir / "omie_2025.json"
     omie_cfo_credentials_path = config.credentials_dir / "omie_cfo.json"
+    omie_futuro_credentials_path = config.credentials_dir / "omie_futuro.json"
     configured_platform_keys = {platform.key for platform in config.platforms}
 
     registry: dict[str, PlatformUIBehavior] = {}
@@ -72,6 +73,7 @@ def build_platform_ui_registry(config: AppConfig) -> dict[str, PlatformUIBehavio
         try:
             registry["bling"] = BlingUIBehavior(
                 credentials_path=config.credentials_dir / config.bling.credentials_file,
+                oauth_app_path=config.credentials_dir / config.bling.oauth_app_file,
             )
         except (OSError, ValueError, KeyError, TypeError):
             pass
@@ -84,6 +86,8 @@ def build_platform_ui_registry(config: AppConfig) -> dict[str, PlatformUIBehavio
             credentials_path = omie_2025_credentials_path
         elif platform.key == "omie_cfo":
             credentials_path = omie_cfo_credentials_path
+        elif platform.key == "omie_futuro":
+            credentials_path = omie_futuro_credentials_path
         else:
             credentials_path = omie_2026_credentials_path
 
