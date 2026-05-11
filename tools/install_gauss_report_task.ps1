@@ -55,7 +55,7 @@ Register-ScheduledTask `
     -Action $action `
     -Trigger $trigger `
     -Settings $settings `
-    -Description "Gera relatorio sanitizado do agente Gauss para o CFO Sync." `
+    -Description "Gera relatorio sanitizado do servidor para o CFO Sync." `
     -Force | Out-Null
 
 Write-Host "Tarefa agendada registrada: $TaskName"

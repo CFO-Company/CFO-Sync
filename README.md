@@ -171,10 +171,10 @@ Parar stack:
 docker compose --env-file .\settings\docker-server.env -f .\settings\docker-compose.server.yml down
 ```
 
-### Agente servidor Gauss
+### Relatorio servidor Gauss
 
-O Gauss e o agente read-only do servidor. Ele gera um relatorio sanitizado para
-Dev, QA e Implantacao analisarem o ambiente sem expor secrets.
+O Gauss gera um relatorio sanitizado para analisar o ambiente do servidor sem
+expor secrets.
 
 No servidor, rode a partir do repositorio:
 
