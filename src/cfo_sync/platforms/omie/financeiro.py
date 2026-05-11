@@ -79,6 +79,69 @@ def fetch_financeiro(
     return rows
 
 
+def fetch_financeiro_futuro(
+    client: str,
+    resource: ResourceConfig,
+    credentials: list[OmieCredential],
+    start_date: str | None = None,
+    end_date: str | None = None,
+    sub_clients: list[str] | None = None,
+) -> list[RawRecord]:
+    del resource
+    period_start, period_end = _normalize_period(start_date, end_date)
+
+    selected_credentials = credentials
+    if sub_clients:
+        selected_names = {name.strip() for name in sub_clients if str(name).strip()}
+        selected_credentials = [
+            credential for credential in credentials if credential.alias_name in selected_names
+        ]
+
+    if not selected_credentials:
+        raise ValueError(f"Nenhuma filial/alias da Omie selecionada para o cliente '{client}'.")
+
+    rows: list[RawRecord] = []
+    for credential in selected_credentials:
+        lookup_clientes = _fetch_lookup_clientes(credential)
+        lookup_categorias = _fetch_lookup_categorias(credential)
+        lookup_departamentos = _fetch_lookup_departamentos(credential)
+        lookup_contas_correntes = _fetch_lookup_contas_correntes(credential)
+
+        if credential.include_accounts_payable:
+            rows.extend(
+                _fetch_contas_a_pagar(
+                    credential=credential,
+                    period_start=period_start,
+                    period_end=period_end,
+                    lookup_clientes=lookup_clientes,
+                    lookup_categorias=lookup_categorias,
+                    lookup_departamentos=lookup_departamentos,
+                    lookup_contas_correntes=lookup_contas_correntes,
+                    statuses=("EMABERTO",),
+                    open_source_label="Pagar",
+                )
+            )
+
+        if credential.include_accounts_receivable:
+            rows.extend(
+                _fetch_contas_a_receber(
+                    credential=credential,
+                    period_start=period_start,
+                    period_end=period_end,
+                    lookup_clientes=lookup_clientes,
+                    lookup_categorias=lookup_categorias,
+                    lookup_departamentos=lookup_departamentos,
+                    lookup_contas_correntes=lookup_contas_correntes,
+                    statuses=("EMABERTO",),
+                    open_source_label="Receber",
+                )
+            )
+
+    rows.sort(key=lambda row: (str(row.get("origem", "")).lower(), str(row.get("fonte", "")).lower()))
+    rows.sort(key=lambda row: _sort_date_key(str(row.get("data", ""))))
+    return rows
+
+
 def _fetch_lookup_clientes(credential: OmieCredential) -> dict[str, str]:
     rows = _paginate(
         credential=credential,
@@ -403,10 +466,12 @@ def _fetch_contas_a_pagar(
     lookup_categorias: dict[str, str],
     lookup_departamentos: dict[str, str],
     lookup_contas_correntes: dict[str, str],
+    statuses: tuple[str, ...] = ("EMABERTO", "PAGO"),
+    open_source_label: str = "A pagar",
 ) -> list[RawRecord]:
     rows: list[RawRecord] = []
 
-    for status in ("EMABERTO", "PAGO"):
+    for status in statuses:
         page = 1
         total_pages = 1
         while page <= total_pages:
@@ -465,7 +530,7 @@ def _fetch_contas_a_pagar(
                     rows.append(
                         _build_row(
                             origem=credential.app_name,
-                            fonte="Pago" if status == "PAGO" else "A pagar",
+                            fonte="Pago" if status == "PAGO" else open_source_label,
                             data=data_previsao,
                             conta_corrente=conta_corrente_descricao,
                             valor_lancamento=valor_documento,
@@ -506,10 +571,12 @@ def _fetch_contas_a_receber(
     lookup_categorias: dict[str, str],
     lookup_departamentos: dict[str, str],
     lookup_contas_correntes: dict[str, str],
+    statuses: tuple[str, ...] = ("EMABERTO", "PAGO"),
+    open_source_label: str = "A receber",
 ) -> list[RawRecord]:
     rows: list[RawRecord] = []
 
-    for status in ("EMABERTO", "PAGO"):
+    for status in statuses:
         page = 1
         total_pages = 1
         while page <= total_pages:
@@ -568,7 +635,7 @@ def _fetch_contas_a_receber(
                     rows.append(
                         _build_row(
                             origem=credential.app_name,
-                            fonte="Recebido" if status == "PAGO" else "A receber",
+                            fonte="Recebido" if status == "PAGO" else open_source_label,
                             data=data_lancamento,
                             conta_corrente=conta_corrente_descricao,
                             valor_lancamento=valor_documento,

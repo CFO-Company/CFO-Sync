@@ -103,6 +103,8 @@ class ClientRegistrationManager:
             return credentials_dir / "omie_credentials.json"
         if platform_key == "omie_2025":
             return credentials_dir / "omie_2025.json"
+        if platform_key == "omie_futuro":
+            return credentials_dir / "omie_futuro.json"
         raise ValueError(f"Plataforma sem mapeamento de credenciais: {platform_key}")
 
     def _append_credentials(

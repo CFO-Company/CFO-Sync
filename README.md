@@ -214,13 +214,13 @@ python .\scripts\task_scheduler\omie_categorias_diario.py
 
 Destino padrao:
 
-- Planilha: `14W1swSXAdvOzz1A8DwZug02aKRQnhROQyaqr1D2Mq-E`
-- GID: `2087624295`
+- Planilha: informe por `--spreadsheet-id` ou `CFO_SYNC_OMIE_CATEGORIAS_SPREADSHEET_ID`
+- GID: informe por `--gid` ou `CFO_SYNC_OMIE_CATEGORIAS_GID`
 
 Para registrar a tarefa diaria no Windows:
 
 ```powershell
-.\tools\install_omie_categorias_daily_task.ps1 -At "06:00"
+.\tools\install_omie_categorias_daily_task.ps1 -At "06:00" -SpreadsheetId "<ID_DA_PLANILHA>" -Gid "<GID_DA_ABA>"
 ```
 
 Se precisar usar outro arquivo de credenciais Omie:

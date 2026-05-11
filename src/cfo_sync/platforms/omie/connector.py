@@ -4,7 +4,7 @@ from pathlib import Path
 
 from cfo_sync.core.models import RawRecord, ResourceConfig
 from cfo_sync.platforms.omie.credentials import OmieCredentialsStore
-from cfo_sync.platforms.omie.financeiro import fetch_financeiro
+from cfo_sync.platforms.omie.financeiro import fetch_financeiro, fetch_financeiro_futuro
 
 
 class OmieConnector:
@@ -25,6 +25,16 @@ class OmieConnector:
 
         if resource.name == "financeiro":
             return fetch_financeiro(
+                client=client,
+                resource=resource,
+                credentials=credentials,
+                start_date=start_date,
+                end_date=end_date,
+                sub_clients=sub_clients,
+            )
+
+        if resource.name == "pedidos":
+            return fetch_financeiro_futuro(
                 client=client,
                 resource=resource,
                 credentials=credentials,

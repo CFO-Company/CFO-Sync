@@ -36,6 +36,16 @@ class GoogleSheetsExporter:
         end_date: str | None = None,
         sub_clients: list[str] | None = None,
     ) -> int:
+        if platform_key == "omie_futuro" and resource.name == "pedidos":
+            return self._export_omie_futuro(
+                client=client,
+                resource=resource,
+                rows=rows,
+                start_date=start_date,
+                end_date=end_date,
+                sub_clients=sub_clients,
+            )
+
         target_tab = self._resolve_client_tab(resource=resource, client=client)
         if target_tab is None:
             available_clients = ", ".join(sorted(resource.client_tabs.keys()))
@@ -133,6 +143,65 @@ class GoogleSheetsExporter:
         )
 
         return len(values)
+
+    def _export_omie_futuro(
+        self,
+        client: str,
+        resource: ResourceConfig,
+        rows: list[RawRecord],
+        start_date: str | None,
+        end_date: str | None,
+        sub_clients: list[str] | None,
+    ) -> int:
+        mapped_rows = [self._map_to_sheet_columns(resource, row) for row in rows]
+        ordered_columns = list(resource.field_map.values())
+        period_column = self._resolve_policy_column(resource, ("data",))
+        groups = {
+            "Pagar": [
+                row
+                for row in mapped_rows
+                if self._omie_futuro_row_group(row) == "Pagar"
+            ],
+            "Receber": [
+                row
+                for row in mapped_rows
+                if self._omie_futuro_row_group(row) == "Receber"
+            ],
+        }
+
+        for suffix, group_rows in groups.items():
+            target_tab = self._resolve_omie_futuro_tab(resource=resource, client=client, suffix=suffix)
+            spreadsheet_id = target_tab.spreadsheet_id or resource.spreadsheet_id
+            tab_name = self._resolve_tab_name(spreadsheet_id, target_tab)
+            scope_filters = self._resolve_policy_scope_filters(
+                resource=resource,
+                policy=PeriodReplacePolicy(period_fields=("data",), scope_fields=("origem",)),
+                sub_clients=sub_clients,
+            )
+            replaced_by_period = self._replace_period_rows(
+                spreadsheet_id=spreadsheet_id,
+                tab_name=tab_name,
+                resource=resource,
+                rows=group_rows,
+                ordered_columns=ordered_columns,
+                period_column=period_column,
+                period_is_monthly=False,
+                start_date=start_date,
+                end_date=end_date,
+                scope_filters=scope_filters,
+            )
+            if replaced_by_period:
+                continue
+
+            self._upsert_by_keys(
+                spreadsheet_id=spreadsheet_id,
+                tab_name=tab_name,
+                rows=group_rows,
+                ordered_columns=ordered_columns,
+                key_columns=tuple(resource.field_map.values()),
+            )
+
+        return len(mapped_rows)
 
     def _replace_period_rows(
         self,
@@ -890,6 +959,36 @@ class GoogleSheetsExporter:
             return tuple(fallback_keys)
 
         return ()
+
+    @classmethod
+    def _resolve_omie_futuro_tab(
+        cls,
+        resource: ResourceConfig,
+        client: str,
+        suffix: str,
+    ) -> SheetTabTarget:
+        tab_client = f"{client} {suffix}".strip()
+        target_tab = cls._resolve_client_tab(resource=resource, client=tab_client)
+        if target_tab is None:
+            available_clients = ", ".join(sorted(resource.client_tabs.keys()))
+            raise ValueError(
+                f"Cliente '{tab_client}' nao configurado em omie_futuro/{resource.name} "
+                f"para exportação. Clientes disponiveis: {available_clients}."
+            )
+        return target_tab
+
+    @staticmethod
+    def _omie_futuro_row_group(row: dict[str, object]) -> str:
+        natureza = str(row.get("cNatureza") or "").strip().upper()
+        if natureza == "R":
+            return "Receber"
+        if natureza == "P":
+            return "Pagar"
+
+        fonte = str(row.get("Fonte") or "").strip().casefold()
+        if "receber" in fonte:
+            return "Receber"
+        return "Pagar"
 
     @classmethod
     def _resolve_client_tab(cls, resource: ResourceConfig, client: str) -> SheetTabTarget | None:
