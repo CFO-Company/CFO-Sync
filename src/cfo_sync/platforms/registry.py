@@ -32,6 +32,7 @@ def build_platform_registry(
     tiktok_ads_credentials_path: Path,
     tiktok_shop_credentials_path: Path,
     bling_credentials_path: Path,
+    bling_oauth_app_path: Path,
     omie_2026_credentials_path: Path,
     omie_2025_credentials_path: Path,
     omie_cfo_credentials_path: Path,
@@ -42,7 +43,10 @@ def build_platform_registry(
         "yampi": YampiConnector(credentials_path=yampi_credentials_path),
         "meta_ads": MetaAdsConnector(credentials_path=meta_ads_credentials_path),
         "google_ads": GoogleAdsConnector(credentials_path=google_ads_credentials_path),
-        "bling": BlingConnector(credentials_path=bling_credentials_path),
+        "bling": BlingConnector(
+            credentials_path=bling_credentials_path,
+            oauth_app_path=bling_oauth_app_path,
+        ),
     }
 
     if omie_2026_credentials_path.exists():

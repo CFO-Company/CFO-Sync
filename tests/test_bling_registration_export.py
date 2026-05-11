@@ -94,6 +94,7 @@ class BlingRegistrationExportTest(unittest.TestCase):
         self.assertEqual(credentials_payload["accounts"][0]["account_name"], "Conta teste")
 
         updated_config = load_app_config(self.app_config_path)
+        self.assertEqual(updated_config.bling.oauth_app_file, "bling_oauth_app.json")
         bling_platform = next(platform for platform in updated_config.platforms if platform.key == "bling")
         self.assertIn("Cliente Bling Teste", bling_platform.clients)
         self.assertIn("Cliente Bling Teste", bling_platform.resources[0].client_tabs)
@@ -218,6 +219,10 @@ class BlingRegistrationExportTest(unittest.TestCase):
                     "google_sheets": {"credentials_file": "google.json"},
                     "yampi": {"credentials_file": "yampi.json"},
                     "meta_ads": {"credentials_file": "meta_ads.json"},
+                    "bling": {
+                        "credentials_file": "bling_credentials.json",
+                        "oauth_app_file": "bling_oauth_app.json",
+                    },
                     "platforms": [
                         {
                             "key": "bling",

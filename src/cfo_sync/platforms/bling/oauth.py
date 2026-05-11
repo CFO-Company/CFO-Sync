@@ -127,20 +127,23 @@ def refresh_bling_access_token(
     raise ValueError("Falha inesperada ao renovar access token no Bling.")
 
 
-def load_bling_app_credentials(credentials_dir: Path) -> dict[str, str]:
-    path = credentials_dir / "bling_oauth_app.json"
+def load_bling_app_credentials(
+    credentials_dir: Path,
+    oauth_app_file: str = "bling_oauth_app.json",
+) -> dict[str, str]:
+    path = credentials_dir / oauth_app_file
     if not path.exists():
         raise FileNotFoundError(
-            "Credenciais do app Bling nao encontradas. Crie secrets/bling_oauth_app.json "
+            f"Credenciais do app Bling nao encontradas. Crie secrets/{oauth_app_file} "
             "com client_id, client_secret e redirect_uri."
         )
 
     try:
         payload = json.loads(path.read_text(encoding="utf-8-sig"))
     except json.JSONDecodeError as error:
-        raise ValueError(f"Arquivo bling_oauth_app.json invalido: {error}") from error
+        raise ValueError(f"Arquivo {oauth_app_file} invalido: {error}") from error
     if not isinstance(payload, dict):
-        raise ValueError("Arquivo bling_oauth_app.json invalido: esperado objeto JSON.")
+        raise ValueError(f"Arquivo {oauth_app_file} invalido: esperado objeto JSON.")
 
     client_id = _required_text(payload.get("client_id"), field_name="client_id")
     client_secret = _required_text(payload.get("client_secret"), field_name="client_secret")

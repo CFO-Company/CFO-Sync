@@ -147,6 +147,10 @@ def load_app_config(config_path: Path) -> AppConfig:
                 "credentials_file",
                 "bling_credentials.json",
             ),
+            oauth_app_file=(data.get("bling") or {}).get(
+                "oauth_app_file",
+                "bling_oauth_app.json",
+            ),
         ),
         platforms=platforms,
     )

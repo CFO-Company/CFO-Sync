@@ -64,6 +64,17 @@ Dentro de `C:\srv\secrets`, mantenha os arquivos sensiveis do ETL, por exemplo:
 - `omie_credentials.json`
 - `omie_2025.json`
 - `mercado_livre_credentials.json`
+- `bling_credentials.json`
+- `bling_oauth_app.json`
+
+Para o Bling, registre no `app_config.json` apenas os nomes dos arquivos privados:
+
+```json
+"bling": {
+  "credentials_file": "bling_credentials.json",
+  "oauth_app_file": "bling_oauth_app.json"
+}
+```
 
 Importante:
 - essa pasta deve existir apenas no servidor;

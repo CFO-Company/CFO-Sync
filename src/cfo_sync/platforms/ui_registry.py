@@ -73,6 +73,7 @@ def build_platform_ui_registry(config: AppConfig) -> dict[str, PlatformUIBehavio
         try:
             registry["bling"] = BlingUIBehavior(
                 credentials_path=config.credentials_dir / config.bling.credentials_file,
+                oauth_app_path=config.credentials_dir / config.bling.oauth_app_file,
             )
         except (OSError, ValueError, KeyError, TypeError):
             pass

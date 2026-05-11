@@ -38,6 +38,7 @@ class TikTokShopConfig:
 @dataclass(frozen=True)
 class BlingConfig:
     credentials_file: str = "bling_credentials.json"
+    oauth_app_file: str = "bling_oauth_app.json"
 
 
 @dataclass(frozen=True)

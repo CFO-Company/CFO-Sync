@@ -159,13 +159,17 @@ class GeneratorLinkManager:
             registration_mode=registration_mode,
             requested_client_name=requested_client_name,
         )
-        app_credentials = load_bling_app_credentials(app_config.credentials_dir)
+        app_credentials = load_bling_app_credentials(
+            app_config.credentials_dir,
+            oauth_app_file=app_config.bling.oauth_app_file,
+        )
         redirect_uri = _build_bling_callback_uri(external_base_url)
         configured_redirect = str(app_credentials.get("redirect_uri") or "").strip().rstrip("/")
         if configured_redirect != redirect_uri.rstrip("/"):
             raise ValueError(
                 "Redirect URI do app Bling diferente do servidor atual. "
-                f"Configure '{redirect_uri}' em secrets/bling_oauth_app.json e no app Bling."
+                f"Configure '{redirect_uri}' em secrets/{app_config.bling.oauth_app_file} "
+                "e no app Bling."
             )
 
         state = secrets.token_urlsafe(32)

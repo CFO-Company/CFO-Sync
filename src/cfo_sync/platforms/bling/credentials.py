@@ -41,11 +41,15 @@ class BlingCredentialsStore:
         self._raw_payload = raw_payload
 
     @classmethod
-    def from_file(cls, credentials_path: Path) -> "BlingCredentialsStore":
+    def from_file(
+        cls,
+        credentials_path: Path,
+        oauth_app_path: Path | None = None,
+    ) -> "BlingCredentialsStore":
         raw_payload = _read_json_object(credentials_path)
         auth = _auth_from_payload(raw_payload.get("auth"))
 
-        app_path = credentials_path.with_name("bling_oauth_app.json")
+        app_path = oauth_app_path or credentials_path.with_name("bling_oauth_app.json")
         if app_path.exists():
             app_payload = _read_json_object(app_path)
             auth = BlingAuth(
