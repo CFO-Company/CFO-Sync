@@ -1,3 +1,15 @@
+## [1.3.10] - 11-05-2026
+
+### Added
+- Plataforma `Omie Futuro` com credenciais e planilha separadas de `Omie 2026`.
+- Testes de cadastro/exportacao Bling cobrindo cadastro novo, duplicidade, nova conta e atualizacao de conta existente.
+
+### Changed
+- Configuracao do app OAuth Bling passa a ser referenciada por `bling.oauth_app_file` no `app_config.json`.
+- Orientacoes e worktrees de agentes foram removidos do repositorio.
+- IDs reais de planilhas e GIDs foram removidos de codigo e documentacao versionados.
+- Versao do aplicativo e do instalador atualizada para 1.3.10.
+
 ## [1.3.9] - 07-05-2026
 
 ### Fixed
