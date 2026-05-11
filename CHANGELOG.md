@@ -1,7 +1,6 @@
 ## [1.3.10] - 11-05-2026
 
 ### Added
-- Plataforma `Omie Futuro` com credenciais e planilha separadas de `Omie 2026`.
 - Testes de cadastro/exportacao Bling cobrindo cadastro novo, duplicidade, nova conta e atualizacao de conta existente.
 
 ### Changed
