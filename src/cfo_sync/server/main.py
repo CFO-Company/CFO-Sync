@@ -70,7 +70,7 @@ def main() -> int:
     print(
         "Endpoints: GET /v1/health | GET /v1/catalog | POST /v1/jobs | "
         "GET /v1/jobs/{id} | POST /v1/clients | POST /v1/generators/link | "
-        "GET /v1/secrets/files | GET/POST /v1/secrets/file | "
+        "GET /v1/runtime/versions | GET /v1/secrets/files | GET/POST /v1/secrets/file | "
         "GET /v1/oauth/mercado_livre/callback | GET /v1/oauth/tiktok_ads/callback | "
         "GET /v1/oauth/tiktok/callback"
     )
@@ -94,6 +94,8 @@ def _write_access_template(path: Path) -> None:
                 "allowed_platforms": ["*"],
                 "allowed_clients": {"*": ["*"]},
                 "can_manage_secrets": True,
+                "can_select_server_version": False,
+                "allowed_server_versions": [],
             }
         ]
     }

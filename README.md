@@ -123,7 +123,9 @@ Exemplo:
         "yampi": ["Aurha", "Avozon"],
         "meta_ads": ["*"]
       },
-      "can_manage_secrets": false
+      "can_manage_secrets": false,
+      "can_select_server_version": false,
+      "allowed_server_versions": []
     }
   ]
 }
@@ -134,6 +136,23 @@ Para permitir visualizar/editar arquivos `.json` da pasta `secrets` pela tela
 
 ```json
 "can_manage_secrets": true
+```
+
+Para permitir o seletor de versao do servidor na aba `Configuracoes`, marque
+apenas o token de validacao com:
+
+```json
+"can_select_server_version": true,
+"allowed_server_versions": ["main", "1.3.10"]
+```
+
+As versoes disponiveis sao publicadas pelo servidor via
+`CFO_SYNC_RUNTIME_VERSIONS`, no formato JSON
+`{"main":"https://api.ecfo.com.br/","1.3.10":"https://validacao.ecfo.com.br/"}`.
+No bootstrap Docker, o mesmo valor pode ser persistido com:
+
+```powershell
+.\settings\setup_docker_server.ps1 -RuntimeVersions '{"main":"https://api.ecfo.com.br/","1.3.10":"https://validacao.ecfo.com.br/"}'
 ```
 
 Se precisar recriar token/template do zero:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import date, datetime, timezone
 from pathlib import Path
 from threading import RLock
@@ -104,7 +105,30 @@ class CfoSyncServerService:
 
         return {
             "generated_at": datetime.now(timezone.utc).isoformat(),
+            "capabilities": {
+                "can_select_server_version": policy.can_select_server_version,
+                "can_manage_secrets": policy.can_manage_secrets,
+            },
             "platforms": platforms,
+        }
+
+    def runtime_versions(
+        self,
+        policy: AccessTokenPolicy,
+        *,
+        current_base_url: str,
+    ) -> dict[str, object]:
+        if not policy.can_select_server_version:
+            raise PermissionError("Token sem permissao para selecionar versao do servidor.")
+
+        versions = _configured_runtime_versions(current_base_url=current_base_url)
+        allowed = set(policy.allowed_server_versions)
+        if allowed and "*" not in allowed:
+            versions = [item for item in versions if str(item.get("name") or "") in allowed]
+
+        return {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "versions": versions,
         }
 
     def reload_catalog(self, policy: AccessTokenPolicy) -> dict[str, object]:
@@ -738,6 +762,63 @@ def _month_period_segments(
         segments.append((current.isoformat(), segment_end.isoformat()))
         current = next_month
     return segments
+
+
+def _configured_runtime_versions(*, current_base_url: str) -> list[dict[str, str]]:
+    configured = _parse_runtime_versions_env(os.getenv("CFO_SYNC_RUNTIME_VERSIONS"))
+    if not configured:
+        configured = [{"name": "main", "url": current_base_url}]
+
+    normalized: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in configured:
+        name = str(item.get("name") or "").strip()
+        url = str(item.get("url") or "").strip()
+        if not name or not url or name in seen:
+            continue
+        seen.add(name)
+        normalized.append({"name": name, "url": url})
+    return normalized
+
+
+def _parse_runtime_versions_env(raw_value: str | None) -> list[dict[str, str]]:
+    text = str(raw_value or "").strip()
+    if not text:
+        return []
+
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return _parse_runtime_versions_pairs(text)
+
+    if isinstance(payload, dict):
+        return [
+            {"name": str(name).strip(), "url": str(url).strip()}
+            for name, url in payload.items()
+        ]
+    if isinstance(payload, list):
+        versions: list[dict[str, str]] = []
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            versions.append(
+                {
+                    "name": str(item.get("name") or item.get("version") or "").strip(),
+                    "url": str(item.get("url") or item.get("base_url") or "").strip(),
+                }
+            )
+        return versions
+    return []
+
+
+def _parse_runtime_versions_pairs(text: str) -> list[dict[str, str]]:
+    versions: list[dict[str, str]] = []
+    for part in text.split(";"):
+        if "=" not in part:
+            continue
+        name, url = part.split("=", maxsplit=1)
+        versions.append({"name": name.strip(), "url": url.strip()})
+    return versions
 
 
 def _registration_mode(value: object) -> str:

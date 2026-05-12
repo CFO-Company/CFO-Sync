@@ -7,7 +7,9 @@
       "allowed_clients": {
         "*": ["*"]
       },
-      "can_manage_secrets": true
+      "can_manage_secrets": true,
+      "can_select_server_version": false,
+      "allowed_server_versions": []
     }
   ]
 }

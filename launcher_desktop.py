@@ -60,6 +60,13 @@ ALL_SUB_CLIENTS = "Todos"
 NO_NOTIFICATION_SOUND = "Sem som"
 SERVER_URL_KEY = "server_url"
 SERVER_TOKEN_KEY = "server_token"
+SERVER_VERSION_KEY = "server_version"
+SERVER_VERSION_TARGETS_KEY = "server_version_targets"
+SERVER_VERSION_SELECTOR_TOKEN = (
+    "qPY6iFxwDhD4amp38NF4uopiHer3EvhMf8jIMD5D/GHK68uZCV3wRwm+mEC1T7zObbYcaUiaEmZGmc2FN+vBSA=="
+)
+DEFAULT_SERVER_VERSION = "main"
+DEFAULT_VALIDATION_SERVER_VERSIONS = ("1.3.10",)
 DESKTOP_SETTINGS_PATH = desktop_settings_path()
 SOUNDS_DIR = custom_sounds_dir()
 UPDATE_APP_DEFAULT_LABEL = "Atualizar app"
@@ -338,6 +345,26 @@ def _empty_app_config() -> AppConfig:
     )
 
 
+def _parse_server_version_targets(raw_value: object) -> dict[str, str]:
+    if isinstance(raw_value, dict):
+        return {
+            str(name).strip(): str(url).strip()
+            for name, url in raw_value.items()
+            if str(name).strip() and str(url).strip()
+        }
+    if isinstance(raw_value, list):
+        targets: dict[str, str] = {}
+        for item in raw_value:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or item.get("version") or "").strip()
+            url = str(item.get("url") or item.get("base_url") or "").strip()
+            if name and url:
+                targets[name] = url
+        return targets
+    return {}
+
+
 class CFODesktopApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -382,6 +409,9 @@ class CFODesktopApp:
         self.notification_sound_options: list[str] = [NO_NOTIFICATION_SOUND]
         self.server_url_var = tk.StringVar(value="")
         self.server_token_var = tk.StringVar(value="")
+        self.server_version_var = tk.StringVar(value=DEFAULT_SERVER_VERSION)
+        self.server_version_options: list[str] = [DEFAULT_SERVER_VERSION]
+        self.server_version_targets: dict[str, str] = {}
         self.server_status_var = tk.StringVar(value="Servidor desconectado")
         self.server_secret_path_var = tk.StringVar(value="")
         self.server_secret_modified_var = tk.StringVar(value="-")
@@ -443,8 +473,10 @@ class CFODesktopApp:
     def _bootstrap_runtime_mode(self) -> None:
         saved_url = self._saved_server_url()
         saved_token = self._saved_server_token()
+        saved_version = self._saved_server_version()
         self.server_url_var.set(saved_url)
         self.server_token_var.set(saved_token)
+        self.server_version_var.set(saved_version)
         if not saved_url or not saved_token:
             self.status_var.set("Conecte ao servidor na aba Configuracoes")
             return
@@ -584,17 +616,141 @@ class CFODesktopApp:
             return ""
         return value.strip()
 
-    def _persist_server_connection(self, server_url: str, server_token: str) -> None:
+    def _saved_server_version(self) -> str:
+        settings = self._load_desktop_settings()
+        value = settings.get(SERVER_VERSION_KEY)
+        if not isinstance(value, str):
+            return DEFAULT_SERVER_VERSION
+        return value.strip() or DEFAULT_SERVER_VERSION
+
+    def _persist_server_connection(
+        self,
+        server_url: str,
+        server_token: str,
+        server_version: str = DEFAULT_SERVER_VERSION,
+    ) -> None:
         settings = self._load_desktop_settings()
         settings[SERVER_URL_KEY] = server_url.strip()
         settings[SERVER_TOKEN_KEY] = server_token.strip()
+        settings[SERVER_VERSION_KEY] = server_version.strip() or DEFAULT_SERVER_VERSION
         self._save_desktop_settings(settings)
 
     def _clear_server_connection(self) -> None:
         settings = self._load_desktop_settings()
         settings.pop(SERVER_URL_KEY, None)
         settings.pop(SERVER_TOKEN_KEY, None)
+        settings.pop(SERVER_VERSION_KEY, None)
         self._save_desktop_settings(settings)
+
+    def _server_version_selector_allowed(self) -> bool:
+        return self.server_token_var.get().strip() == SERVER_VERSION_SELECTOR_TOKEN
+
+    def _sync_server_version_selector_visibility(self) -> None:
+        if not hasattr(self, "server_version_row"):
+            return
+        if self._server_version_selector_allowed():
+            self.server_version_label.grid()
+            self.server_version_row.grid()
+            if not self.server_version_var.get().strip():
+                self.server_version_var.set(DEFAULT_SERVER_VERSION)
+            self._load_server_version_targets_from_settings()
+            self.server_version_combo.configure(
+                state="readonly" if not self.busy else tk.DISABLED,
+                values=self.server_version_options,
+            )
+            self.btn_refresh_server_versions.configure(state=tk.NORMAL if not self.busy else tk.DISABLED)
+            return
+
+        self.server_version_var.set(DEFAULT_SERVER_VERSION)
+        self.server_version_options = [DEFAULT_SERVER_VERSION]
+        self.server_version_targets = {}
+        self.server_version_combo.configure(values=self.server_version_options)
+        self.server_version_label.grid_remove()
+        self.server_version_row.grid_remove()
+
+    def _load_server_version_targets_from_settings(self) -> None:
+        settings = self._load_desktop_settings()
+        parsed = _parse_server_version_targets(settings.get(SERVER_VERSION_TARGETS_KEY))
+        if parsed:
+            self.server_version_targets = parsed
+        options = [DEFAULT_SERVER_VERSION]
+        for name in DEFAULT_VALIDATION_SERVER_VERSIONS:
+            if name not in options:
+                options.append(name)
+        for name in sorted(self.server_version_targets):
+            if name not in options:
+                options.append(name)
+        saved = self.server_version_var.get().strip() or self._saved_server_version()
+        if saved and saved not in options:
+            options.append(saved)
+        self.server_version_options = options
+        if self.server_version_var.get().strip() not in self.server_version_options:
+            self.server_version_var.set(DEFAULT_SERVER_VERSION)
+
+    def _persist_server_version_choice(self) -> None:
+        settings = self._load_desktop_settings()
+        settings[SERVER_VERSION_KEY] = self.server_version_var.get().strip() or DEFAULT_SERVER_VERSION
+        self._save_desktop_settings(settings)
+
+    def _persist_server_version_targets(self, targets: dict[str, str]) -> None:
+        settings = self._load_desktop_settings()
+        settings[SERVER_VERSION_TARGETS_KEY] = dict(sorted(targets.items()))
+        self._save_desktop_settings(settings)
+
+    def _apply_server_version_options(self, versions: list[dict[str, str]]) -> None:
+        targets: dict[str, str] = {}
+        for item in versions:
+            name = str(item.get("name") or "").strip()
+            url = str(item.get("url") or "").strip()
+            if name and url:
+                targets[name] = url
+        if targets:
+            self.server_version_targets = targets
+            self._persist_server_version_targets(targets)
+        self._load_server_version_targets_from_settings()
+        self.server_version_combo.configure(values=self.server_version_options)
+
+    def _resolve_server_connection_target(self, server_url: str, server_token: str) -> tuple[str, str]:
+        selected_version = self.server_version_var.get().strip() or DEFAULT_SERVER_VERSION
+        if not self._server_version_selector_allowed():
+            return server_url, DEFAULT_SERVER_VERSION
+        if selected_version == DEFAULT_SERVER_VERSION:
+            return server_url, selected_version
+
+        targets = dict(self.server_version_targets)
+        if selected_version not in targets:
+            version_client = RemoteCFOClient(server_url, server_token)
+            payload = version_client.fetch_runtime_versions()
+            versions_raw = payload.get("versions")
+            if isinstance(versions_raw, list):
+                self._apply_server_version_options_in_ui_thread(versions_raw)
+                targets = dict(self.server_version_targets)
+
+        target_url = targets.get(selected_version)
+        if not target_url:
+            raise ValueError(
+                f"Versao '{selected_version}' nao encontrada. "
+                "Atualize a lista de versoes ou confira a configuracao do servidor."
+            )
+        return target_url, selected_version
+
+    def _apply_server_version_options_in_ui_thread(self, versions: list[object]) -> None:
+        completed = threading.Event()
+        errors: list[Exception] = []
+
+        def apply() -> None:
+            try:
+                clean_versions = [item for item in versions if isinstance(item, dict)]
+                self._apply_server_version_options(clean_versions)
+            except Exception as error:  # noqa: BLE001
+                errors.append(error)
+            finally:
+                completed.set()
+
+        self.root.after(0, apply)
+        completed.wait()
+        if errors:
+            raise errors[0]
 
     def _apply_theme(self) -> None:
         try:
@@ -1784,15 +1940,41 @@ class CFODesktopApp:
         )
         self.server_token_entry.grid(row=0, column=0, sticky=tk.EW)
 
+        self.server_version_label = ttk.Label(
+            self.settings_tab,
+            text="Versão do servidor",
+            style="Field.TLabel",
+        )
+        self.server_version_label.grid(row=5, column=0, sticky=tk.W, padx=(0, 10), pady=6)
+        self.server_version_row = ttk.Frame(self.settings_tab, style="Card.TFrame")
+        self.server_version_row.grid(row=5, column=1, sticky=tk.EW, pady=6)
+        self.server_version_row.columnconfigure(0, weight=1)
+        self.server_version_combo = ttk.Combobox(
+            self.server_version_row,
+            textvariable=self.server_version_var,
+            state="readonly",
+            values=self.server_version_options,
+            style="Dark.TCombobox",
+            width=30,
+        )
+        self.server_version_combo.grid(row=0, column=0, sticky=tk.EW)
+        self.btn_refresh_server_versions = ttk.Button(
+            self.server_version_row,
+            text="Atualizar versões",
+            style="Secondary.TButton",
+            command=self.refresh_server_versions,
+        )
+        self.btn_refresh_server_versions.grid(row=0, column=1, sticky=tk.E, padx=(8, 0))
+
         server_actions = ttk.Frame(self.settings_tab, style="Card.TFrame")
-        server_actions.grid(row=5, column=1, sticky=tk.EW, pady=(4, 10))
+        server_actions.grid(row=6, column=1, sticky=tk.EW, pady=(4, 10))
         server_actions.columnconfigure(0, weight=1)
         server_actions.columnconfigure(1, weight=1)
         server_actions.columnconfigure(2, weight=1)
         server_actions.columnconfigure(3, weight=0)
         self.btn_connect_server = ttk.Button(
             server_actions,
-            text="Conectar servidor",
+            text="Conectar com servidor",
             style="Secondary.TButton",
             command=self.connect_server,
         )
@@ -1823,7 +2005,9 @@ class CFODesktopApp:
             self.settings_tab,
             textvariable=self.server_status_var,
             style="Field.TLabel",
-        ).grid(row=6, column=1, sticky=tk.W, pady=(0, 8))
+        ).grid(row=7, column=1, sticky=tk.W, pady=(0, 8))
+
+        self._sync_server_version_selector_visibility()
 
         secrets_panel = ttk.Frame(self.server_tab, style="Card.TFrame")
         secrets_panel.grid(row=0, column=0, sticky=tk.NSEW)
@@ -2135,6 +2319,14 @@ class CFODesktopApp:
         self.notification_sound_combo.bind(
             "<<ComboboxSelected>>",
             lambda _event: self._on_notification_sound_change(),
+        )
+        self.server_token_entry.bind(
+            "<KeyRelease>",
+            lambda _event: self._sync_server_version_selector_visibility(),
+        )
+        self.server_version_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._persist_server_version_choice(),
         )
         self.server_secrets_tree.bind(
             "<<TreeviewSelect>>",
@@ -2895,6 +3087,8 @@ class CFODesktopApp:
                 self.btn_use_local_secrets.configure(state=tk.DISABLED)
             self.server_url_entry.configure(state=tk.DISABLED)
             self.server_token_entry.configure(state=tk.DISABLED)
+            self.server_version_combo.configure(state=tk.DISABLED)
+            self.btn_refresh_server_versions.configure(state=tk.DISABLED)
             self.btn_select_all_sub_clients.configure(state=tk.DISABLED)
             self.btn_clear_sub_clients.configure(state=tk.DISABLED)
             self.sub_client_listbox.configure(state=tk.DISABLED)
@@ -2949,6 +3143,7 @@ class CFODesktopApp:
             self.btn_use_local_secrets.configure(state=local_state)
         self.server_url_entry.configure(state=tk.NORMAL)
         self.server_token_entry.configure(state=tk.NORMAL)
+        self._sync_server_version_selector_visibility()
 
         has_sub_clients = bool(self.sub_client_options)
         controls_state = tk.NORMAL if has_sub_clients else tk.DISABLED
@@ -4613,15 +4808,40 @@ class CFODesktopApp:
             if not server_token:
                 raise ValueError("Informe o token Bearer do servidor.")
 
-            self.log(f"Conectando no servidor: {server_url}")
-            client = RemoteCFOClient(server_url, server_token)
+            target_url, selected_version = self._resolve_server_connection_target(server_url, server_token)
+            if selected_version != DEFAULT_SERVER_VERSION:
+                self.log(f"Conectando no servidor: {target_url} | versao={selected_version}")
+            else:
+                self.log(f"Conectando no servidor: {target_url}")
+            client = RemoteCFOClient(target_url, server_token)
             catalog = client.fetch_catalog()
             self._apply_remote_connection_in_ui_thread(client, catalog)
-            self._persist_server_connection(server_url, server_token)
+            self._persist_server_connection(server_url, server_token, selected_version)
             self.status_var.set("Conectado ao servidor")
             self.log("Conexao com servidor estabelecida.")
 
         self._run_task("Conectar servidor", task)
+
+    def refresh_server_versions(self) -> None:
+        def task() -> None:
+            server_url = self.server_url_var.get().strip()
+            server_token = self.server_token_var.get().strip()
+            if not server_url:
+                raise ValueError("Informe a URL da API do servidor.")
+            if not server_token:
+                raise ValueError("Informe o token Bearer do servidor.")
+            if not self._server_version_selector_allowed():
+                raise PermissionError("Token sem permissao para selecionar versao do servidor.")
+
+            client = RemoteCFOClient(server_url, server_token)
+            payload = client.fetch_runtime_versions()
+            versions_raw = payload.get("versions")
+            if not isinstance(versions_raw, list):
+                raise ValueError("Resposta invalida do servidor: campo 'versions' ausente.")
+            self._apply_server_version_options_in_ui_thread(versions_raw)
+            self.log(f"Versoes de servidor atualizadas: {len(self.server_version_options)} opcao(oes).")
+
+        self._run_task("Atualizar versões", task)
 
     def activate_local_mode(self) -> None:
         def task() -> None:

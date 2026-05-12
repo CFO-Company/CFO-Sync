@@ -159,6 +159,7 @@ function Get-AccessSummary {
                 name = $token.name
                 allowed_platforms = @($token.allowed_platforms)
                 can_manage_secrets = [bool]$token.can_manage_secrets
+                can_select_server_version = [bool]$token.can_select_server_version
                 token_present = -not [string]::IsNullOrWhiteSpace([string]$token.token)
             }
         }
@@ -347,7 +348,7 @@ function Write-MarkdownReport {
     $lines += "- Tokens configurados: $($Report.access.token_count)"
     foreach ($token in $Report.access.tokens) {
         $platforms = (($token.allowed_platforms | ForEach-Object { Convert-ToSafeString $_ }) -join ", ")
-        $lines += "- Token name=$($token.name), token_present=$($token.token_present), can_manage_secrets=$($token.can_manage_secrets), platforms=$platforms"
+        $lines += "- Token name=$($token.name), token_present=$($token.token_present), can_manage_secrets=$($token.can_manage_secrets), can_select_server_version=$($token.can_select_server_version), platforms=$platforms"
     }
     if ($Report.access.error) {
         $lines += "- Erro: $($Report.access.error)"
