@@ -1,3 +1,17 @@
+## [1.3.11] - 12-05-2026
+
+### Added
+- Documentacao de infra e deploy para ambientes `production` e `staging`.
+
+### Changed
+- Seletor de versao do servidor passa a exibir apenas ambientes publicados pelo servidor, usando `production` como padrao.
+- Documentacao do RBAC esclarece que `allowed_server_versions` vazio libera todas as versoes publicadas.
+- Bootstrap Docker valida `CFO_SYNC_RUNTIME_VERSIONS` e repassa corretamente comandos ao `docker compose`.
+- Versao do aplicativo e do instalador atualizada para 1.3.11.
+
+### Fixed
+- Relatorio Gauss passa a exibir `allowed_server_versions` sanitizado para diagnosticar permissoes de troca de ambiente.
+
 ## [1.3.10] - 11-05-2026
 
 ### Added

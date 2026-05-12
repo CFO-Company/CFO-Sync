@@ -65,8 +65,7 @@ SERVER_VERSION_TARGETS_KEY = "server_version_targets"
 SERVER_VERSION_SELECTOR_TOKEN = (
     "qPY6iFxwDhD4amp38NF4uopiHer3EvhMf8jIMD5D/GHK68uZCV3wRwm+mEC1T7zObbYcaUiaEmZGmc2FN+vBSA=="
 )
-DEFAULT_SERVER_VERSION = "main"
-DEFAULT_VALIDATION_SERVER_VERSIONS = ("1.3.10",)
+DEFAULT_SERVER_VERSION = "production"
 DESKTOP_SETTINGS_PATH = desktop_settings_path()
 SOUNDS_DIR = custom_sounds_dir()
 UPDATE_APP_DEFAULT_LABEL = "Atualizar app"
@@ -673,19 +672,16 @@ class CFODesktopApp:
         parsed = _parse_server_version_targets(settings.get(SERVER_VERSION_TARGETS_KEY))
         if parsed:
             self.server_version_targets = parsed
-        options = [DEFAULT_SERVER_VERSION]
-        for name in DEFAULT_VALIDATION_SERVER_VERSIONS:
-            if name not in options:
-                options.append(name)
+        options = sorted(self.server_version_targets) if self.server_version_targets else [DEFAULT_SERVER_VERSION]
+        if DEFAULT_SERVER_VERSION not in options:
+            options.insert(0, DEFAULT_SERVER_VERSION)
         for name in sorted(self.server_version_targets):
             if name not in options:
                 options.append(name)
-        saved = self.server_version_var.get().strip() or self._saved_server_version()
-        if saved and saved not in options:
-            options.append(saved)
         self.server_version_options = options
         if self.server_version_var.get().strip() not in self.server_version_options:
-            self.server_version_var.set(DEFAULT_SERVER_VERSION)
+            fallback = DEFAULT_SERVER_VERSION if DEFAULT_SERVER_VERSION in options else options[0]
+            self.server_version_var.set(fallback)
 
     def _persist_server_version_choice(self) -> None:
         settings = self._load_desktop_settings()

@@ -12,16 +12,34 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Invoke-Compose {
-    param([string[]]$Args)
-    & docker compose --env-file $script:EnvFile -f $script:ComposeFile @Args
+    param([string[]]$ComposeArgs)
+    & docker compose --env-file $script:EnvFile -f $script:ComposeFile @ComposeArgs
     if ($LASTEXITCODE -ne 0) {
-        throw "Falha ao executar docker compose: $($Args -join ' ')"
+        throw "Falha ao executar docker compose: $($ComposeArgs -join ' ')"
     }
 }
 
 function Convert-ToDockerPath {
     param([string]$PathValue)
     return ((Resolve-Path $PathValue).Path -replace "\\", "/")
+}
+
+function Normalize-RuntimeVersions {
+    param([string]$Value)
+
+    $normalized = ($Value -replace "(`r`n|`n|`r)", "").Trim()
+    if (-not $normalized) {
+        return ""
+    }
+
+    try {
+        $null = $normalized | ConvertFrom-Json
+    }
+    catch {
+        throw "RuntimeVersions invalido. Informe JSON em uma linha, exemplo: '{`"production`":`"https://api.ecfo.com.br/`",`"staging`":`"https://staging-api.ecfo.com.br/`"}'. Erro: $($_.Exception.Message)"
+    }
+
+    return $normalized
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
@@ -41,6 +59,7 @@ $script:EnvFile = Join-Path $PSScriptRoot "docker-server.env"
 
 $TunnelToken = $TunnelToken.Trim()
 $TunnelHostname = $TunnelHostname.Trim()
+$RuntimeVersions = Normalize-RuntimeVersions -Value $RuntimeVersions
 
 if (Test-Path $script:EnvFile) {
     $existingEnv = @{}
@@ -57,7 +76,7 @@ if (Test-Path $script:EnvFile) {
         $TunnelHostname = $existingEnv["CLOUDFLARE_TUNNEL_HOSTNAME"]
     }
     if (-not $RuntimeVersions -and $existingEnv.ContainsKey("CFO_SYNC_RUNTIME_VERSIONS")) {
-        $RuntimeVersions = $existingEnv["CFO_SYNC_RUNTIME_VERSIONS"]
+        $RuntimeVersions = Normalize-RuntimeVersions -Value $existingEnv["CFO_SYNC_RUNTIME_VERSIONS"]
     }
 }
 
