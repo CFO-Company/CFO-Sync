@@ -16,6 +16,8 @@ class AccessTokenPolicy:
     allowed_platforms: tuple[str, ...]
     allowed_clients: dict[str, tuple[str, ...]]
     can_manage_secrets: bool = False
+    can_select_server_version: bool = False
+    allowed_server_versions: tuple[str, ...] = ()
 
     def allows_platform(self, platform_key: str) -> bool:
         if platform_key in ADMIN_ONLY_PLATFORMS:
@@ -90,6 +92,8 @@ def load_access_policies(path: Path) -> list[AccessTokenPolicy]:
                 allowed_platforms=allowed_platforms,
                 allowed_clients=allowed_clients,
                 can_manage_secrets=bool(item.get("can_manage_secrets", False)),
+                can_select_server_version=bool(item.get("can_select_server_version", False)),
+                allowed_server_versions=_string_tuple(item.get("allowed_server_versions", [])),
             )
         )
     return policies
@@ -109,4 +113,12 @@ def _allows_value(allowed: tuple[str, ...], value: str) -> bool:
     if "*" in allowed:
         return True
     return value in allowed
+
+
+def _string_tuple(raw_value: object) -> tuple[str, ...]:
+    if raw_value is None:
+        return ()
+    if not isinstance(raw_value, list):
+        return ()
+    return tuple(str(value).strip() for value in raw_value if str(value).strip())
 

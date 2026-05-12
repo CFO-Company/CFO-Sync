@@ -5,6 +5,7 @@ param(
     [switch]$WithTunnel,
     [string]$TunnelToken = "",
     [string]$TunnelHostname = "",
+    [string]$RuntimeVersions = "",
     [switch]$ForceRecreateAccess
 )
 
@@ -54,6 +55,9 @@ if (Test-Path $script:EnvFile) {
     }
     if (-not $TunnelHostname -and $existingEnv.ContainsKey("CLOUDFLARE_TUNNEL_HOSTNAME")) {
         $TunnelHostname = $existingEnv["CLOUDFLARE_TUNNEL_HOSTNAME"]
+    }
+    if (-not $RuntimeVersions -and $existingEnv.ContainsKey("CFO_SYNC_RUNTIME_VERSIONS")) {
+        $RuntimeVersions = $existingEnv["CFO_SYNC_RUNTIME_VERSIONS"]
     }
 }
 
@@ -105,6 +109,9 @@ if ($TunnelToken) {
 }
 if ($TunnelHostname) {
     $envLines += "CLOUDFLARE_TUNNEL_HOSTNAME=$TunnelHostname"
+}
+if ($RuntimeVersions) {
+    $envLines += "CFO_SYNC_RUNTIME_VERSIONS=$RuntimeVersions"
 }
 $envLines | Set-Content -Path $script:EnvFile -Encoding ascii
 

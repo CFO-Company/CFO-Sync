@@ -8,6 +8,7 @@ services:
     environment:
       PYTHONPATH: /app/src
       CFO_SYNC_HOME: /srv
+      CFO_SYNC_RUNTIME_VERSIONS: ${CFO_SYNC_RUNTIME_VERSIONS:-}
     command:
       - python
       - -m

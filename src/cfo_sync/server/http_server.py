@@ -233,6 +233,21 @@ class CfoSyncHttpServer:
                     self._write_json(HTTPStatus.OK, payload)
                     return
 
+                if path == "/v1/runtime/versions":
+                    try:
+                        payload = server.service.runtime_versions(
+                            policy,
+                            current_base_url=self._external_base_url(),
+                        )
+                    except PermissionError as error:
+                        self._write_json(HTTPStatus.FORBIDDEN, {"error": str(error)})
+                        return
+                    except Exception as error:  # noqa: BLE001
+                        self._write_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error)})
+                        return
+                    self._write_json(HTTPStatus.OK, payload)
+                    return
+
                 if path == "/v1/secrets/files":
                     try:
                         payload = server.service.list_secret_json_files(policy=policy)
