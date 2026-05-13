@@ -364,6 +364,21 @@ def _parse_server_version_targets(raw_value: object) -> dict[str, str]:
     return {}
 
 
+def _server_health_version(health: dict[str, object] | None) -> str:
+    if not isinstance(health, dict):
+        return ""
+    return str(health.get("version") or "").strip()
+
+
+def _format_server_status(base_url: str, environment: str, server_version: str) -> str:
+    clean_environment = str(environment or DEFAULT_SERVER_VERSION).strip() or DEFAULT_SERVER_VERSION
+    clean_url = str(base_url or "").strip()
+    clean_version = str(server_version or "").strip()
+    if clean_version:
+        return f"Conectado: {clean_environment} | servidor v{clean_version} | {clean_url}"
+    return f"Conectado: {clean_environment} | {clean_url}"
+
+
 class CFODesktopApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -412,6 +427,8 @@ class CFODesktopApp:
         self.server_version_options: list[str] = [DEFAULT_SERVER_VERSION]
         self.server_version_targets: dict[str, str] = {}
         self.server_status_var = tk.StringVar(value="Servidor desconectado")
+        self.connected_server_environment = DEFAULT_SERVER_VERSION
+        self.connected_server_version = ""
         self.server_secret_path_var = tk.StringVar(value="")
         self.server_secret_modified_var = tk.StringVar(value="-")
         self.server_secret_size_var = tk.StringVar(value="-")
@@ -480,19 +497,29 @@ class CFODesktopApp:
             self.status_var.set("Conecte ao servidor na aba Configuracoes")
             return
         try:
-            client = RemoteCFOClient(saved_url, saved_token)
+            target_url, selected_version = self._resolve_saved_server_connection_target(saved_url, saved_version)
+            client = RemoteCFOClient(target_url, saved_token)
+            health = client.health()
             catalog = client.fetch_catalog()
-            self._activate_remote_catalog(client, catalog)
+            self._activate_remote_catalog(client, catalog, selected_version, health)
             self.status_var.set("Conectado ao servidor")
         except Exception as error:  # noqa: BLE001
             self.server_status_var.set("Falha ao conectar no servidor")
             self.status_var.set("Conecte ao servidor na aba Configuracoes")
             self.log(f"Aviso: conexao inicial com servidor falhou ({error}).")
 
-    def _activate_remote_catalog(self, client: RemoteCFOClient, catalog: dict[str, object]) -> None:
+    def _activate_remote_catalog(
+        self,
+        client: RemoteCFOClient,
+        catalog: dict[str, object],
+        server_environment: str | None = None,
+        health: dict[str, object] | None = None,
+    ) -> None:
         config, sub_clients_map = self._build_app_config_from_catalog(catalog)
         self.remote_client = client
         self.remote_catalog_sub_clients = sub_clients_map
+        self.connected_server_environment = (server_environment or DEFAULT_SERVER_VERSION).strip() or DEFAULT_SERVER_VERSION
+        self.connected_server_version = _server_health_version(health)
         self.config = config
         self.pipeline = None
         self.platform_ui_registry = build_platform_ui_registry(self.config)
@@ -501,7 +528,13 @@ class CFODesktopApp:
         self.estoque_platform_choices = self._build_estoque_platform_choices()
         self.estoque_choice_by_label = {choice.label: choice for choice in self.estoque_platform_choices}
         self._refresh_estoque_credentials_store()
-        self.server_status_var.set(f"Conectado: {client.base_url}")
+        self.server_status_var.set(
+            _format_server_status(
+                client.base_url,
+                self.connected_server_environment,
+                self.connected_server_version,
+            )
+        )
 
     def _refresh_estoque_credentials_store(self) -> None:
         self.yampi_estoque_credentials_store = None
@@ -728,6 +761,23 @@ class CFODesktopApp:
                 f"Versao '{selected_version}' nao encontrada. "
                 "Atualize a lista de versoes ou confira a configuracao do servidor."
             )
+        return target_url, selected_version
+
+    def _resolve_saved_server_connection_target(self, server_url: str, saved_version: str) -> tuple[str, str]:
+        selected_version = str(saved_version or DEFAULT_SERVER_VERSION).strip() or DEFAULT_SERVER_VERSION
+        if not self._server_version_selector_allowed() or selected_version == DEFAULT_SERVER_VERSION:
+            return server_url, DEFAULT_SERVER_VERSION
+
+        targets = _parse_server_version_targets(
+            self._load_desktop_settings().get(SERVER_VERSION_TARGETS_KEY)
+        )
+        target_url = targets.get(selected_version)
+        if not target_url:
+            raise ValueError(
+                f"Ambiente '{selected_version}' nao encontrado nas configuracoes salvas. "
+                "Conecte manualmente e atualize a lista de ambientes."
+            )
+        self.server_version_targets = targets
         return target_url, selected_version
 
     def _apply_server_version_options_in_ui_thread(self, versions: list[object]) -> None:
@@ -1938,7 +1988,7 @@ class CFODesktopApp:
 
         self.server_version_label = ttk.Label(
             self.settings_tab,
-            text="Versão do servidor",
+            text="Ambiente do servidor",
             style="Field.TLabel",
         )
         self.server_version_label.grid(row=5, column=0, sticky=tk.W, padx=(0, 10), pady=6)
@@ -4728,13 +4778,15 @@ class CFODesktopApp:
         self,
         client: RemoteCFOClient,
         catalog: dict[str, object],
+        server_environment: str | None = None,
+        health: dict[str, object] | None = None,
     ) -> None:
         completed = threading.Event()
         errors: list[Exception] = []
 
         def apply() -> None:
             try:
-                self._activate_remote_catalog(client, catalog)
+                self._activate_remote_catalog(client, catalog, server_environment, health)
                 self.server_secret_files = []
                 self.server_secret_loaded_path = ""
                 self.server_secret_path_var.set("")
@@ -4763,6 +4815,8 @@ class CFODesktopApp:
             try:
                 self.remote_client = None
                 self.remote_catalog_sub_clients = {}
+                self.connected_server_environment = DEFAULT_SERVER_VERSION
+                self.connected_server_version = ""
                 self.server_secret_files = []
                 self.server_secret_loaded_path = ""
                 self.server_secret_path_var.set("")
@@ -4806,15 +4860,23 @@ class CFODesktopApp:
 
             target_url, selected_version = self._resolve_server_connection_target(server_url, server_token)
             if selected_version != DEFAULT_SERVER_VERSION:
-                self.log(f"Conectando no servidor: {target_url} | versao={selected_version}")
+                self.log(f"Conectando no servidor: {target_url} | ambiente={selected_version}")
             else:
                 self.log(f"Conectando no servidor: {target_url}")
             client = RemoteCFOClient(target_url, server_token)
+            health = client.health()
             catalog = client.fetch_catalog()
-            self._apply_remote_connection_in_ui_thread(client, catalog)
+            self._apply_remote_connection_in_ui_thread(client, catalog, selected_version, health)
             self._persist_server_connection(server_url, server_token, selected_version)
             self.status_var.set("Conectado ao servidor")
-            self.log("Conexao com servidor estabelecida.")
+            server_version = _server_health_version(health)
+            if server_version:
+                self.log(
+                    "Conexao com servidor estabelecida: "
+                    f"ambiente={selected_version}, versao_servidor={server_version}."
+                )
+            else:
+                self.log(f"Conexao com servidor estabelecida: ambiente={selected_version}.")
 
         self._run_task("Conectar servidor", task)
 
@@ -4835,7 +4897,7 @@ class CFODesktopApp:
             if not isinstance(versions_raw, list):
                 raise ValueError("Resposta invalida do servidor: campo 'versions' ausente.")
             self._apply_server_version_options_in_ui_thread(versions_raw)
-            self.log(f"Versoes de servidor atualizadas: {len(self.server_version_options)} opcao(oes).")
+            self.log(f"Ambientes de servidor atualizados: {len(self.server_version_options)} opcao(oes).")
 
         self._run_task("Atualizar versões", task)
 
@@ -4856,6 +4918,8 @@ class CFODesktopApp:
     def disconnect_server(self) -> None:
         self.remote_client = None
         self.remote_catalog_sub_clients = {}
+        self.connected_server_environment = DEFAULT_SERVER_VERSION
+        self.connected_server_version = ""
         self.server_secret_files = []
         self.server_secret_loaded_path = ""
         self.server_secret_path_var.set("")
