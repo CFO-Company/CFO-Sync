@@ -280,10 +280,25 @@ class CfoSyncHttpServer:
                     self._write_json(HTTPStatus.OK, payload)
                     return
 
+                if path == "/v1/jobs":
+                    if not policy.can_manage_secrets:
+                        self._write_json(
+                            HTTPStatus.FORBIDDEN,
+                            {
+                                "error": (
+                                    "Token sem permissao para visualizar a fila global de jobs. "
+                                    "Ative can_manage_secrets no server_access.json."
+                                )
+                            },
+                        )
+                        return
+                    self._write_json(HTTPStatus.OK, server.jobs.snapshot())
+                    return
+
                 if path.startswith("/v1/jobs/") and path.endswith("/logs"):
                     job_id = path.split("/")[3]
                     job = server.jobs.get(job_id)
-                    if job is None or job.requested_by != policy.name:
+                    if job is None or (job.requested_by != policy.name and not policy.can_manage_secrets):
                         self._write_json(HTTPStatus.NOT_FOUND, {"error": "Job nao encontrado."})
                         return
                     self._write_json(HTTPStatus.OK, {"logs": job.logs})
@@ -292,7 +307,7 @@ class CfoSyncHttpServer:
                 if path.startswith("/v1/jobs/"):
                     job_id = path.split("/")[3]
                     job = server.jobs.get(job_id)
-                    if job is None or job.requested_by != policy.name:
+                    if job is None or (job.requested_by != policy.name and not policy.can_manage_secrets):
                         self._write_json(HTTPStatus.NOT_FOUND, {"error": "Job nao encontrado."})
                         return
                     self._write_json(HTTPStatus.OK, serialize_job(job))

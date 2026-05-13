@@ -379,6 +379,23 @@ def _format_server_status(base_url: str, environment: str, server_version: str) 
     return f"Conectado: {clean_environment} | {clean_url}"
 
 
+def _format_jobs_summary(summary: dict[str, object]) -> str:
+    def number(key: str) -> int:
+        try:
+            return int(summary.get(key) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    return (
+        "Jobs: "
+        f"fila={number('queued')} | "
+        f"rodando={number('running')} | "
+        f"concluidos={number('completed')} | "
+        f"falhas={number('failed')} | "
+        f"workers={number('workers')}"
+    )
+
+
 class CFODesktopApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -434,6 +451,8 @@ class CFODesktopApp:
         self.server_secret_size_var = tk.StringVar(value="-")
         self.server_secret_files: list[dict[str, object]] = []
         self.server_secret_loaded_path = ""
+        self.server_jobs_summary_var = tk.StringVar(value="Jobs: -")
+        self.server_jobs: list[dict[str, object]] = []
         self.client_registration_mode_var = tk.StringVar()
         self.client_registration_platform_var = tk.StringVar()
         self.client_registration_client_var = tk.StringVar()
@@ -1212,7 +1231,8 @@ class CFODesktopApp:
         self.settings_tab.columnconfigure(1, weight=1)
         self.server_tab = ttk.Frame(self.tabs, style="Card.TFrame", padding=16)
         self.server_tab.columnconfigure(0, weight=1)
-        self.server_tab.rowconfigure(0, weight=1)
+        self.server_tab.rowconfigure(0, weight=2)
+        self.server_tab.rowconfigure(1, weight=1)
 
         self.tabs.add(config_tab, text="Pedidos")
         self.tabs.add(self.estoque_tab, text="Estoque")
@@ -2179,6 +2199,107 @@ class CFODesktopApp:
         )
         self.btn_save_server_secret.grid(row=0, column=1, sticky=tk.EW)
 
+        jobs_panel = ttk.Frame(self.server_tab, style="Card.TFrame")
+        jobs_panel.grid(row=1, column=0, sticky=tk.NSEW, pady=(14, 0))
+        jobs_panel.columnconfigure(0, weight=3)
+        jobs_panel.columnconfigure(1, weight=2)
+        jobs_panel.rowconfigure(1, weight=1)
+
+        jobs_header = ttk.Frame(jobs_panel, style="Card.TFrame")
+        jobs_header.grid(row=0, column=0, columnspan=2, sticky=tk.EW, pady=(0, 8))
+        jobs_header.columnconfigure(1, weight=1)
+        ttk.Label(
+            jobs_header,
+            text="Jobs do servidor",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(
+            jobs_header,
+            textvariable=self.server_jobs_summary_var,
+            style="FieldValue.TLabel",
+        ).grid(row=0, column=1, sticky=tk.W, padx=(12, 0))
+        self.btn_refresh_server_jobs = ttk.Button(
+            jobs_header,
+            text="Atualizar jobs",
+            style="Secondary.TButton",
+            command=self.refresh_server_jobs,
+        )
+        self.btn_refresh_server_jobs.grid(row=0, column=2, sticky=tk.E, padx=(8, 0))
+        self.btn_load_server_job_logs = ttk.Button(
+            jobs_header,
+            text="Ver logs",
+            style="Secondary.TButton",
+            command=self.load_selected_server_job_logs,
+        )
+        self.btn_load_server_job_logs.grid(row=0, column=3, sticky=tk.E, padx=(8, 0))
+
+        jobs_list_frame = ttk.Frame(jobs_panel, style="Card.TFrame")
+        jobs_list_frame.grid(row=1, column=0, sticky=tk.NSEW, padx=(0, 10))
+        jobs_list_frame.rowconfigure(0, weight=1)
+        jobs_list_frame.columnconfigure(0, weight=1)
+        self.server_jobs_tree = ttk.Treeview(
+            jobs_list_frame,
+            columns=("status", "who", "platform", "client", "created"),
+            show="tree headings",
+            height=7,
+            style="Dark.Treeview",
+            selectmode="browse",
+        )
+        self.server_jobs_tree.heading("#0", text="Job")
+        self.server_jobs_tree.heading("status", text="Status")
+        self.server_jobs_tree.heading("who", text="Token")
+        self.server_jobs_tree.heading("platform", text="Plataforma")
+        self.server_jobs_tree.heading("client", text="Cliente")
+        self.server_jobs_tree.heading("created", text="Criado em")
+        self.server_jobs_tree.column("#0", width=190, minwidth=150, stretch=False)
+        self.server_jobs_tree.column("status", width=90, minwidth=80, stretch=False)
+        self.server_jobs_tree.column("who", width=110, minwidth=90, stretch=False)
+        self.server_jobs_tree.column("platform", width=110, minwidth=90, stretch=False)
+        self.server_jobs_tree.column("client", width=160, minwidth=110, stretch=True)
+        self.server_jobs_tree.column("created", width=150, minwidth=130, stretch=False)
+        self.server_jobs_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        jobs_list_scroll = ttk.Scrollbar(
+            jobs_list_frame,
+            orient=tk.VERTICAL,
+            command=self.server_jobs_tree.yview,
+            style="Modern.Vertical.TScrollbar",
+        )
+        jobs_list_scroll.grid(row=0, column=1, sticky=tk.NS)
+        self.server_jobs_tree.configure(yscrollcommand=jobs_list_scroll.set)
+
+        jobs_logs_frame = ttk.Frame(jobs_panel, style="Card.TFrame")
+        jobs_logs_frame.grid(row=1, column=1, sticky=tk.NSEW)
+        jobs_logs_frame.rowconfigure(0, weight=1)
+        jobs_logs_frame.columnconfigure(0, weight=1)
+        self.server_job_logs_text = tk.Text(
+            jobs_logs_frame,
+            height=7,
+            bg=COLOR_SURFACE_ALT,
+            fg=COLOR_TEXT,
+            insertbackground=COLOR_TEXT,
+            selectbackground=COLOR_BUTTON_ALT_HOVER,
+            selectforeground=COLOR_TEXT,
+            relief=tk.FLAT,
+            padx=10,
+            pady=10,
+            highlightthickness=1,
+            highlightbackground=COLOR_BORDER,
+            highlightcolor=COLOR_ACCENT,
+            borderwidth=0,
+            font=("Consolas", 9),
+            wrap=tk.WORD,
+            state=tk.DISABLED,
+        )
+        self.server_job_logs_text.grid(row=0, column=0, sticky=tk.NSEW)
+        jobs_logs_scroll = ttk.Scrollbar(
+            jobs_logs_frame,
+            orient=tk.VERTICAL,
+            command=self.server_job_logs_text.yview,
+            style="Modern.Vertical.TScrollbar",
+        )
+        jobs_logs_scroll.grid(row=0, column=1, sticky=tk.NS)
+        self.server_job_logs_text.configure(yscrollcommand=jobs_logs_scroll.set)
+
         app_actions = ttk.Frame(self.settings_tab, style="Card.TFrame")
         app_actions.grid(row=8, column=1, sticky=tk.EW, pady=(8, 0))
         app_actions.columnconfigure(0, weight=1)
@@ -2377,6 +2498,10 @@ class CFODesktopApp:
         self.server_secrets_tree.bind(
             "<<TreeviewSelect>>",
             lambda _event: self._on_server_secret_selection_change(),
+        )
+        self.server_jobs_tree.bind(
+            "<<TreeviewSelect>>",
+            lambda _event: self._sync_server_job_controls(),
         )
         self.tabs.bind("<<NotebookTabChanged>>", lambda _event: self._on_tab_changed())
         self.sku_order_entry.bind("<Return>", lambda _event: self.search_sku())
@@ -3146,7 +3271,10 @@ class CFODesktopApp:
             self.btn_refresh_server_secrets.configure(state=tk.DISABLED)
             self.btn_load_server_secret.configure(state=tk.DISABLED)
             self.btn_save_server_secret.configure(state=tk.DISABLED)
+            self.btn_refresh_server_jobs.configure(state=tk.DISABLED)
+            self.btn_load_server_job_logs.configure(state=tk.DISABLED)
             self.server_secret_editor.configure(state=tk.DISABLED)
+            self.server_job_logs_text.configure(state=tk.DISABLED)
             self.btn_search_sku.configure(state=tk.DISABLED)
             self.sku_order_entry.configure(state=tk.DISABLED)
             self.btn_pick_period.configure(state=tk.DISABLED)
@@ -3204,6 +3332,7 @@ class CFODesktopApp:
         self.notification_sound_combo.configure(state="readonly")
         self.btn_refresh_sounds.configure(state=tk.NORMAL)
         self._sync_server_secret_controls()
+        self._sync_server_job_controls()
         sku_state = tk.NORMAL if self._platform_supports_sku_workflow() else tk.DISABLED
         self.btn_search_sku.configure(state=sku_state)
         self.sku_order_entry.configure(state=sku_state)
@@ -4576,6 +4705,114 @@ class CFODesktopApp:
 
         self._run_task("Salvar secret", task)
 
+    def refresh_server_jobs(self) -> None:
+        def task() -> None:
+            if self.remote_client is None:
+                raise ValueError("Conecte o servidor na aba Configuracoes e acesse a aba Server para visualizar jobs.")
+            payload = self.remote_client.list_jobs()
+            jobs_raw = payload.get("jobs")
+            summary_raw = payload.get("summary")
+            jobs = jobs_raw if isinstance(jobs_raw, list) else []
+            summary = summary_raw if isinstance(summary_raw, dict) else {}
+            self._apply_server_jobs_in_ui_thread(jobs, summary)
+            self.log(f"Fila de jobs atualizada: {len(jobs)} job(s).")
+
+        self._run_task("Atualizar jobs", task)
+
+    def load_selected_server_job_logs(self) -> None:
+        def task() -> None:
+            if self.remote_client is None:
+                raise ValueError("Conecte o servidor na aba Configuracoes e acesse a aba Server para visualizar logs.")
+            job_id = self._selected_server_job_id()
+            if not job_id:
+                raise ValueError("Selecione um job.")
+            logs = self.remote_client.get_job_logs(job_id)
+            self._apply_server_job_logs_in_ui_thread(job_id, logs)
+            self.log(f"Logs carregados para job: {job_id}")
+
+        self._run_task("Carregar logs do job", task)
+
+    def _apply_server_jobs_in_ui_thread(
+        self,
+        jobs: list[object],
+        summary: dict[str, object],
+    ) -> None:
+        completed = threading.Event()
+        errors: list[Exception] = []
+
+        def apply() -> None:
+            try:
+                selected_job = self._selected_server_job_id()
+                self.server_jobs = [item for item in jobs if isinstance(item, dict)]
+                self.server_jobs_tree.delete(*self.server_jobs_tree.get_children())
+                for item in self.server_jobs:
+                    job_id = str(item.get("id") or "").strip()
+                    if not job_id:
+                        continue
+                    payload = item.get("payload")
+                    if not isinstance(payload, dict):
+                        payload = {}
+                    short_job_id = job_id[:12]
+                    status = str(item.get("status") or "").strip() or "-"
+                    requested_by = str(item.get("requested_by") or "").strip() or "-"
+                    platform = str(payload.get("platform_key") or "").strip() or "-"
+                    client = str(payload.get("client") or "").strip() or "-"
+                    created = self._format_remote_datetime(item.get("created_at"))
+                    self.server_jobs_tree.insert(
+                        "",
+                        tk.END,
+                        iid=job_id,
+                        text=short_job_id,
+                        values=(status, requested_by, platform, client, created),
+                    )
+                if selected_job and self.server_jobs_tree.exists(selected_job):
+                    self.server_jobs_tree.selection_set(selected_job)
+                    self.server_jobs_tree.see(selected_job)
+                self.server_jobs_summary_var.set(_format_jobs_summary(summary))
+                self._sync_server_job_controls()
+            except Exception as error:  # noqa: BLE001
+                errors.append(error)
+            finally:
+                completed.set()
+
+        self.root.after(0, apply)
+        completed.wait()
+        if errors:
+            raise errors[0]
+
+    def _apply_server_job_logs_in_ui_thread(self, job_id: str, logs: list[str]) -> None:
+        completed = threading.Event()
+        errors: list[Exception] = []
+
+        def apply() -> None:
+            try:
+                content = "\n".join(str(line) for line in logs)
+                if not content:
+                    content = f"Job {job_id}: sem logs retornados."
+                self.server_job_logs_text.configure(state=tk.NORMAL)
+                self.server_job_logs_text.delete("1.0", tk.END)
+                self.server_job_logs_text.insert("1.0", content)
+                self.server_job_logs_text.see(tk.END)
+                self.server_job_logs_text.configure(state=tk.DISABLED)
+            except Exception as error:  # noqa: BLE001
+                errors.append(error)
+            finally:
+                completed.set()
+
+        self.root.after(0, apply)
+        completed.wait()
+        if errors:
+            raise errors[0]
+
+    def _clear_server_jobs_in_ui(self) -> None:
+        self.server_jobs = []
+        self.server_jobs_summary_var.set("Jobs: -")
+        self.server_jobs_tree.delete(*self.server_jobs_tree.get_children())
+        self.server_job_logs_text.configure(state=tk.NORMAL)
+        self.server_job_logs_text.delete("1.0", tk.END)
+        self.server_job_logs_text.configure(state=tk.DISABLED)
+        self._sync_server_job_controls()
+
     def _apply_server_secret_files_in_ui_thread(self, files: list[object]) -> None:
         completed = threading.Event()
         errors: list[Exception] = []
@@ -4694,6 +4931,23 @@ class CFODesktopApp:
         )
         self.server_secret_editor.configure(state=tk.NORMAL if has_remote and has_loaded else tk.DISABLED)
 
+    def _selected_server_job_id(self) -> str:
+        selected = self.server_jobs_tree.selection()
+        if not selected:
+            return ""
+        return str(selected[0]).strip()
+
+    def _sync_server_job_controls(self) -> None:
+        if self.busy:
+            return
+        has_remote = self.remote_client is not None
+        has_selected = bool(self._selected_server_job_id())
+        self.btn_refresh_server_jobs.configure(state=tk.NORMAL if has_remote else tk.DISABLED)
+        self.btn_load_server_job_logs.configure(
+            state=tk.NORMAL if has_remote and has_selected else tk.DISABLED
+        )
+        self.server_job_logs_text.configure(state=tk.DISABLED)
+
     @staticmethod
     def _format_remote_datetime(value: object) -> str:
         raw = str(value or "").strip()
@@ -4796,6 +5050,7 @@ class CFODesktopApp:
                 self.server_secret_editor.configure(state=tk.NORMAL)
                 self.server_secret_editor.delete("1.0", tk.END)
                 self.server_secret_editor.configure(state=tk.DISABLED)
+                self._clear_server_jobs_in_ui()
                 self._reload_catalog_ui()
             except Exception as error:  # noqa: BLE001
                 errors.append(error)
@@ -4826,6 +5081,7 @@ class CFODesktopApp:
                 self.server_secret_editor.configure(state=tk.NORMAL)
                 self.server_secret_editor.delete("1.0", tk.END)
                 self.server_secret_editor.configure(state=tk.DISABLED)
+                self._clear_server_jobs_in_ui()
                 self.config = config
                 self.pipeline = pipeline
                 self.platform_ui_registry = build_platform_ui_registry(self.config)
@@ -4929,6 +5185,7 @@ class CFODesktopApp:
         self.server_secret_editor.configure(state=tk.NORMAL)
         self.server_secret_editor.delete("1.0", tk.END)
         self.server_secret_editor.configure(state=tk.DISABLED)
+        self._clear_server_jobs_in_ui()
         self.config = _empty_app_config()
         self.pipeline = None
         self.platform_ui_registry = build_platform_ui_registry(self.config)

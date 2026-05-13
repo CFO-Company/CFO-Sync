@@ -48,6 +48,10 @@ class JobManager:
             worker.start()
             self._workers.append(worker)
 
+    @property
+    def worker_count(self) -> int:
+        return len(self._workers)
+
     def enqueue(self, requested_by: str, payload: dict[str, object]) -> JobState:
         job = JobState(
             id=uuid.uuid4().hex,
@@ -63,6 +67,33 @@ class JobManager:
     def get(self, job_id: str) -> JobState | None:
         with self._lock:
             return self._jobs.get(job_id)
+
+    def snapshot(self) -> dict[str, object]:
+        with self._lock:
+            jobs = list(self._jobs.values())
+        with self._queue.mutex:
+            queued_job_ids = set(self._queue.queue)
+            queue_depth = len(self._queue.queue)
+
+        summary = {
+            "total": len(jobs),
+            "queued": 0,
+            "running": 0,
+            "completed": 0,
+            "failed": 0,
+            "workers": self.worker_count,
+            "queue_depth": queue_depth,
+        }
+        serialized_jobs: list[dict[str, object]] = []
+        for job in sorted(jobs, key=lambda item: item.created_at, reverse=True):
+            if job.status in summary:
+                summary[job.status] = int(summary[job.status]) + 1
+            serialized_jobs.append(_serialize_job_for_snapshot(job, queued_job_ids))
+
+        return {
+            "summary": summary,
+            "jobs": serialized_jobs,
+        }
 
     def stop(self) -> None:
         self._stopping.set()
@@ -106,4 +137,39 @@ class JobManager:
                 job.finished_at = datetime.now(timezone.utc)
             job.append_log(f"Falha: {error}")
             job.append_log(trace)
+
+
+def _serialize_job_for_snapshot(job: JobState, queued_job_ids: set[str]) -> dict[str, object]:
+    return {
+        "id": job.id,
+        "requested_by": job.requested_by,
+        "status": job.status,
+        "queue_state": "waiting" if job.id in queued_job_ids else job.status,
+        "created_at": job.created_at.isoformat(),
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+        "payload": _public_payload(job.payload),
+        "error": job.error,
+        "log_count": len(job.logs),
+    }
+
+
+def _public_payload(payload: dict[str, object]) -> dict[str, object]:
+    request_payload = payload.get("_request_payload")
+    if not isinstance(request_payload, dict):
+        request_payload = payload
+    public_keys = (
+        "action",
+        "platform_key",
+        "client",
+        "resource_names",
+        "sub_clients",
+        "start_date",
+        "end_date",
+    )
+    return {
+        key: request_payload.get(key)
+        for key in public_keys
+        if key in request_payload
+    }
 

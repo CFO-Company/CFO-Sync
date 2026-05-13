@@ -383,6 +383,51 @@ Response:
 }
 ```
 
+### GET /v1/jobs
+
+Auth: `Authorization: Bearer <token>` com `can_manage_secrets: true`
+
+Lista o estado operacional da fila em memoria do servidor: totais por status,
+quantidade de workers, profundidade da fila e jobs recentes com payload
+sanitizado.
+
+Observacao: a fila atual e em memoria; reiniciar o container limpa o historico
+visivel neste endpoint.
+
+Response:
+
+```json
+{
+  "summary": {
+    "total": 6,
+    "queued": 2,
+    "running": 1,
+    "completed": 2,
+    "failed": 1,
+    "workers": 2,
+    "queue_depth": 2
+  },
+  "jobs": [
+    {
+      "id": "f2c5...",
+      "requested_by": "analista_financeiro",
+      "status": "queued",
+      "queue_state": "waiting",
+      "created_at": "...",
+      "started_at": null,
+      "finished_at": null,
+      "payload": {
+        "action": "export",
+        "platform_key": "yampi",
+        "client": "Aurha"
+      },
+      "error": null,
+      "log_count": 1
+    }
+  ]
+}
+```
+
 ### POST /v1/clients
 
 Auth: `Authorization: Bearer <token>`
