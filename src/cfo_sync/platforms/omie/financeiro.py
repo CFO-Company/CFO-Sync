@@ -8,6 +8,19 @@ from cfo_sync.platforms.omie.api import OmieAPIError, call_omie_api
 from cfo_sync.platforms.omie.credentials import OmieCredential
 
 
+OPEN_TITLE_STATUS = "EMABERTO"
+OPEN_STATUS_MARKERS = ("ABERTO", "VENC", "ATRAS")
+CLOSED_STATUS_MARKERS = ("PAGO", "RECEB", "LIQUID", "BAIX", "CANCEL")
+SETTLEMENT_DATE_FIELDS = (
+    "data_pagamento",
+    "data_recebimento",
+    "data_baixa",
+    "data_credito",
+    "data_conciliacao",
+)
+SETTLEMENT_BLOCK_FIELDS = ("pagamento", "recebimento", "baixa")
+
+
 def fetch_financeiro(
     client: str,
     resource: ResourceConfig,
@@ -406,94 +419,95 @@ def _fetch_contas_a_pagar(
 ) -> list[RawRecord]:
     rows: list[RawRecord] = []
 
-    for status in ("EMABERTO", "PAGO"):
-        page = 1
-        total_pages = 1
-        while page <= total_pages:
-            response = call_omie_api(
-                credential=credential,
-                call="ListarContasPagar",
-                endpoint="financas/contapagar/",
-                params={
-                    "pagina": page,
-                    "registros_por_pagina": 500,
-                    "apenas_importado_api": "N",
-                    "filtrar_por_status": status,
-                },
+    page = 1
+    total_pages = 1
+    while page <= total_pages:
+        response = call_omie_api(
+            credential=credential,
+            call="ListarContasPagar",
+            endpoint="financas/contapagar/",
+            params={
+                "pagina": page,
+                "registros_por_pagina": 500,
+                "apenas_importado_api": "N",
+                "filtrar_por_status": OPEN_TITLE_STATUS,
+            },
+        )
+        if not response:
+            break
+
+        total_pages = int(response.get("total_de_paginas") or 1)
+        for cadastro in response.get("conta_pagar_cadastro") or []:
+            if not _is_open_financial_title(cadastro):
+                continue
+            data_previsao = str(cadastro.get("data_previsao") or "").strip()
+            if not _is_date_in_period(data_previsao, period_start, period_end):
+                continue
+
+            valor_documento = _to_float(cadastro.get("valor_documento"))
+            lancamento_id = str(
+                cadastro.get("codigo_lancamento_omie") or cadastro.get("codigo_lancamento_integracao") or ""
+            ).strip()
+            cliente_code = str(cadastro.get("codigo_cliente_fornecedor") or "").strip()
+            conta_corrente_codigo = str(cadastro.get("id_conta_corrente") or "").strip()
+            conta_corrente_descricao = _resolve_conta_corrente_descricao(
+                conta_corrente_codigo,
+                lookup_contas_correntes,
+                fallback_descricao=_first_non_empty(
+                    cadastro,
+                    ("cDescCC", "descricao", "descricao_conta_corrente", "nome_conta_corrente"),
+                ),
             )
-            if not response:
-                break
+            categorias = cadastro.get("categorias") or [
+                {"codigo_categoria": cadastro.get("codigo_categoria") or "", "percentual": 100}
+            ]
+            distribuicao = cadastro.get("distribuicao") or [{"cCodDep": "", "nPerDep": 100}]
 
-            total_pages = int(response.get("total_de_paginas") or 1)
-            for cadastro in response.get("conta_pagar_cadastro") or []:
-                data_previsao = str(cadastro.get("data_previsao") or "").strip()
-                if not _is_date_in_period(data_previsao, period_start, period_end):
-                    continue
+            for rateio in _build_rateios(
+                total_value=valor_documento,
+                departamentos=distribuicao,
+                categorias=categorias,
+                dep_percent_key="nPerDep",
+                cat_percent_key="percentual",
+                dep_code_key="cCodDep",
+                cat_code_key="codigo_categoria",
+            ):
+                departamento_code = rateio["dep_code"]
+                categoria_code = rateio["cat_code"]
+                valor_rateado = rateio["value"]
 
-                valor_documento = _to_float(cadastro.get("valor_documento"))
-                lancamento_id = str(
-                    cadastro.get("codigo_lancamento_omie") or cadastro.get("codigo_lancamento_integracao") or ""
-                ).strip()
-                cliente_code = str(cadastro.get("codigo_cliente_fornecedor") or "").strip()
-                conta_corrente_codigo = str(cadastro.get("id_conta_corrente") or "").strip()
-                conta_corrente_descricao = _resolve_conta_corrente_descricao(
-                    conta_corrente_codigo,
-                    lookup_contas_correntes,
-                    fallback_descricao=_first_non_empty(
-                        cadastro,
-                        ("cDescCC", "descricao", "descricao_conta_corrente", "nome_conta_corrente"),
-                    ),
-                )
-                categorias = cadastro.get("categorias") or [
-                    {"codigo_categoria": cadastro.get("codigo_categoria") or "", "percentual": 100}
-                ]
-                distribuicao = cadastro.get("distribuicao") or [{"cCodDep": "", "nPerDep": 100}]
-
-                for rateio in _build_rateios(
-                    total_value=valor_documento,
-                    departamentos=distribuicao,
-                    categorias=categorias,
-                    dep_percent_key="nPerDep",
-                    cat_percent_key="percentual",
-                    dep_code_key="cCodDep",
-                    cat_code_key="codigo_categoria",
-                ):
-                    departamento_code = rateio["dep_code"]
-                    categoria_code = rateio["cat_code"]
-                    valor_rateado = rateio["value"]
-
-                    rows.append(
-                        _build_row(
-                            origem=credential.app_name,
-                            fonte="Pago" if status == "PAGO" else "A pagar",
-                            data=data_previsao,
-                            conta_corrente=conta_corrente_descricao,
-                            valor_lancamento=valor_documento,
-                            departamento=lookup_departamentos.get(departamento_code, ""),
-                            categoria=lookup_categorias.get(categoria_code, ""),
-                            observacao=str(cadastro.get("observacao") or "").strip(),
-                            cliente=lookup_clientes.get(cliente_code, ""),
-                            natureza="P",
-                            valor_percentual=valor_rateado,
-                            valor_sinal=-valor_rateado,
-                            data_registro=str(cadastro.get("data_emissao") or "").strip(),
-                            unique_key="||".join(
-                                [
-                                    _normalize_origin(credential.app_name),
-                                    "CAP",
-                                    lancamento_id,
-                                    conta_corrente_codigo,
-                                    data_previsao,
-                                    _stringify_number(valor_documento),
-                                    cliente_code,
-                                    departamento_code,
-                                    categoria_code,
-                                    status,
-                                ]
-                            ),
-                        )
+                rows.append(
+                    _build_row(
+                        origem=credential.app_name,
+                        fonte="A pagar",
+                        data=data_previsao,
+                        conta_corrente=conta_corrente_descricao,
+                        valor_lancamento=valor_documento,
+                        departamento=lookup_departamentos.get(departamento_code, ""),
+                        categoria=lookup_categorias.get(categoria_code, ""),
+                        observacao=str(cadastro.get("observacao") or "").strip(),
+                        cliente=lookup_clientes.get(cliente_code, ""),
+                        natureza="P",
+                        valor_percentual=valor_rateado,
+                        valor_sinal=-valor_rateado,
+                        data_registro=str(cadastro.get("data_emissao") or "").strip(),
+                        unique_key="||".join(
+                            [
+                                _normalize_origin(credential.app_name),
+                                "CAP",
+                                lancamento_id,
+                                conta_corrente_codigo,
+                                data_previsao,
+                                _stringify_number(valor_documento),
+                                cliente_code,
+                                departamento_code,
+                                categoria_code,
+                                OPEN_TITLE_STATUS,
+                            ]
+                        ),
                     )
-            page += 1
+                )
+        page += 1
 
     return rows
 
@@ -509,94 +523,95 @@ def _fetch_contas_a_receber(
 ) -> list[RawRecord]:
     rows: list[RawRecord] = []
 
-    for status in ("EMABERTO", "PAGO"):
-        page = 1
-        total_pages = 1
-        while page <= total_pages:
-            response = call_omie_api(
-                credential=credential,
-                call="ListarContasReceber",
-                endpoint="financas/contareceber/",
-                params={
-                    "pagina": page,
-                    "registros_por_pagina": 200,
-                    "apenas_importado_api": "N",
-                    "filtrar_por_status": status,
-                },
+    page = 1
+    total_pages = 1
+    while page <= total_pages:
+        response = call_omie_api(
+            credential=credential,
+            call="ListarContasReceber",
+            endpoint="financas/contareceber/",
+            params={
+                "pagina": page,
+                "registros_por_pagina": 200,
+                "apenas_importado_api": "N",
+                "filtrar_por_status": OPEN_TITLE_STATUS,
+            },
+        )
+        if not response:
+            break
+
+        total_pages = int(response.get("total_de_paginas") or 1)
+        for cadastro in response.get("conta_receber_cadastro") or []:
+            if not _is_open_financial_title(cadastro):
+                continue
+            data_lancamento = str(cadastro.get("data_previsao") or "").strip()
+            if not _is_date_in_period(data_lancamento, period_start, period_end):
+                continue
+
+            valor_documento = _to_float(cadastro.get("valor_documento"))
+            lancamento_id = str(
+                cadastro.get("codigo_lancamento_omie") or cadastro.get("codigo_lancamento_integracao") or ""
+            ).strip()
+            cliente_code = str(cadastro.get("codigo_cliente_fornecedor") or "").strip()
+            conta_corrente_codigo = str(cadastro.get("id_conta_corrente") or "").strip()
+            conta_corrente_descricao = _resolve_conta_corrente_descricao(
+                conta_corrente_codigo,
+                lookup_contas_correntes,
+                fallback_descricao=_first_non_empty(
+                    cadastro,
+                    ("cDescCC", "descricao", "descricao_conta_corrente", "nome_conta_corrente"),
+                ),
             )
-            if not response:
-                break
+            categorias = cadastro.get("categorias") or [
+                {"codigo_categoria": cadastro.get("codigo_categoria") or "", "percentual": 100}
+            ]
+            distribuicao = cadastro.get("distribuicao") or [{"cCodDep": "", "nPerDep": 100}]
 
-            total_pages = int(response.get("total_de_paginas") or 1)
-            for cadastro in response.get("conta_receber_cadastro") or []:
-                data_lancamento = _resolve_conta_receber_data(cadastro, status)
-                if not _is_date_in_period(data_lancamento, period_start, period_end):
-                    continue
+            for rateio in _build_rateios(
+                total_value=valor_documento,
+                departamentos=distribuicao,
+                categorias=categorias,
+                dep_percent_key="nPerDep",
+                cat_percent_key="percentual",
+                dep_code_key="cCodDep",
+                cat_code_key="codigo_categoria",
+            ):
+                departamento_code = rateio["dep_code"]
+                categoria_code = rateio["cat_code"]
+                valor_rateado = rateio["value"]
 
-                valor_documento = _to_float(cadastro.get("valor_documento"))
-                lancamento_id = str(
-                    cadastro.get("codigo_lancamento_omie") or cadastro.get("codigo_lancamento_integracao") or ""
-                ).strip()
-                cliente_code = str(cadastro.get("codigo_cliente_fornecedor") or "").strip()
-                conta_corrente_codigo = str(cadastro.get("id_conta_corrente") or "").strip()
-                conta_corrente_descricao = _resolve_conta_corrente_descricao(
-                    conta_corrente_codigo,
-                    lookup_contas_correntes,
-                    fallback_descricao=_first_non_empty(
-                        cadastro,
-                        ("cDescCC", "descricao", "descricao_conta_corrente", "nome_conta_corrente"),
-                    ),
-                )
-                categorias = cadastro.get("categorias") or [
-                    {"codigo_categoria": cadastro.get("codigo_categoria") or "", "percentual": 100}
-                ]
-                distribuicao = cadastro.get("distribuicao") or [{"cCodDep": "", "nPerDep": 100}]
-
-                for rateio in _build_rateios(
-                    total_value=valor_documento,
-                    departamentos=distribuicao,
-                    categorias=categorias,
-                    dep_percent_key="nPerDep",
-                    cat_percent_key="percentual",
-                    dep_code_key="cCodDep",
-                    cat_code_key="codigo_categoria",
-                ):
-                    departamento_code = rateio["dep_code"]
-                    categoria_code = rateio["cat_code"]
-                    valor_rateado = rateio["value"]
-
-                    rows.append(
-                        _build_row(
-                            origem=credential.app_name,
-                            fonte="Recebido" if status == "PAGO" else "A receber",
-                            data=data_lancamento,
-                            conta_corrente=conta_corrente_descricao,
-                            valor_lancamento=valor_documento,
-                            departamento=lookup_departamentos.get(departamento_code, ""),
-                            categoria=lookup_categorias.get(categoria_code, ""),
-                            observacao=str(cadastro.get("observacao") or "").strip(),
-                            cliente=lookup_clientes.get(cliente_code, ""),
-                            natureza="R",
-                            valor_percentual=valor_rateado,
-                            valor_sinal=valor_rateado,
-                            data_registro=str(cadastro.get("data_registro") or "").strip(),
-                            unique_key="||".join(
-                                [
-                                    _normalize_origin(credential.app_name),
-                                    "CAR",
-                                    lancamento_id,
-                                    conta_corrente_codigo,
-                                    data_lancamento,
-                                    _stringify_number(valor_documento),
-                                    cliente_code,
-                                    departamento_code,
-                                    categoria_code,
-                                    status,
-                                ]
-                            ),
-                        )
+                rows.append(
+                    _build_row(
+                        origem=credential.app_name,
+                        fonte="A receber",
+                        data=data_lancamento,
+                        conta_corrente=conta_corrente_descricao,
+                        valor_lancamento=valor_documento,
+                        departamento=lookup_departamentos.get(departamento_code, ""),
+                        categoria=lookup_categorias.get(categoria_code, ""),
+                        observacao=str(cadastro.get("observacao") or "").strip(),
+                        cliente=lookup_clientes.get(cliente_code, ""),
+                        natureza="R",
+                        valor_percentual=valor_rateado,
+                        valor_sinal=valor_rateado,
+                        data_registro=str(cadastro.get("data_registro") or "").strip(),
+                        unique_key="||".join(
+                            [
+                                _normalize_origin(credential.app_name),
+                                "CAR",
+                                lancamento_id,
+                                conta_corrente_codigo,
+                                data_lancamento,
+                                _stringify_number(valor_documento),
+                                cliente_code,
+                                departamento_code,
+                                categoria_code,
+                                OPEN_TITLE_STATUS,
+                            ]
+                        ),
                     )
-            page += 1
+                )
+        page += 1
 
     return rows
 
@@ -722,14 +737,61 @@ def _normalize_period(start_date: str | None, end_date: str | None) -> tuple[dat
     return start, end
 
 
-def _resolve_conta_receber_data(cadastro: dict[str, Any], status: str) -> str:
-    if status == "PAGO":
-        recebimento = cadastro.get("recebimento")
-        if isinstance(recebimento, dict):
-            data_recebimento = str(recebimento.get("data") or "").strip()
-            if data_recebimento:
-                return data_recebimento
-    return str(cadastro.get("data_previsao") or "").strip()
+def _is_open_financial_title(cadastro: dict[str, Any]) -> bool:
+    if not isinstance(cadastro, dict):
+        return False
+
+    status = _normalize_status(
+        _first_non_empty(
+            cadastro,
+            (
+                "status_titulo",
+                "status",
+                "situacao",
+                "cStatus",
+                "cSituacao",
+            ),
+        )
+    )
+    if status:
+        if any(marker in status for marker in CLOSED_STATUS_MARKERS):
+            return False
+        if not any(marker in status for marker in OPEN_STATUS_MARKERS):
+            return False
+
+    if _has_settlement_marker(cadastro):
+        return False
+
+    return True
+
+
+def _has_settlement_marker(cadastro: dict[str, Any]) -> bool:
+    for field in SETTLEMENT_DATE_FIELDS:
+        if _has_valid_settlement_date(cadastro.get(field)):
+            return True
+
+    for field in SETTLEMENT_BLOCK_FIELDS:
+        block = cadastro.get(field)
+        if isinstance(block, dict):
+            if any(_has_valid_settlement_date(block.get(date_field)) for date_field in ("data", *SETTLEMENT_DATE_FIELDS)):
+                return True
+
+    return False
+
+
+def _has_valid_settlement_date(value: Any) -> bool:
+    return _parse_omie_date(str(value or "")) is not None
+
+
+def _normalize_status(value: str) -> str:
+    return (
+        str(value or "")
+        .strip()
+        .upper()
+        .replace(" ", "")
+        .replace("_", "")
+        .replace("-", "")
+    )
 
 
 def _format_omie_date(value: date) -> str:
