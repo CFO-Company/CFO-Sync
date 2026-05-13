@@ -1,3 +1,12 @@
+## [1.3.13] - 13-05-2026
+
+### Changed
+- Cliente remoto do desktop passa a enviar `User-Agent` proprio (`CFO-Sync-Desktop/<versao>`) nas chamadas HTTP.
+- Versao do aplicativo atualizada para 1.3.13.
+
+### Fixed
+- Conexao do desktop com staging podia ser bloqueada pelo Cloudflare com erro 1010/403 por usar o User-Agent padrao do `urllib`.
+
 ## [1.3.12] - 13-05-2026
 
 ### Added

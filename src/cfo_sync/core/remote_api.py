@@ -8,6 +8,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urljoin
 from urllib.request import Request, urlopen
 
+from cfo_sync.version import __version__
+
 
 class RemoteApiError(RuntimeError):
     pass
@@ -131,6 +133,7 @@ class RemoteCFOClient:
         headers = {
             "Accept": "application/json",
             "Authorization": f"Bearer {self.token}",
+            "User-Agent": f"CFO-Sync-Desktop/{__version__}",
         }
         if payload is not None:
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
