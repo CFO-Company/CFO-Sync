@@ -47,6 +47,8 @@ class CfoSyncServerService:
         return {
             "status": "ok",
             "version": __version__,
+            "build_branch": str(os.getenv("CFO_SYNC_BUILD_BRANCH") or "").strip(),
+            "build_commit": str(os.getenv("CFO_SYNC_BUILD_COMMIT") or "").strip(),
             "server_time": datetime.now(timezone.utc).isoformat(),
         }
 

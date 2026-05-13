@@ -100,6 +100,8 @@ Copy-Item ".\settings\docker-compose.server.yml" ".\settings\docker-compose.stag
   "CFO_SYNC_HOST_ROOT=C:/srv-staging"
   "CFO_SYNC_SERVER_PORT=8089"
   "CFO_SYNC_WORKERS=2"
+  "CFO_SYNC_BUILD_BRANCH=$(git rev-parse --abbrev-ref HEAD)"
+  "CFO_SYNC_BUILD_COMMIT=$(git rev-parse HEAD)"
 ) | Set-Content -LiteralPath ".\settings\docker-staging.env" -Encoding ascii
 
 New-Item -ItemType Directory -Force -Path "C:\srv-staging\secrets","C:\srv-staging\cfo_sync","C:\srv-staging\data"
@@ -140,6 +142,15 @@ git fetch origin
 git switch NOME_DA_BRANCH
 git pull
 
+Copy-Item ".\settings\docker-compose.server.yml" ".\settings\docker-compose.staging.yml" -Force
+(Get-Content ".\settings\docker-compose.staging.yml" -Raw).Replace("container_name: cfo-sync-server", "container_name: cfo-sync-server-staging") | Set-Content ".\settings\docker-compose.staging.yml" -Encoding utf8
+
+$stagingEnv = Get-Content ".\settings\docker-staging.env"
+$stagingEnv = $stagingEnv | Where-Object { $_ -notmatch "^CFO_SYNC_BUILD_(BRANCH|COMMIT)=" }
+$stagingEnv += "CFO_SYNC_BUILD_BRANCH=$(git rev-parse --abbrev-ref HEAD)"
+$stagingEnv += "CFO_SYNC_BUILD_COMMIT=$(git rev-parse HEAD)"
+$stagingEnv | Set-Content ".\settings\docker-staging.env" -Encoding ascii
+
 docker compose --env-file ".\settings\docker-staging.env" -f ".\settings\docker-compose.staging.yml" -p cfo-sync-staging build cfo-sync-server
 docker compose --env-file ".\settings\docker-staging.env" -f ".\settings\docker-compose.staging.yml" -p cfo-sync-staging up -d --force-recreate cfo-sync-server
 
@@ -163,6 +174,12 @@ cd C:\CFO-Sync
 git fetch origin
 git switch main
 git pull
+
+$prodEnv = Get-Content ".\settings\docker-server.env"
+$prodEnv = $prodEnv | Where-Object { $_ -notmatch "^CFO_SYNC_BUILD_(BRANCH|COMMIT)=" }
+$prodEnv += "CFO_SYNC_BUILD_BRANCH=$(git rev-parse --abbrev-ref HEAD)"
+$prodEnv += "CFO_SYNC_BUILD_COMMIT=$(git rev-parse HEAD)"
+$prodEnv | Set-Content ".\settings\docker-server.env" -Encoding ascii
 
 docker compose --env-file ".\settings\docker-server.env" -f ".\settings\docker-compose.server.yml" build cfo-sync-server
 docker compose --env-file ".\settings\docker-server.env" -f ".\settings\docker-compose.server.yml" up -d --force-recreate cfo-sync-server

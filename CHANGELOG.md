@@ -1,3 +1,16 @@
+## [1.3.12] - 13-05-2026
+
+### Added
+- Visao administrativa de jobs do servidor na aba `Server`, com resumo da fila, workers, lista de jobs e logs.
+- Healthcheck do servidor passa a expor branch e commit do build para diferenciar `production` e `staging`.
+
+### Changed
+- Versao do aplicativo e do servidor atualizada para 1.3.12.
+- Relatorio financeiro Omie passa a usar contas a pagar/receber apenas para titulos em aberto.
+
+### Fixed
+- Duplicidade no financeiro Omie causada por titulos pagos/recebidos aparecerem simultaneamente em contas correntes e contas a pagar/receber.
+
 ## [1.3.11] - 12-05-2026
 
 ### Added

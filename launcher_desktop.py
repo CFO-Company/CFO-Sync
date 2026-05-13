@@ -370,13 +370,30 @@ def _server_health_version(health: dict[str, object] | None) -> str:
     return str(health.get("version") or "").strip()
 
 
-def _format_server_status(base_url: str, environment: str, server_version: str) -> str:
+def _format_server_status(
+    base_url: str,
+    environment: str,
+    server_version: str,
+    health: dict[str, object] | None = None,
+) -> str:
     clean_environment = str(environment or DEFAULT_SERVER_VERSION).strip() or DEFAULT_SERVER_VERSION
     clean_url = str(base_url or "").strip()
     clean_version = str(server_version or "").strip()
+    build_branch = ""
+    build_commit = ""
+    if isinstance(health, dict):
+        build_branch = str(health.get("build_branch") or "").strip()
+        build_commit = str(health.get("build_commit") or "").strip()[:7]
+
+    details = []
     if clean_version:
-        return f"Conectado: {clean_environment} | servidor v{clean_version} | {clean_url}"
-    return f"Conectado: {clean_environment} | {clean_url}"
+        details.append(f"servidor v{clean_version}")
+    if build_branch:
+        details.append(f"branch {build_branch}")
+    if build_commit:
+        details.append(f"commit {build_commit}")
+    details.append(clean_url)
+    return f"Conectado: {clean_environment} | " + " | ".join(details)
 
 
 def _format_jobs_summary(summary: dict[str, object]) -> str:
@@ -446,6 +463,7 @@ class CFODesktopApp:
         self.server_status_var = tk.StringVar(value="Servidor desconectado")
         self.connected_server_environment = DEFAULT_SERVER_VERSION
         self.connected_server_version = ""
+        self.connected_server_health: dict[str, object] = {}
         self.server_secret_path_var = tk.StringVar(value="")
         self.server_secret_modified_var = tk.StringVar(value="-")
         self.server_secret_size_var = tk.StringVar(value="-")
@@ -538,7 +556,8 @@ class CFODesktopApp:
         self.remote_client = client
         self.remote_catalog_sub_clients = sub_clients_map
         self.connected_server_environment = (server_environment or DEFAULT_SERVER_VERSION).strip() or DEFAULT_SERVER_VERSION
-        self.connected_server_version = _server_health_version(health)
+        self.connected_server_health = health if isinstance(health, dict) else {}
+        self.connected_server_version = _server_health_version(self.connected_server_health)
         self.config = config
         self.pipeline = None
         self.platform_ui_registry = build_platform_ui_registry(self.config)
@@ -552,6 +571,7 @@ class CFODesktopApp:
                 client.base_url,
                 self.connected_server_environment,
                 self.connected_server_version,
+                self.connected_server_health,
             )
         )
 
@@ -5072,6 +5092,7 @@ class CFODesktopApp:
                 self.remote_catalog_sub_clients = {}
                 self.connected_server_environment = DEFAULT_SERVER_VERSION
                 self.connected_server_version = ""
+                self.connected_server_health = {}
                 self.server_secret_files = []
                 self.server_secret_loaded_path = ""
                 self.server_secret_path_var.set("")
@@ -5176,6 +5197,7 @@ class CFODesktopApp:
         self.remote_catalog_sub_clients = {}
         self.connected_server_environment = DEFAULT_SERVER_VERSION
         self.connected_server_version = ""
+        self.connected_server_health = {}
         self.server_secret_files = []
         self.server_secret_loaded_path = ""
         self.server_secret_path_var.set("")

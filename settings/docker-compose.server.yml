@@ -3,6 +3,9 @@ services:
     build:
       context: ..
       dockerfile: settings/docker/server.Dockerfile
+      args:
+        CFO_SYNC_BUILD_BRANCH: ${CFO_SYNC_BUILD_BRANCH:-}
+        CFO_SYNC_BUILD_COMMIT: ${CFO_SYNC_BUILD_COMMIT:-}
     container_name: cfo-sync-server
     restart: unless-stopped
     environment:

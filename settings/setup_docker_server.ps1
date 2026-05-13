@@ -42,6 +42,22 @@ function Normalize-RuntimeVersions {
     return $normalized
 }
 
+function Get-GitValue {
+    param([string[]]$GitArgs)
+
+    try {
+        $value = (& git -C $repoRoot @GitArgs 2>$null)
+        if ($LASTEXITCODE -eq 0) {
+            return (($value -join "`n").Trim())
+        }
+    }
+    catch {
+        return ""
+    }
+
+    return ""
+}
+
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     throw "Docker nao encontrado no PATH. Instale/abra o Docker Desktop e tente novamente."
 }
@@ -60,6 +76,8 @@ $script:EnvFile = Join-Path $PSScriptRoot "docker-server.env"
 $TunnelToken = $TunnelToken.Trim()
 $TunnelHostname = $TunnelHostname.Trim()
 $RuntimeVersions = Normalize-RuntimeVersions -Value $RuntimeVersions
+$buildBranch = Get-GitValue @("rev-parse", "--abbrev-ref", "HEAD")
+$buildCommit = Get-GitValue @("rev-parse", "HEAD")
 
 if (Test-Path $script:EnvFile) {
     $existingEnv = @{}
@@ -122,6 +140,8 @@ $envLines = @(
     "CFO_SYNC_HOST_ROOT=$dockerHostRoot"
     "CFO_SYNC_SERVER_PORT=$Port"
     "CFO_SYNC_WORKERS=$Workers"
+    "CFO_SYNC_BUILD_BRANCH=$buildBranch"
+    "CFO_SYNC_BUILD_COMMIT=$buildCommit"
 )
 if ($TunnelToken) {
     $envLines += "CLOUDFLARE_TUNNEL_TOKEN=$TunnelToken"
