@@ -501,8 +501,9 @@ class GoogleSheetsExporter:
 
         if platform_key == "tiktok_ads" and resource_name in {"insights", "campanhas", "contas"}:
             return PeriodReplacePolicy(
-                period_fields=("data", "date", "mes_ano"),
+                period_fields=("mes_ano",),
                 scope_fields=("conta", "account_name"),
+                period_granularity="month",
             )
 
         if platform_key == "tiktok_shop" and resource_name in {"orders", "pedidos"}:
@@ -895,21 +896,21 @@ class GoogleSheetsExporter:
     @staticmethod
     def _resolve_tiktok_ads_key_columns(resource: ResourceConfig) -> tuple[str, ...]:
         official_keys: list[str] = []
-        for api_field in ("data", "conta", "ad_id"):
+        for api_field in ("mes_ano", "conta"):
             column_name = str(resource.field_map.get(api_field) or "").strip()
             if not column_name or column_name in official_keys:
                 continue
             official_keys.append(column_name)
-        if len(official_keys) == 3:
+        if len(official_keys) == 2:
             return tuple(official_keys)
 
         fallback_keys: list[str] = []
-        for api_field in ("mes_ano", "conta"):
+        for api_field in ("data", "conta", "ad_id"):
             column_name = str(resource.field_map.get(api_field) or "").strip()
             if not column_name or column_name in fallback_keys:
                 continue
             fallback_keys.append(column_name)
-        if len(fallback_keys) >= 2:
+        if len(fallback_keys) == 3:
             return tuple(fallback_keys)
 
         return ()

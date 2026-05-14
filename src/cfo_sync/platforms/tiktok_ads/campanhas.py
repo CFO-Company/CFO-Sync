@@ -22,7 +22,7 @@ def fetch_campanhas(
 ) -> list[RawRecord]:
     since, until = normalize_period(start_date=start_date, end_date=end_date)
 
-    rows: list[RawRecord] = []
+    rows_by_month: dict[tuple[str, str, str], RawRecord] = {}
     for account in accounts:
         access_token = TikTokAdsCredentialsStore.access_token_for_account(account=account, auth=auth)
         raw_rows = fetch_paginated_rows(
@@ -37,95 +37,48 @@ def fetch_campanhas(
             normalized_raw = _flatten_tiktok_report_row(raw)
             date_value = _resolve_iso_date(normalized_raw, fallback_date=since)
             mes_ano = _to_month_year(date_value)
-            row = _build_detail_row(
-                raw=normalized_raw,
-                mes_ano=mes_ano,
-                data=date_value,
-                empresa=client,
-                account=account,
-                resource_name=resource.name,
+            key = (client, account.account_name, mes_ano)
+            row = rows_by_month.setdefault(
+                key,
+                {
+                    "mes_ano": mes_ano,
+                    "empresa": client,
+                    "business_center_name": account.business_center_name,
+                    "conta": account.account_name,
+                    "tiktok_ads": 0.0,
+                    "centro_custo": account.cost_center,
+                    "resource": resource.name,
+                },
             )
-            rows.append(row)
+            row["tiktok_ads"] = _round_currency(
+                _to_float(row.get("tiktok_ads")) + _extract_spend(normalized_raw)
+            )
 
+    rows = list(rows_by_month.values())
     rows.sort(
         key=lambda item: (
-            str(item.get("data") or ""),
+            str(item.get("mes_ano") or ""),
             str(item.get("empresa") or ""),
             str(item.get("conta") or ""),
-            str(item.get("campaign_name") or ""),
-            str(item.get("adgroup_name") or ""),
-            str(item.get("ad_name") or ""),
-            str(item.get("ad_id") or ""),
         )
     )
     return rows
 
 
-def _build_detail_row(
-    raw: dict[str, Any],
-    mes_ano: str,
-    data: str,
-    empresa: str,
-    account: TikTokAdsAccount,
-    resource_name: str,
-) -> RawRecord:
-    metrics = _extract_metrics(raw)
-    return {
-        "mes_ano": mes_ano,
-        "data": _format_date_ddmmyyyy(data),
-        "empresa": empresa,
-        "business_center_name": account.business_center_name,
-        "conta": account.account_name,
-        "campaign_name": _first_text(raw, ("campaign_name", "metrics.campaign_name")),
-        "adgroup_name": _first_text(raw, ("adgroup_name", "metrics.adgroup_name")),
-        "ad_name": _first_text(raw, ("ad_name", "metrics.ad_name")),
-        "ad_id": _first_text(raw, ("ad_id", "dimensions.ad_id")),
-        "impressoes": int(_first_float(raw, ("impressions", "metrics.impressions"))),
-        "cliques": int(_first_float(raw, ("clicks", "metrics.clicks"))),
-        "ctr": _round_rate(metrics["ctr"]),
-        "cpc": _round_currency(metrics["cpc"]),
-        "cpm": _round_currency(metrics["cpm"]),
-        "conversoes": _round_rate(metrics["conversoes"]),
-        "custo_por_conversao": _round_currency(metrics["custo_por_conversao"]),
-        "receita": _round_currency(metrics["receita"]),
-        "tiktok_ads": _round_currency(metrics["tiktok_ads"]),
-        "centro_custo": account.cost_center,
-        "tipo_ra": _classify_tipo_ra(
-            ad_name=_first_text(raw, ("ad_name", "metrics.ad_name")),
-            campaign_name=_first_text(raw, ("campaign_name", "metrics.campaign_name")),
+def _extract_spend(raw: dict[str, Any]) -> float:
+    return _first_float(
+        raw,
+        (
+            "tiktok_ads",
+            "spend",
+            "stat_cost",
+            "cost",
+            "amount_spent",
+            "metrics.spend",
+            "metrics.stat_cost",
+            "metrics.cost",
         ),
-        "resource": resource_name,
-    }
-
-
-def _extract_metrics(raw: dict[str, Any]) -> dict[str, float]:
-    return {
-        "tiktok_ads": _first_float(
-            raw,
-            (
-                "tiktok_ads",
-                "spend",
-                "stat_cost",
-                "cost",
-                "amount_spent",
-                "metrics.spend",
-                "metrics.stat_cost",
-                "metrics.cost",
-            ),
-        ),
-        "ctr": _first_float(raw, ("ctr", "metrics.ctr")),
-        "cpc": _first_float(raw, ("cpc", "metrics.cpc")),
-        "cpm": _first_float(raw, ("cpm", "metrics.cpm")),
-        "conversoes": _first_float(raw, ("conversion", "conversions", "metrics.conversion")),
-        "custo_por_conversao": _first_float(
-            raw,
-            ("cost_per_conversion", "metrics.cost_per_conversion"),
-        ),
-        "receita": _first_float(
-            raw,
-            ("total_purchase_value", "purchase_value", "metrics.total_purchase_value"),
-        ),
-    }
+    )
 
 
 def _flatten_tiktok_report_row(raw: dict[str, Any]) -> dict[str, Any]:
@@ -178,17 +131,6 @@ def _to_month_year(iso_date: str) -> str:
     except ValueError:
         return text
     return parsed.strftime("%m/%Y")
-
-
-def _format_date_ddmmyyyy(iso_date: str) -> str:
-    text = str(iso_date or "").strip()
-    if not text:
-        return ""
-    try:
-        parsed = datetime.strptime(text, "%Y-%m-%d")
-    except ValueError:
-        return text
-    return parsed.strftime("%d/%m/%Y")
 
 
 def _first_text(raw: dict[str, Any], keys: tuple[str, ...]) -> str:
@@ -259,20 +201,3 @@ def _to_iso_date(raw_date: str) -> str:
 
 def _round_currency(value: float) -> float:
     return round(float(value), 2)
-
-
-def _round_rate(value: float) -> float:
-    return round(float(value), 4)
-
-
-def _classify_tipo_ra(ad_name: str, campaign_name: str) -> str:
-    text = f"{ad_name} {campaign_name}".upper()
-    if "[R]" in text:
-        return "Retenção"
-    if "[A]" in text:
-        return "Aquisição"
-    if any(token in text for token in ("RMKT", "RTG", "RET", "CART", "VISIT")):
-        return "Retenção"
-    if any(token in text for token in ("CONV", "ACQ", "LEAD", "PROSP")):
-        return "Aquisição"
-    return "Não Classificado"
