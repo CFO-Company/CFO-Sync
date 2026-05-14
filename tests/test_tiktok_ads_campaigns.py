@@ -87,6 +87,7 @@ class TikTokAdsCampaignsTest(unittest.TestCase):
         self.assertEqual(rows[0]["conta"], "Conta TikTok")
         self.assertEqual(rows[0]["tiktok_ads"], 30.55)
         self.assertEqual(rows[0]["centro_custo"], "MKT")
+        self.assertEqual(rows[0]["tipo_ra"], "Não Classificado")
         self.assertNotIn("data", rows[0])
         self.assertNotIn("ad_id", rows[0])
         self.assertEqual(rows[1]["mes_ano"], "06/2026")

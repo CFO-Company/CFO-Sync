@@ -47,6 +47,7 @@ def fetch_campanhas(
                     "conta": account.account_name,
                     "tiktok_ads": 0.0,
                     "centro_custo": account.cost_center,
+                    "tipo_ra": "Não Classificado",
                     "resource": resource.name,
                 },
             )
