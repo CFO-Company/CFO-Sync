@@ -1,3 +1,17 @@
+## [1.3.14] - 14-05-2026
+
+### Added
+- TikTok Ads passa a coletar relatorio diario por anuncio, com campanha, grupo de anuncio, anuncio, impressoes, cliques, CTR, CPC, CPM, conversoes, custo por conversao, receita e gasto.
+- Teste unitario para garantir o payload e o parser detalhado do TikTok Ads.
+
+### Changed
+- Exportacao TikTok Ads passa a usar chave detalhada por `Data`, `Conta` e `Ad ID`.
+- Servidor Docker passa a aceitar variaveis `TIKTOK_ADS_REPORT_*` para sobrescrever parametros do relatorio sem alterar codigo.
+- Versao do aplicativo atualizada para 1.3.14.
+
+### Removed
+- Scripts auxiliares antigos de relatorio Gauss e instaladores de tarefas agendadas removidos da pasta `tools`.
+
 ## [1.3.13] - 13-05-2026
 
 ### Changed

@@ -106,13 +106,15 @@ class GoogleSheetsExporter:
             )
 
         if platform_key == "tiktok_ads" and resource.name in {"campanhas", "insights", "contas"}:
-            return self._upsert_by_keys(
-                spreadsheet_id=spreadsheet_id,
-                tab_name=tab_name,
-                rows=mapped_rows,
-                ordered_columns=ordered_columns,
-                key_columns=("Mês/Ano", "Conta"),
-            )
+            key_columns = self._resolve_tiktok_ads_key_columns(resource)
+            if key_columns:
+                return self._upsert_by_keys(
+                    spreadsheet_id=spreadsheet_id,
+                    tab_name=tab_name,
+                    rows=mapped_rows,
+                    ordered_columns=ordered_columns,
+                    key_columns=key_columns,
+                )
 
         if platform_key == "google_ads" and resource.name in {"contas", "insights", "campanhas"}:
             key_columns = self._resolve_google_ads_key_columns(resource)
@@ -499,9 +501,8 @@ class GoogleSheetsExporter:
 
         if platform_key == "tiktok_ads" and resource_name in {"insights", "campanhas", "contas"}:
             return PeriodReplacePolicy(
-                period_fields=("mes_ano", "data", "date"),
+                period_fields=("data", "date", "mes_ano"),
                 scope_fields=("conta", "account_name"),
-                period_granularity="month",
             )
 
         if platform_key == "tiktok_shop" and resource_name in {"orders", "pedidos"}:
@@ -882,6 +883,28 @@ class GoogleSheetsExporter:
         # Compatibilidade com layouts antigos configurados com chaves em ingles.
         fallback_keys: list[str] = []
         for api_field in ("date", "customer_id", "campaign_id"):
+            column_name = str(resource.field_map.get(api_field) or "").strip()
+            if not column_name or column_name in fallback_keys:
+                continue
+            fallback_keys.append(column_name)
+        if len(fallback_keys) >= 2:
+            return tuple(fallback_keys)
+
+        return ()
+
+    @staticmethod
+    def _resolve_tiktok_ads_key_columns(resource: ResourceConfig) -> tuple[str, ...]:
+        official_keys: list[str] = []
+        for api_field in ("data", "conta", "ad_id"):
+            column_name = str(resource.field_map.get(api_field) or "").strip()
+            if not column_name or column_name in official_keys:
+                continue
+            official_keys.append(column_name)
+        if len(official_keys) == 3:
+            return tuple(official_keys)
+
+        fallback_keys: list[str] = []
+        for api_field in ("mes_ano", "conta"):
             column_name = str(resource.field_map.get(api_field) or "").strip()
             if not column_name or column_name in fallback_keys:
                 continue

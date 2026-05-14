@@ -22,7 +22,7 @@ def fetch_campanhas(
 ) -> list[RawRecord]:
     since, until = normalize_period(start_date=start_date, end_date=end_date)
 
-    aggregated_rows: dict[tuple[str, str, str], RawRecord] = {}
+    rows: list[RawRecord] = []
     for account in accounts:
         access_token = TikTokAdsCredentialsStore.access_token_for_account(account=account, auth=auth)
         raw_rows = fetch_paginated_rows(
@@ -37,133 +37,69 @@ def fetch_campanhas(
             normalized_raw = _flatten_tiktok_report_row(raw)
             date_value = _resolve_iso_date(normalized_raw, fallback_date=since)
             mes_ano = _to_month_year(date_value)
-            row_key = (mes_ano, client, account.account_name)
+            row = _build_detail_row(
+                raw=normalized_raw,
+                mes_ano=mes_ano,
+                data=date_value,
+                empresa=client,
+                account=account,
+                resource_name=resource.name,
+            )
+            rows.append(row)
 
-            row = aggregated_rows.get(row_key)
-            if row is None:
-                row = _build_base_row(
-                    mes_ano=mes_ano,
-                    empresa=client,
-                    conta=account.account_name,
-                    resource_name=resource.name,
-                )
-                aggregated_rows[row_key] = row
-
-            metrics = _extract_metrics(normalized_raw)
-            row["vendas_total"] = _round_currency(_to_float(row.get("vendas_total")) + metrics["vendas_total"])
-            row["reembolso_total"] = _round_currency(
-                _to_float(row.get("reembolso_total")) + metrics["reembolso_total"]
-            )
-            row["descontos_total"] = _round_currency(
-                _to_float(row.get("descontos_total")) + metrics["descontos_total"]
-            )
-            row["cancelamento_total"] = _round_currency(
-                _to_float(row.get("cancelamento_total")) + metrics["cancelamento_total"]
-            )
-            row["tarifas_total"] = _round_currency(
-                _to_float(row.get("tarifas_total")) + metrics["tarifas_total"]
-            )
-            row["frete"] = _round_currency(_to_float(row.get("frete")) + metrics["frete"])
-            row["tiktok_ads"] = _round_currency(_to_float(row.get("tiktok_ads")) + metrics["tiktok_ads"])
-
-    rows = list(aggregated_rows.values())
     rows.sort(
         key=lambda item: (
-            str(item.get("mes_ano") or ""),
+            str(item.get("data") or ""),
             str(item.get("empresa") or ""),
             str(item.get("conta") or ""),
+            str(item.get("campaign_name") or ""),
+            str(item.get("adgroup_name") or ""),
+            str(item.get("ad_name") or ""),
+            str(item.get("ad_id") or ""),
         )
     )
     return rows
 
 
-def _build_base_row(
+def _build_detail_row(
+    raw: dict[str, Any],
     mes_ano: str,
+    data: str,
     empresa: str,
-    conta: str,
+    account: TikTokAdsAccount,
     resource_name: str,
 ) -> RawRecord:
+    metrics = _extract_metrics(raw)
     return {
         "mes_ano": mes_ano,
+        "data": _format_date_ddmmyyyy(data),
         "empresa": empresa,
-        "conta": conta,
-        "vendas_total": 0.0,
-        "reembolso_total": 0.0,
-        "descontos_total": 0.0,
-        "cancelamento_total": 0.0,
-        "tarifas_total": 0.0,
-        "frete": 0.0,
-        "tiktok_ads": 0.0,
+        "business_center_name": account.business_center_name,
+        "conta": account.account_name,
+        "campaign_name": _first_text(raw, ("campaign_name", "metrics.campaign_name")),
+        "adgroup_name": _first_text(raw, ("adgroup_name", "metrics.adgroup_name")),
+        "ad_name": _first_text(raw, ("ad_name", "metrics.ad_name")),
+        "ad_id": _first_text(raw, ("ad_id", "dimensions.ad_id")),
+        "impressoes": int(_first_float(raw, ("impressions", "metrics.impressions"))),
+        "cliques": int(_first_float(raw, ("clicks", "metrics.clicks"))),
+        "ctr": _round_rate(metrics["ctr"]),
+        "cpc": _round_currency(metrics["cpc"]),
+        "cpm": _round_currency(metrics["cpm"]),
+        "conversoes": _round_rate(metrics["conversoes"]),
+        "custo_por_conversao": _round_currency(metrics["custo_por_conversao"]),
+        "receita": _round_currency(metrics["receita"]),
+        "tiktok_ads": _round_currency(metrics["tiktok_ads"]),
+        "centro_custo": account.cost_center,
+        "tipo_ra": _classify_tipo_ra(
+            ad_name=_first_text(raw, ("ad_name", "metrics.ad_name")),
+            campaign_name=_first_text(raw, ("campaign_name", "metrics.campaign_name")),
+        ),
         "resource": resource_name,
     }
 
 
 def _extract_metrics(raw: dict[str, Any]) -> dict[str, float]:
     return {
-        "vendas_total": _first_float(
-            raw,
-            (
-                "vendas_total",
-                "sales_total",
-                "total_sales",
-                "gmv",
-                "metrics.gmv",
-                "metrics.total_sales",
-            ),
-        ),
-        "reembolso_total": _first_float(
-            raw,
-            (
-                "reembolso_total",
-                "refund_total",
-                "refund_amount",
-                "total_refund",
-                "metrics.refund",
-                "metrics.refund_amount",
-            ),
-        ),
-        "descontos_total": _first_float(
-            raw,
-            (
-                "descontos_total",
-                "discount_total",
-                "discount_amount",
-                "coupon_discount",
-                "metrics.discount",
-            ),
-        ),
-        "cancelamento_total": _first_float(
-            raw,
-            (
-                "cancelamento_total",
-                "cancellation_total",
-                "cancel_total",
-                "cancel_amount",
-                "metrics.cancellation",
-            ),
-        ),
-        "tarifas_total": _first_float(
-            raw,
-            (
-                "tarifas_total",
-                "fees_total",
-                "fee_total",
-                "service_fee",
-                "commission_fee",
-                "platform_fee",
-                "metrics.fees",
-            ),
-        ),
-        "frete": _first_float(
-            raw,
-            (
-                "frete",
-                "shipping_fee",
-                "freight",
-                "logistics_fee",
-                "metrics.shipping_fee",
-            ),
-        ),
         "tiktok_ads": _first_float(
             raw,
             (
@@ -176,6 +112,18 @@ def _extract_metrics(raw: dict[str, Any]) -> dict[str, float]:
                 "metrics.stat_cost",
                 "metrics.cost",
             ),
+        ),
+        "ctr": _first_float(raw, ("ctr", "metrics.ctr")),
+        "cpc": _first_float(raw, ("cpc", "metrics.cpc")),
+        "cpm": _first_float(raw, ("cpm", "metrics.cpm")),
+        "conversoes": _first_float(raw, ("conversion", "conversions", "metrics.conversion")),
+        "custo_por_conversao": _first_float(
+            raw,
+            ("cost_per_conversion", "metrics.cost_per_conversion"),
+        ),
+        "receita": _first_float(
+            raw,
+            ("total_purchase_value", "purchase_value", "metrics.total_purchase_value"),
         ),
     }
 
@@ -230,6 +178,17 @@ def _to_month_year(iso_date: str) -> str:
     except ValueError:
         return text
     return parsed.strftime("%m/%Y")
+
+
+def _format_date_ddmmyyyy(iso_date: str) -> str:
+    text = str(iso_date or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = datetime.strptime(text, "%Y-%m-%d")
+    except ValueError:
+        return text
+    return parsed.strftime("%d/%m/%Y")
 
 
 def _first_text(raw: dict[str, Any], keys: tuple[str, ...]) -> str:
@@ -300,3 +259,20 @@ def _to_iso_date(raw_date: str) -> str:
 
 def _round_currency(value: float) -> float:
     return round(float(value), 2)
+
+
+def _round_rate(value: float) -> float:
+    return round(float(value), 4)
+
+
+def _classify_tipo_ra(ad_name: str, campaign_name: str) -> str:
+    text = f"{ad_name} {campaign_name}".upper()
+    if "[R]" in text:
+        return "Retenção"
+    if "[A]" in text:
+        return "Aquisição"
+    if any(token in text for token in ("RMKT", "RTG", "RET", "CART", "VISIT")):
+        return "Retenção"
+    if any(token in text for token in ("CONV", "ACQ", "LEAD", "PROSP")):
+        return "Aquisição"
+    return "Não Classificado"

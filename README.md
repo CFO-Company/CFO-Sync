@@ -210,34 +210,6 @@ Parar stack:
 docker compose --env-file .\settings\docker-server.env -f .\settings\docker-compose.server.yml down
 ```
 
-### Relatorio servidor Gauss
-
-O Gauss gera um relatorio sanitizado para analisar o ambiente do servidor sem
-expor secrets.
-
-No servidor, rode a partir do repositorio:
-
-```powershell
-.\tools\gauss_server_report.ps1 -HostRoot "C:\srv" -ServerUrl "http://127.0.0.1:8088"
-```
-
-Para manter o relatorio sempre atualizado, registre uma tarefa agendada:
-
-```powershell
-.\tools\install_gauss_report_task.ps1 -HostRoot "C:\srv" -ServerUrl "http://127.0.0.1:8088" -IntervalMinutes 15
-```
-
-Saidas geradas em `C:\srv\cfo_sync\agent_reports`:
-
-- `gauss-server-report.latest.md`
-- `gauss-server-report.latest.json`
-- copias historicas com timestamp
-
-O relatorio inclui healthcheck, versao, branch/commit, containers Docker,
-presenca de arquivos esperados em `C:\srv\secrets`, resumo de
-`server_access.json`, variaveis Docker sanitizadas e logs recentes sem tokens.
-Ele nao imprime conteudo de arquivos sensiveis.
-
 ### Automacao diaria de categorias Omie
 
 O script abaixo atualiza a aba de categorias da Omie uma vez ao dia. Ele busca
@@ -255,12 +227,6 @@ Destino padrao:
 
 - Planilha: informe por `--spreadsheet-id` ou `CFO_SYNC_OMIE_CATEGORIAS_SPREADSHEET_ID`
 - GID: informe por `--gid` ou `CFO_SYNC_OMIE_CATEGORIAS_GID`
-
-Para registrar a tarefa diaria no Windows:
-
-```powershell
-.\tools\install_omie_categorias_daily_task.ps1 -At "06:00" -SpreadsheetId "<ID_DA_PLANILHA>" -Gid "<GID_DA_ABA>"
-```
 
 Se precisar usar outro arquivo de credenciais Omie:
 

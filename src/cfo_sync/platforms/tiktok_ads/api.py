@@ -527,16 +527,29 @@ def _build_request_payload(
                 ).strip()
                 or "BASIC",
                 "data_level": str(
-                    os.getenv("TIKTOK_ADS_REPORT_DATA_LEVEL") or "AUCTION_ADVERTISER"
+                    os.getenv("TIKTOK_ADS_REPORT_DATA_LEVEL") or "AUCTION_AD"
                 ).strip()
-                or "AUCTION_ADVERTISER",
+                or "AUCTION_AD",
                 "dimensions": _csv_env_list(
                     env_name="TIKTOK_ADS_REPORT_DIMENSIONS",
-                    default=["stat_time_day"],
+                    default=["ad_id", "stat_time_day"],
                 ),
                 "metrics": _csv_env_list(
                     env_name="TIKTOK_ADS_REPORT_METRICS",
-                    default=["spend"],
+                    default=[
+                        "spend",
+                        "impressions",
+                        "clicks",
+                        "cpc",
+                        "cpm",
+                        "ctr",
+                        "conversion",
+                        "cost_per_conversion",
+                        "total_purchase_value",
+                        "ad_name",
+                        "campaign_name",
+                        "adgroup_name",
+                    ],
                 ),
             }
         )
