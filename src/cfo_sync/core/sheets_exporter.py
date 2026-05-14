@@ -19,6 +19,7 @@ class PeriodReplacePolicy:
     period_fields: tuple[str, ...]
     scope_fields: tuple[str, ...] = ()
     period_granularity: str = "date"
+    compact_header: bool = False
 
 
 class GoogleSheetsExporter:
@@ -71,6 +72,7 @@ class GoogleSheetsExporter:
                 start_date=start_date,
                 end_date=end_date,
                 scope_filters=scope_filters,
+                compact_header=replace_policy.compact_header,
             )
             if replaced_by_period:
                 return len(mapped_rows)
@@ -148,6 +150,7 @@ class GoogleSheetsExporter:
         start_date: str | None,
         end_date: str | None,
         scope_filters: dict[str, set[str]],
+        compact_header: bool,
     ) -> bool:
         if not period_column or not start_date or not end_date:
             return False
@@ -240,6 +243,15 @@ class GoogleSheetsExporter:
                 row_numbers=rows_to_delete,
             )
 
+        if compact_header:
+            header = list(ordered_columns)
+            self._replace_header_row(
+                spreadsheet_id=spreadsheet_id,
+                tab_name=tab_name,
+                header=header,
+                clear_columns=max(len(existing_values[0]) if existing_values else 0, len(header)),
+            )
+
         if rows:
             appends = [
                 self._to_sheet_row_for_header(
@@ -256,6 +268,33 @@ class GoogleSheetsExporter:
             )
 
         return True
+
+    def _replace_header_row(
+        self,
+        spreadsheet_id: str,
+        tab_name: str,
+        header: list[str],
+        clear_columns: int,
+    ) -> None:
+        service = self._get_service()
+        clear_end_column = self._column_letter(max(clear_columns, len(header), 1))
+        service.spreadsheets().values().clear(
+            spreadsheetId=spreadsheet_id,
+            range=f"{tab_name}!A1:{clear_end_column}1",
+            body={},
+        ).execute()
+        self._ensure_grid_capacity(
+            spreadsheet_id=spreadsheet_id,
+            tab_name=tab_name,
+            required_rows=1,
+            required_columns=len(header),
+        )
+        service.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=f"{tab_name}!A1",
+            valueInputOption="USER_ENTERED",
+            body={"values": [header]},
+        ).execute()
 
     def _delete_rows_by_numbers(
         self,
@@ -504,6 +543,7 @@ class GoogleSheetsExporter:
                 period_fields=("mes_ano",),
                 scope_fields=("conta", "account_name"),
                 period_granularity="month",
+                compact_header=True,
             )
 
         if platform_key == "tiktok_shop" and resource_name in {"orders", "pedidos"}:
@@ -828,6 +868,15 @@ class GoogleSheetsExporter:
         if index is None or index >= len(values):
             return ""
         return str(values[index]).strip()
+
+    @staticmethod
+    def _column_letter(index: int) -> str:
+        value = max(1, int(index))
+        letters = ""
+        while value:
+            value, remainder = divmod(value - 1, 26)
+            letters = chr(65 + remainder) + letters
+        return letters
 
     @classmethod
     def _resolve_header_column(cls, header: list[str], column_name: str) -> str | None:
