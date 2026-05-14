@@ -1,3 +1,9 @@
+## [1.3.16] - 14-05-2026
+
+### Changed
+- TikTok Ads volta a exportar gasto consolidado por mes/conta, sem campos detalhados de campanha, anuncio ou metricas auxiliares.
+- Versao do aplicativo atualizada para 1.3.16.
+
 ## [1.3.14] - 14-05-2026
 
 ### Added
