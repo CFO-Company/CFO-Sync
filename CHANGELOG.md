@@ -1,3 +1,15 @@
+## [1.3.18] - 18-05-2026
+
+### Added
+- Integracao Pagar.me para `pedidos` e `financeiro`, com flatten do payload bruto para analise.
+- Credenciais locais do Pagar.me por empresa/conta no fluxo `Unfair` / `Le Moritz`.
+- Testes de regressao para a integracao Pagar.me e para o policy de exportacao do Google Sheets.
+
+### Changed
+- Versao do aplicativo atualizada para 1.3.18.
+- `mm/aaaa` passou a ser reconhecido como periodo valido na limpeza de planilhas.
+- Pagar.me passou a ser tratado como recurso com substituicao por periodo nos exports de `pedidos` e `financeiro`.
+
 ## [1.3.17] - 18-05-2026
 
 ### Added
