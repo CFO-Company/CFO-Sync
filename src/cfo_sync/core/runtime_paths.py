@@ -85,6 +85,10 @@ def default_mercado_livre_credentials_path() -> Path:
     return secrets_dir() / "mercado_livre_credentials.json"
 
 
+def default_pagarme_credentials_path() -> Path:
+    return secrets_dir() / "pagarme_credentials.json"
+
+
 def update_config_path() -> Path:
     return settings_dir() / "update_config.json"
 
