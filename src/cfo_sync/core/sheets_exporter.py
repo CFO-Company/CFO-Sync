@@ -466,6 +466,16 @@ class GoogleSheetsExporter:
         if not text:
             return None
 
+        month_year_match = re.fullmatch(r"(\d{1,2})/(\d{4})", text)
+        if month_year_match:
+            month = int(month_year_match.group(1))
+            year = int(month_year_match.group(2))
+            if 1 <= month <= 12:
+                try:
+                    return date(year, month, 1)
+                except ValueError:
+                    return None
+
         br_date_match = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", text)
         if br_date_match:
             day = int(br_date_match.group(1))
@@ -564,6 +574,12 @@ class GoogleSheetsExporter:
             return PeriodReplacePolicy(
                 period_fields=("data", "date"),
                 scope_fields=("conta", "account_name", "shop_name"),
+            )
+
+        if platform_key == "pagarme" and resource_name in {"pedidos", "financeiro"}:
+            return PeriodReplacePolicy(
+                period_fields=("data", "created_at", "paid_at", "due_at"),
+                scope_fields=("alias", "conta", "account_name"),
             )
 
         return None

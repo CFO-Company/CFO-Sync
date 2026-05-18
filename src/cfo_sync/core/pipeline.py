@@ -26,6 +26,7 @@ class SyncPipeline:
         tiktok_shop_credentials_path = config.credentials_dir / config.tiktok_shop.credentials_file
         bling_credentials_path = config.credentials_dir / config.bling.credentials_file
         bling_oauth_app_path = config.credentials_dir / config.bling.oauth_app_file
+        pagarme_credentials_path = config.credentials_dir / "pagarme_credentials.json"
         resolved_omie_2026_credentials_path = omie_credentials_path or (
             config.credentials_dir / "omie_credentials.json"
         )
@@ -40,6 +41,7 @@ class SyncPipeline:
             tiktok_shop_credentials_path=tiktok_shop_credentials_path,
             bling_credentials_path=bling_credentials_path,
             bling_oauth_app_path=bling_oauth_app_path,
+            pagarme_credentials_path=pagarme_credentials_path,
             omie_2026_credentials_path=resolved_omie_2026_credentials_path,
             omie_2025_credentials_path=resolved_omie_2025_credentials_path,
             omie_cfo_credentials_path=resolved_omie_cfo_credentials_path,

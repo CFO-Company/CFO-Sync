@@ -25,6 +25,27 @@ class GoogleSheetsExporterScopeFiltersTest(unittest.TestCase):
 
         self.assertEqual(filters, {"Origem": {"biodermo"}})
 
+    def test_extract_date_accepts_month_year_format(self) -> None:
+        parsed = GoogleSheetsExporter._extract_date("05/2026")
+
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed.isoformat(), "2026-05-01")
+
+    def test_pagarme_has_period_replace_policy(self) -> None:
+        resource = ResourceConfig(
+            name="financeiro",
+            endpoint="/charges",
+            spreadsheet_url="",
+            spreadsheet_id="",
+            field_map={"data": "Data"},
+            client_tabs={},
+        )
+
+        policy = GoogleSheetsExporter._resolve_period_replace_policy("pagarme", resource)
+
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy.period_fields[0], "data")
+
 
 if __name__ == "__main__":
     unittest.main()
