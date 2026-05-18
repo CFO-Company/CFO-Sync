@@ -333,7 +333,6 @@ GENERATOR_SCHEMAS: dict[str, list[dict[str, object]]] = {
             "required": False,
             "help": "Nome da loja que aparecera na selecao. Se vazio, usa o nome retornado pelo TikTok Shop.",
         }
-    ],
     ]
 }
 
