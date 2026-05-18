@@ -46,6 +46,10 @@ class GoogleSheetsExporter:
             )
 
         spreadsheet_id = target_tab.spreadsheet_id or resource.spreadsheet_id
+        if not spreadsheet_id:
+            raise ValueError(
+                f"Recurso '{platform_key}/{resource.name}' nao possui planilha configurada para exportação."
+            )
         tab_name = self._resolve_tab_name(spreadsheet_id, target_tab)
         mapped_rows = [self._map_to_sheet_columns(resource, row) for row in rows]
         ordered_columns = list(resource.field_map.values())

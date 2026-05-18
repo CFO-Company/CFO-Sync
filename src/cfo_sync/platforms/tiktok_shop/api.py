@@ -421,8 +421,8 @@ def _build_period_filters(path: str, start_date: str, end_date: str) -> dict[str
     lower_path = path.casefold()
     if "order" in lower_path:
         return {
-            "create_time_from": _date_to_timestamp(start_date, end_of_day=False),
-            "create_time_to": _date_to_timestamp(end_date, end_of_day=True),
+            "create_time_ge": _date_to_timestamp(start_date, end_of_day=False),
+            "create_time_lt": _date_to_timestamp(end_date, end_of_day=True) + 1,
         }
     return {}
 

@@ -36,15 +36,17 @@ def load_app_config(config_path: Path) -> AppConfig:
     for platform_data in data["platforms"]:
         resources: list[ResourceConfig] = []
         for item in platform_data["resources"]:
-            spreadsheet_url = item["spreadsheet_url"]
-            spreadsheet_id = item.get("spreadsheet_id") or _extract_spreadsheet_id(spreadsheet_url)
+            spreadsheet_url = str(item.get("spreadsheet_url") or "").strip()
+            spreadsheet_id = str(item.get("spreadsheet_id") or "").strip()
+            if not spreadsheet_id and spreadsheet_url:
+                spreadsheet_id = _extract_spreadsheet_id(spreadsheet_url)
             client_tabs = {
                 client_name: SheetTabTarget(
                     tab_name=tab_data.get("tab_name", ""),
                     gid=str(tab_data["gid"]),
                     spreadsheet_id=tab_data.get("spreadsheet_id"),
                 )
-                for client_name, tab_data in item["client_tabs"].items()
+                for client_name, tab_data in (item.get("client_tabs") or {}).items()
             }
 
             resources.append(

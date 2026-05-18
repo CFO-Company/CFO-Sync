@@ -25,6 +25,7 @@ class TikTokShopAccount:
     shop_cipher: str = ""
     shop_id: str = ""
     access_token: str = ""
+    refresh_token: str = ""
 
 
 class TikTokShopCredentialsStore:
@@ -75,6 +76,7 @@ class TikTokShopCredentialsStore:
                 shop_cipher=str(item.get("shop_cipher") or "").strip(),
                 shop_id=str(item.get("shop_id") or "").strip(),
                 access_token=str(item.get("access_token") or "").strip(),
+                refresh_token=str(item.get("refresh_token") or "").strip(),
             )
             for item in accounts_payload
             if isinstance(item, dict)
@@ -149,6 +151,7 @@ class TikTokShopCredentialsStore:
         shop_cipher: str = "",
         shop_id: str = "",
         access_token: str = "",
+        refresh_token: str = "",
     ) -> "TikTokShopCredentialsStore":
         normalized_company = str(company_name or "").strip()
         normalized_account = str(account_name or "").strip()
@@ -168,6 +171,7 @@ class TikTokShopCredentialsStore:
                         shop_cipher=str(shop_cipher or account.shop_cipher).strip(),
                         shop_id=str(shop_id or account.shop_id).strip(),
                         access_token=str(access_token or account.access_token).strip(),
+                        refresh_token=str(refresh_token or account.refresh_token).strip(),
                     )
                 )
                 replaced = True
@@ -182,6 +186,7 @@ class TikTokShopCredentialsStore:
                     shop_cipher=str(shop_cipher or "").strip(),
                     shop_id=str(shop_id or "").strip(),
                     access_token=str(access_token or "").strip(),
+                    refresh_token=str(refresh_token or "").strip(),
                 )
             )
 
@@ -219,6 +224,7 @@ class TikTokShopCredentialsStore:
                     "shop_cipher": account.shop_cipher,
                     "shop_id": account.shop_id,
                     "access_token": account.access_token,
+                    "refresh_token": account.refresh_token,
                 }
                 for account in self._accounts
             ],

@@ -20,7 +20,10 @@ class ClientRegistrationManager:
             payload.get("client_name") or payload.get("company_name"),
             field_name="client_name",
         )
-        gid = _parse_gid(payload.get("gid"), field_name="gid")
+        if platform_key == "tiktok_shop":
+            gid = _parse_optional_gid(payload.get("gid"))
+        else:
+            gid = _parse_gid(payload.get("gid"), field_name="gid")
         credentials = _required_dict(payload.get("credentials"), field_name="credentials")
         resource_gids = _optional_resource_gids(payload.get("resource_gids"))
 
@@ -519,6 +522,7 @@ def _append_tiktok_shop_credentials(
             "shop_cipher": shop_cipher,
             "shop_id": shop_id,
             "access_token": _optional_text(credentials.get("access_token")),
+            "refresh_token": _optional_text(credentials.get("refresh_token")),
         }
     )
     payload["accounts"] = accounts
@@ -925,6 +929,10 @@ def _required_dict(value: object, *, field_name: str) -> dict[str, Any]:
 def _parse_gid(value: object, *, field_name: str) -> str:
     gid = _required_text(value, field_name=field_name)
     return _digits_only(gid, field_name=field_name)
+
+
+def _parse_optional_gid(value: object) -> str:
+    return _digits_only_optional(str(value or ""))
 
 
 def _optional_resource_gids(value: object) -> dict[str, str]:

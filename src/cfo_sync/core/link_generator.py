@@ -19,11 +19,16 @@ from cfo_sync.platforms.bling.oauth import (
     exchange_bling_code_for_tokens,
     load_bling_app_credentials,
 )
+from cfo_sync.platforms.tiktok_shop.api import (
+    exchange_auth_code_for_access_token as exchange_tiktok_shop_auth_code_for_access_token,
+)
+from cfo_sync.platforms.tiktok_shop.credentials import TikTokShopCredentialsStore
 
 
 MERCADO_LIVRE_AUTH_URL = "https://auth.mercadolivre.com.br/authorization"
 MERCADO_LIVRE_TOKEN_URL = "https://api.mercadolibre.com/oauth/token"
 BLING_AUTH_URL = "https://www.bling.com.br/Api/v3/oauth/authorize"
+TIKTOK_SHOP_AUTH_URL = "https://auth.tiktok-shops.com/oauth/authorize"
 STATE_TTL_MINUTES = 20
 TOKEN_RETRY_BACKOFF_SECONDS = (1.0, 3.0, 8.0)
 
@@ -45,6 +50,14 @@ class PendingBlingState:
 
 
 @dataclass(frozen=True)
+class PendingTikTokShopState:
+    state: str
+    expires_at: datetime
+    redirect_uri: str
+    registration_payload: dict[str, object]
+
+
+@dataclass(frozen=True)
 class MercadoLivreAppCredentials:
     client_id: str
     client_secret: str
@@ -56,6 +69,7 @@ class GeneratorLinkManager:
         self._state_lock = RLock()
         self._pending_states: dict[str, PendingMercadoLivreState] = {}
         self._pending_bling_states: dict[str, PendingBlingState] = {}
+        self._pending_tiktok_shop_states: dict[str, PendingTikTokShopState] = {}
 
     def create_link(
         self,
@@ -68,9 +82,11 @@ class GeneratorLinkManager:
             return self._create_mercado_livre_link(payload, external_base_url=external_base_url)
         if platform_key == "bling":
             return self._create_bling_link(payload, external_base_url=external_base_url)
+        if platform_key == "tiktok_shop":
+            return self._create_tiktok_shop_link(payload, external_base_url=external_base_url)
         raise ValueError(
             f"Gerador ainda nao suportado para plataforma '{platform_key}'. "
-            "No momento use Mercado Livre ou Bling."
+            "No momento use Mercado Livre, Bling ou TikTok Shop."
         )
 
     def _create_mercado_livre_link(
@@ -128,6 +144,75 @@ class GeneratorLinkManager:
 
         authorization_url = _build_mercado_livre_authorization_url(
             client_id=app_credentials.client_id,
+            redirect_uri=redirect_uri,
+            state=state,
+        )
+        return {
+            "platform_key": platform_key,
+            "registration_mode": registration_mode,
+            "client_name": client_name,
+            "authorization_url": authorization_url,
+            "expires_at": expires_at.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        }
+
+    def _create_tiktok_shop_link(
+        self,
+        payload: dict[str, object],
+        *,
+        external_base_url: str,
+    ) -> dict[str, object]:
+        platform_key = "tiktok_shop"
+        registration_mode = _registration_mode(payload.get("registration_mode"))
+        requested_client_name = _required_text(payload.get("client_name"), field_name="client_name")
+        raw_credentials = payload.get("credentials")
+        credentials_payload = raw_credentials if isinstance(raw_credentials, dict) else {}
+
+        app_config = load_app_config(self.app_config_path)
+        client_name = self._resolve_client_name(
+            app_config=app_config,
+            platform_key=platform_key,
+            registration_mode=registration_mode,
+            requested_client_name=requested_client_name,
+        )
+
+        credentials_path = app_config.credentials_dir / app_config.tiktok_shop.credentials_file
+        store = TikTokShopCredentialsStore.from_file(credentials_path)
+        app_key = _required_text(store.auth.app_key, field_name="auth.app_key")
+        app_secret = _required_text(store.auth.app_secret, field_name="auth.app_secret")
+        redirect_uri = _build_tiktok_shop_callback_uri(external_base_url)
+        state = secrets.token_urlsafe(32)
+        expires_at = datetime.now(UTC) + timedelta(minutes=STATE_TTL_MINUTES)
+        account_alias = _optional_text(
+            credentials_payload.get("account_alias")
+            or credentials_payload.get("account_name")
+            or credentials_payload.get("alias")
+        )
+
+        registration_payload: dict[str, object] = {
+            "registration_mode": registration_mode,
+            "platform_key": platform_key,
+            "client_name": client_name,
+            "gid": "",
+            "credentials": {
+                "app_key": app_key,
+                "app_secret": app_secret,
+                "redirect_uri": redirect_uri,
+                "account_alias": account_alias,
+            },
+        }
+
+        pending = PendingTikTokShopState(
+            state=state,
+            expires_at=expires_at,
+            redirect_uri=redirect_uri,
+            registration_payload=registration_payload,
+        )
+        with self._state_lock:
+            self._cleanup_expired_states_locked()
+            self._pending_tiktok_shop_states[state] = pending
+
+        authorization_url = _build_tiktok_shop_authorization_url(
+            app_key=app_key,
             redirect_uri=redirect_uri,
             state=state,
         )
@@ -349,6 +434,59 @@ class GeneratorLinkManager:
         registration_payload["credentials"] = merged_credentials
         return registration_payload
 
+    def consume_tiktok_shop_callback(self, *, code: str, state: str) -> dict[str, object]:
+        cleaned_code = _required_text(code, field_name="code")
+        cleaned_state = _required_text(state, field_name="state")
+
+        with self._state_lock:
+            self._cleanup_expired_states_locked()
+            pending = self._pending_tiktok_shop_states.pop(cleaned_state, None)
+        if pending is None:
+            raise ValueError(
+                "State TikTok Shop invalido ou expirado. Gere um novo link de autorização e tente novamente."
+            )
+        if pending.expires_at <= datetime.now(UTC):
+            raise ValueError("State TikTok Shop expirado. Gere um novo link de autorização.")
+
+        registration_payload = dict(pending.registration_payload)
+        credentials = registration_payload.get("credentials")
+        if not isinstance(credentials, dict):
+            raise ValueError("Payload interno do gerador TikTok Shop invalido: credentials ausente.")
+
+        token_bundle = exchange_tiktok_shop_auth_code_for_access_token(
+            app_key=_required_text(credentials.get("app_key"), field_name="credentials.app_key"),
+            app_secret=_required_text(credentials.get("app_secret"), field_name="credentials.app_secret"),
+            auth_code=cleaned_code,
+            redirect_uri=pending.redirect_uri,
+        )
+        seller_name = _optional_text(token_bundle.get("seller_name"))
+        account_alias = _optional_text(credentials.get("account_alias")) or seller_name
+        if not account_alias:
+            account_alias = _required_text(
+                registration_payload.get("client_name"),
+                field_name="registration_payload.client_name",
+            )
+
+        merged_credentials = dict(credentials)
+        merged_credentials.update(
+            {
+                "account_name": account_alias,
+                "access_token": _required_text(
+                    token_bundle.get("access_token"),
+                    field_name="token_bundle.access_token",
+                ),
+                "refresh_token": _optional_text(token_bundle.get("refresh_token")),
+                "shop_cipher": _required_text(
+                    token_bundle.get("shop_cipher"),
+                    field_name="token_bundle.shop_cipher",
+                ),
+                "shop_id": _optional_text(token_bundle.get("shop_id")),
+                "seller_name": seller_name,
+            }
+        )
+        registration_payload["credentials"] = merged_credentials
+        return registration_payload
+
     def _resolve_mercado_livre_app_credentials(self, *, credentials_dir: Path) -> MercadoLivreAppCredentials:
         global_path = credentials_dir / "mercado_livre_oauth_app.json"
         if global_path.exists():
@@ -427,6 +565,13 @@ class GeneratorLinkManager:
         ]
         for state in expired_bling:
             self._pending_bling_states.pop(state, None)
+        expired_tiktok_shop = [
+            state
+            for state, item in self._pending_tiktok_shop_states.items()
+            if item.expires_at <= now
+        ]
+        for state in expired_tiktok_shop:
+            self._pending_tiktok_shop_states.pop(state, None)
 
 
 def _build_mercado_livre_callback_uri(external_base_url: str) -> str:
@@ -437,6 +582,11 @@ def _build_mercado_livre_callback_uri(external_base_url: str) -> str:
 def _build_bling_callback_uri(external_base_url: str) -> str:
     base = _required_text(external_base_url, field_name="external_base_url").rstrip("/")
     return f"{base}{BLING_CALLBACK_PATH}"
+
+
+def _build_tiktok_shop_callback_uri(external_base_url: str) -> str:
+    base = _required_text(external_base_url, field_name="external_base_url").rstrip("/")
+    return f"{base}/v1/oauth/tiktok/callback"
 
 
 def _build_mercado_livre_authorization_url(
@@ -465,6 +615,18 @@ def _build_bling_authorization_url(*, client_id: str, state: str) -> str:
         }
     )
     return f"{BLING_AUTH_URL}?{query}"
+
+
+def _build_tiktok_shop_authorization_url(*, app_key: str, redirect_uri: str, state: str) -> str:
+    query = urlencode(
+        {
+            "app_key": app_key,
+            "response_type": "code",
+            "state": state,
+            "redirect_uri": redirect_uri,
+        }
+    )
+    return f"{TIKTOK_SHOP_AUTH_URL}?{query}"
 
 
 def _exchange_mercado_livre_code_for_tokens(

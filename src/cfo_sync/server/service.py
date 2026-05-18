@@ -584,6 +584,35 @@ class CfoSyncServerService:
         if not auth_code:
             raise ValueError("auth_code nao informado no callback TikTok Shop.")
 
+        if str(state or "").strip():
+            registration_payload = self.generator_manager.consume_tiktok_shop_callback(
+                code=auth_code,
+                state=state,
+            )
+            with self._state_lock:
+                result = self.registration_manager.register_client(registration_payload)
+                self._reload_state_locked()
+
+            credentials = registration_payload.get("credentials")
+            credentials_payload = credentials if isinstance(credentials, dict) else {}
+            return {
+                "platform_key": "tiktok_shop",
+                "state": state,
+                "client_name": result.get("client_name"),
+                "registration_mode": result.get("registration_mode"),
+                "updated_resources": result.get("updated_resources"),
+                "redirect_uri": credentials_payload.get("redirect_uri"),
+                "seller_name": credentials_payload.get("seller_name"),
+                "shop_id": credentials_payload.get("shop_id"),
+                "shop_cipher": credentials_payload.get("shop_cipher"),
+                "access_token_masked": _mask_secret(
+                    str(credentials_payload.get("access_token") or "")
+                ),
+                "refresh_token_masked": _mask_secret(
+                    str(credentials_payload.get("refresh_token") or "")
+                ),
+            }
+
         with self._state_lock:
             config = self.config
             credentials_path = config.credentials_dir / config.tiktok_shop.credentials_file
@@ -627,6 +656,7 @@ class CfoSyncServerService:
                     shop_cipher=shop_cipher,
                     shop_id=shop_id,
                     access_token=access_token,
+                    refresh_token=refresh_token,
                 )
             updated_store.save()
             self._reload_state_locked()

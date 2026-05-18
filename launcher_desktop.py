@@ -325,6 +325,15 @@ GENERATOR_SCHEMAS: dict[str, list[dict[str, object]]] = {
             "required": False,
             "help": "Nome da conta Bling que aparecera na selecao. Se vazio, usa o nome do cliente.",
         }
+    ],
+    "tiktok_shop": [
+        {
+            "name": "account_alias",
+            "label": "Nome da loja (opcional)",
+            "required": False,
+            "help": "Nome da loja que aparecera na selecao. Se vazio, usa o nome retornado pelo TikTok Shop.",
+        }
+    ],
     ]
 }
 
@@ -3545,7 +3554,14 @@ class CFODesktopApp:
             has_client = bool(self.generator_client_name_var.get().strip())
         else:
             has_client = bool(self.generator_client_var.get().strip())
-        has_gid = bool("".join(ch for ch in self.generator_gid_var.get().strip() if ch.isdigit()))
+        platform_key = self.generator_platform_map.get(
+            self.generator_platform_var.get().strip(),
+            "",
+        )
+        has_gid = (
+            platform_key == "tiktok_shop"
+            or bool("".join(ch for ch in self.generator_gid_var.get().strip() if ch.isdigit()))
+        )
         can_generate = (
             has_platform
             and has_client
@@ -4278,7 +4294,7 @@ class CFODesktopApp:
                 raise ValueError("Selecione um cliente existente para gerar o link.")
 
         gid = "".join(ch for ch in self.generator_gid_var.get().strip() if ch.isdigit())
-        if not gid:
+        if not gid and platform_key != "tiktok_shop":
             raise ValueError("Informe o GID da aba do cliente (sheetId) com numeros validos.")
 
         credentials: dict[str, object] = {}

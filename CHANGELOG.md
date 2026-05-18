@@ -1,3 +1,14 @@
+## [1.3.17] - 18-05-2026
+
+### Added
+- TikTok Shop passa a suportar recursos de coleta sem planilha configurada.
+- Gerador de links passa a criar autorizacao OAuth para TikTok Shop e cadastrar lojas autorizadas automaticamente.
+- Testes para configuracao de coleta do TikTok Shop sem planilha e filtros de pedidos.
+
+### Changed
+- Filtro de pedidos TikTok Shop passa a usar `create_time_ge` e `create_time_lt`.
+- Versao do aplicativo atualizada para 1.3.17.
+
 ## [1.3.16] - 14-05-2026
 
 ### Changed
