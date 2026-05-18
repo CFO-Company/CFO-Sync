@@ -64,6 +64,7 @@ class GoogleSheetsExporter:
                 resource=resource,
                 policy=replace_policy,
                 sub_clients=sub_clients,
+                rows=mapped_rows,
             )
             replaced_by_period = self._replace_period_rows(
                 spreadsheet_id=spreadsheet_id,
@@ -365,18 +366,27 @@ class GoogleSheetsExporter:
         resource: ResourceConfig,
         policy: PeriodReplacePolicy,
         sub_clients: list[str] | None,
+        rows: list[dict[str, object]] | None = None,
     ) -> dict[str, set[str]]:
         if not sub_clients or not policy.scope_fields:
             return {}
 
+        scope_column = cls._resolve_policy_column(resource, policy.scope_fields)
+        if not scope_column:
+            return {}
+
+        row_values = {
+            str(row.get(scope_column, "")).strip().casefold()
+            for row in rows or []
+            if str(row.get(scope_column, "")).strip()
+        }
+        if row_values:
+            return {scope_column: row_values}
+
         selected_values = {
             str(value).strip().casefold() for value in sub_clients if str(value).strip()
         }
-        if not selected_values:
-            return {}
-
-        scope_column = cls._resolve_policy_column(resource, policy.scope_fields)
-        if scope_column:
+        if selected_values:
             return {scope_column: selected_values}
 
         return {}
