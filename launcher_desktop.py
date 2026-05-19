@@ -5380,7 +5380,8 @@ class CFODesktopApp:
 
         job_id = remote.create_job(payload)
         self.log(f"Job remoto criado: {job_id}")
-        result = remote.wait_for_job(job_id, timeout_seconds=1800.0)
+        wait_timeout = 7200.0 if platform_key == "mercado_livre" else 1800.0
+        result = remote.wait_for_job(job_id, timeout_seconds=wait_timeout)
         if result.status != "completed":
             logs = remote.get_job_logs(job_id)
             if logs:

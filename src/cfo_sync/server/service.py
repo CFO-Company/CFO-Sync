@@ -215,6 +215,32 @@ class CfoSyncServerService:
                 log=log,
             )
 
+        if self._should_segment_mercado_livre_aliases(
+            action=action,
+            platform_key=platform_key,
+            client=client,
+            start_date=start_date,
+            end_date=end_date,
+            resource_names=resource_names,
+            sub_clients=sub_clients,
+        ):
+            aliases = self._resolve_mercado_livre_job_aliases(
+                platform_key=platform_key,
+                client=client,
+                sub_clients=sub_clients,
+            )
+            return self._run_segmented_mercado_livre_job(
+                pipeline=pipeline,
+                action=action,
+                platform_key=platform_key,
+                client=client,
+                start_date=start_date,
+                end_date=end_date,
+                resource_names=resource_names,
+                aliases=aliases,
+                log=log,
+            )
+
         if action == "collect":
             count = pipeline.collect(
                 platform_key=platform_key,
@@ -248,6 +274,126 @@ class CfoSyncServerService:
             }
 
         raise ValueError("Acao invalida. Use 'collect', 'export' ou 'sync_mercado_livre_categories'.")
+
+    def _should_segment_mercado_livre_aliases(
+        self,
+        *,
+        action: str,
+        platform_key: str,
+        client: str,
+        start_date: str | None,
+        end_date: str | None,
+        resource_names: list[str] | None,
+        sub_clients: list[str] | None,
+    ) -> bool:
+        if action not in {"collect", "export"}:
+            return False
+        if platform_key != "mercado_livre":
+            return False
+        if resource_names and "vendas" not in resource_names:
+            return False
+        aliases = self._resolve_mercado_livre_job_aliases(
+            platform_key=platform_key,
+            client=client,
+            sub_clients=sub_clients,
+        )
+        period_segments = _month_period_segments(start_date=start_date, end_date=end_date)
+        return len(aliases) > 1 or len(period_segments) > 1
+
+    def _resolve_mercado_livre_job_aliases(
+        self,
+        *,
+        platform_key: str,
+        client: str,
+        sub_clients: list[str] | None,
+    ) -> list[str]:
+        if sub_clients:
+            return list(dict.fromkeys(name for name in sub_clients if name.strip()))
+
+        behavior = self.platform_ui_registry.get(platform_key)
+        if behavior is None or not client:
+            return []
+        return list(dict.fromkeys(name for name in behavior.sub_client_names(client) if name.strip()))
+
+    def _run_segmented_mercado_livre_job(
+        self,
+        *,
+        pipeline: SyncPipeline,
+        action: str,
+        platform_key: str,
+        client: str,
+        start_date: str | None,
+        end_date: str | None,
+        resource_names: list[str] | None,
+        aliases: list[str],
+        log: Callable[[str], None],
+    ) -> dict[str, object]:
+        total_count = 0
+        failures: list[str] = []
+        period_segments = _month_period_segments(start_date=start_date, end_date=end_date)
+        if not aliases:
+            aliases = [""]
+        total_segments = len(aliases) * len(period_segments)
+        log(
+            "Job Mercado Livre dividido em partes: "
+            f"contas={len([alias for alias in aliases if alias]) or 1} "
+            f"periodos={len(period_segments)} total={total_segments}."
+        )
+
+        segment_index = 0
+        for alias in aliases:
+            for segment_start, segment_end in period_segments:
+                segment_index += 1
+                period_label = f"{segment_start or ''}..{segment_end or ''}".strip(".")
+                alias_label = alias or "<todas>"
+                log(
+                    f"Parte {segment_index}/{total_segments} iniciada: "
+                    f"conta={alias_label} periodo={period_label}"
+                )
+                try:
+                    selected_aliases = [alias] if alias else None
+                    if action == "collect":
+                        count = pipeline.collect(
+                            platform_key=platform_key,
+                            client=client,
+                            start_date=segment_start,
+                            end_date=segment_end,
+                            resource_names=resource_names,
+                            sub_clients=selected_aliases,
+                        )
+                    else:
+                        count = pipeline.export_to_sheets(
+                            platform_key=platform_key,
+                            client=client,
+                            start_date=segment_start,
+                            end_date=segment_end,
+                            resource_names=resource_names,
+                            sub_clients=selected_aliases,
+                        )
+                except Exception as error:  # noqa: BLE001
+                    failures.append(f"{alias_label} {period_label}: {error}")
+                    log(
+                        f"Parte {segment_index}/{total_segments} falhou: "
+                        f"conta={alias_label} periodo={period_label} erro={error}"
+                    )
+                    continue
+
+                total_count += count
+                log(
+                    f"Parte {segment_index}/{total_segments} concluida: "
+                    f"conta={alias_label} periodo={period_label} registros={count}"
+                )
+
+        if failures:
+            raise ValueError("Falha em uma ou mais partes Mercado Livre: " + " | ".join(failures))
+
+        return {
+            "action": action,
+            "platform_key": platform_key,
+            "client": client,
+            "count": total_count,
+            "segments": total_segments,
+        }
 
     def _should_segment_omie_aliases(
         self,
