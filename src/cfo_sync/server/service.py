@@ -515,6 +515,36 @@ class CfoSyncServerService:
             "refresh_token_masked": _mask_secret(str(credentials_payload.get("refresh_token") or "")),
         }
 
+    def complete_mercado_pago_oauth_callback(
+        self,
+        *,
+        code: str,
+        state: str,
+    ) -> dict[str, object]:
+        registration_payload = self.generator_manager.consume_mercado_pago_callback(
+            code=code,
+            state=state,
+        )
+        with self._state_lock:
+            result = self.registration_manager.register_client(registration_payload)
+            self._reload_state_locked()
+
+        credentials = registration_payload.get("credentials")
+        credentials_payload = credentials if isinstance(credentials, dict) else {}
+        return {
+            "platform_key": "mercado_pago",
+            "state": state,
+            "client_name": result.get("client_name"),
+            "registration_mode": result.get("registration_mode"),
+            "updated_resources": result.get("updated_resources"),
+            "account_name": credentials_payload.get("account_name"),
+            "account_id": credentials_payload.get("account_id"),
+            "token_type": credentials_payload.get("token_type"),
+            "access_token_expires_at": credentials_payload.get("access_token_expires_at"),
+            "access_token_masked": _mask_secret(str(credentials_payload.get("access_token") or "")),
+            "refresh_token_masked": _mask_secret(str(credentials_payload.get("refresh_token") or "")),
+        }
+
     def complete_tiktok_ads_oauth_callback(
         self,
         *,

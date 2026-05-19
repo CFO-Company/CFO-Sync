@@ -326,6 +326,14 @@ GENERATOR_SCHEMAS: dict[str, list[dict[str, object]]] = {
             "help": "Nome da conta Bling que aparecera na selecao. Se vazio, usa o nome do cliente.",
         }
     ],
+    "mercado_pago": [
+        {
+            "name": "account_alias",
+            "label": "Alias/Filial",
+            "required": False,
+            "help": "Nome da conta Mercado Pago que aparecera na selecao. Se vazio, usa o nome do cliente.",
+        }
+    ],
     "tiktok_shop": [
         {
             "name": "account_alias",
@@ -1192,6 +1200,8 @@ class CFODesktopApp:
             return "Yampi Estoque"
         if key == "mercado_livre":
             return "Mercado Livre"
+        if key == "mercado_pago":
+            return "Mercado Pago"
         if key == "tiktok_ads":
             return "TikTok ADS"
         if key == "tiktok_shop":

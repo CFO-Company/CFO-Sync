@@ -100,6 +100,8 @@ class ClientRegistrationManager:
             return credentials_dir / app_config.tiktok_shop.credentials_file
         if platform_key == "mercado_livre":
             return credentials_dir / "mercado_livre_credentials.json"
+        if platform_key == "mercado_pago":
+            return credentials_dir / "mercado_pago_credentials.json"
         if platform_key == "bling":
             return credentials_dir / "bling_credentials.json"
         if platform_key in {"omie", "omie_2026"}:
@@ -133,6 +135,8 @@ class ClientRegistrationManager:
                 _create_tiktok_shop_client_credentials(payload, client_name, credentials)
             elif platform_key == "mercado_livre":
                 _create_mercado_livre_client_credentials(payload, client_name, credentials)
+            elif platform_key == "mercado_pago":
+                _create_mercado_pago_client_credentials(payload, client_name, credentials)
             elif platform_key == "bling":
                 _create_bling_client_credentials(payload, client_name, credentials)
             elif platform_key.startswith("omie"):
@@ -152,6 +156,8 @@ class ClientRegistrationManager:
                 _append_tiktok_shop_credentials(payload, client_name, credentials)
             elif platform_key == "mercado_livre":
                 _upsert_mercado_livre_credentials(payload, client_name, credentials)
+            elif platform_key == "mercado_pago":
+                _upsert_mercado_pago_credentials(payload, client_name, credentials)
             elif platform_key == "bling":
                 _upsert_bling_credentials(payload, client_name, credentials)
             elif platform_key.startswith("omie"):
@@ -594,6 +600,52 @@ def _create_mercado_livre_client_credentials(
     payload["companies"] = companies
 
 
+def _upsert_mercado_pago_credentials(
+    payload: dict[str, Any],
+    client_name: str,
+    credentials: dict[str, object],
+) -> None:
+    companies = payload.get("companies")
+    if not isinstance(companies, dict):
+        companies = {}
+        payload["companies"] = companies
+
+    company_key = _find_key_case_insensitive(companies.keys(), client_name)
+    if company_key is None:
+        company_key = client_name
+        accounts: list[dict[str, Any]] = []
+    else:
+        existing = companies.get(company_key)
+        accounts = [dict(item) for item in existing if isinstance(item, dict)] if isinstance(existing, list) else []
+
+    account_payload = _build_mercado_pago_account_payload(client_name, credentials)
+    matching_index = _find_mercado_pago_account_index(
+        accounts=accounts,
+        account_payload=account_payload,
+    )
+    if matching_index is None:
+        accounts.append(account_payload)
+    else:
+        accounts[matching_index] = account_payload
+
+    companies[company_key] = accounts
+    payload["companies"] = companies
+
+
+def _create_mercado_pago_client_credentials(
+    payload: dict[str, Any],
+    client_name: str,
+    credentials: dict[str, object],
+) -> None:
+    companies = payload.get("companies")
+    if not isinstance(companies, dict):
+        companies = {}
+        payload["companies"] = companies
+    _ensure_new_company_key(companies, client_name, platform_label="Mercado Pago")
+    companies[client_name] = [_build_mercado_pago_account_payload(client_name, credentials)]
+    payload["companies"] = companies
+
+
 def _upsert_bling_credentials(
     payload: dict[str, Any],
     client_name: str,
@@ -843,6 +895,64 @@ def _mercado_livre_alias(auth_payload: dict[str, Any]) -> str:
         or auth_payload.get("filial")
         or ""
     ).strip().casefold()
+
+
+def _build_mercado_pago_account_payload(
+    client_name: str,
+    credentials: dict[str, object],
+) -> dict[str, Any]:
+    expires_in = credentials.get("expires_in")
+    try:
+        parsed_expires_in = int(expires_in) if expires_in is not None else 21600
+    except (TypeError, ValueError):
+        raise ValueError("credentials.expires_in invalido: use inteiro positivo.") from None
+    if parsed_expires_in <= 0:
+        parsed_expires_in = 21600
+
+    account_name = _optional_text(
+        credentials.get("account_name")
+        or credentials.get("account_alias")
+        or credentials.get("alias")
+    ) or client_name
+
+    return {
+        "account_name": account_name,
+        "account_id": _optional_text(credentials.get("account_id") or credentials.get("user_id")),
+        "public_key": _optional_text(credentials.get("public_key")),
+        "access_token": _required_text(
+            credentials.get("access_token"),
+            field_name="credentials.access_token",
+        ),
+        "refresh_token": _required_text(
+            credentials.get("refresh_token"),
+            field_name="credentials.refresh_token",
+        ),
+        "client_id": _required_text(credentials.get("client_id"), field_name="credentials.client_id"),
+        "client_secret": _required_text(
+            credentials.get("client_secret"),
+            field_name="credentials.client_secret",
+        ),
+        "token_type": _optional_text(credentials.get("token_type")) or "bearer",
+        "expires_in": parsed_expires_in,
+        "access_token_expires_at": _optional_text(credentials.get("access_token_expires_at")),
+    }
+
+
+def _find_mercado_pago_account_index(
+    *,
+    accounts: list[dict[str, Any]],
+    account_payload: dict[str, Any],
+) -> int | None:
+    account_name = str(account_payload.get("account_name") or "").strip().casefold()
+    account_id = str(account_payload.get("account_id") or "").strip().casefold()
+    for index, account in enumerate(accounts):
+        current_name = str(account.get("account_name") or account.get("alias") or "").strip().casefold()
+        current_id = str(account.get("account_id") or account.get("user_id") or "").strip().casefold()
+        if account_id and current_id == account_id:
+            return index
+        if account_name and current_name == account_name:
+            return index
+    return None
 
 
 def _build_bling_account_payload(client_name: str, credentials: dict[str, object]) -> dict[str, Any]:

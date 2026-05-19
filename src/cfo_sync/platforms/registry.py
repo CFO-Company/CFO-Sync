@@ -5,6 +5,7 @@ from pathlib import Path
 from cfo_sync.platforms.base import PlatformConnector
 from cfo_sync.platforms.bling.connector import BlingConnector
 from cfo_sync.platforms.google_ads.connector import GoogleAdsConnector
+from cfo_sync.platforms.mercado_pago.connector import MercadoPagoConnector
 from cfo_sync.platforms.meta_ads.connector import MetaAdsConnector
 from cfo_sync.platforms.pagarme.connector import PagarmeConnector
 from cfo_sync.platforms.omie.connector import OmieConnector
@@ -35,6 +36,7 @@ def build_platform_registry(
     bling_credentials_path: Path,
     bling_oauth_app_path: Path,
     pagarme_credentials_path: Path,
+    mercado_pago_credentials_path: Path,
     omie_2026_credentials_path: Path,
     omie_2025_credentials_path: Path,
     omie_cfo_credentials_path: Path,
@@ -49,6 +51,7 @@ def build_platform_registry(
             oauth_app_path=bling_oauth_app_path,
         ),
         "pagarme": PagarmeConnector(credentials_path=pagarme_credentials_path),
+        "mercado_pago": MercadoPagoConnector(credentials_path=mercado_pago_credentials_path),
     }
 
     if omie_2026_credentials_path.exists():

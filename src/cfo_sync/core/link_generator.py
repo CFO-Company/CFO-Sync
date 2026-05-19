@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import base64
+import hashlib
 import secrets
 import socket
 import time
@@ -18,6 +20,12 @@ from cfo_sync.platforms.bling.oauth import (
     BLING_CALLBACK_PATH,
     exchange_bling_code_for_tokens,
     load_bling_app_credentials,
+)
+from cfo_sync.platforms.mercado_pago.oauth import (
+    MERCADO_PAGO_AUTH_URL,
+    MERCADO_PAGO_CALLBACK_PATH,
+    exchange_mercado_pago_code_for_tokens,
+    load_mercado_pago_app_credentials,
 )
 from cfo_sync.platforms.tiktok_shop.api import (
     exchange_auth_code_for_access_token as exchange_tiktok_shop_auth_code_for_access_token,
@@ -50,6 +58,15 @@ class PendingBlingState:
 
 
 @dataclass(frozen=True)
+class PendingMercadoPagoState:
+    state: str
+    expires_at: datetime
+    redirect_uri: str
+    code_verifier: str
+    registration_payload: dict[str, object]
+
+
+@dataclass(frozen=True)
 class PendingTikTokShopState:
     state: str
     expires_at: datetime
@@ -69,6 +86,7 @@ class GeneratorLinkManager:
         self._state_lock = RLock()
         self._pending_states: dict[str, PendingMercadoLivreState] = {}
         self._pending_bling_states: dict[str, PendingBlingState] = {}
+        self._pending_mercado_pago_states: dict[str, PendingMercadoPagoState] = {}
         self._pending_tiktok_shop_states: dict[str, PendingTikTokShopState] = {}
 
     def create_link(
@@ -82,11 +100,13 @@ class GeneratorLinkManager:
             return self._create_mercado_livre_link(payload, external_base_url=external_base_url)
         if platform_key == "bling":
             return self._create_bling_link(payload, external_base_url=external_base_url)
+        if platform_key == "mercado_pago":
+            return self._create_mercado_pago_link(payload, external_base_url=external_base_url)
         if platform_key == "tiktok_shop":
             return self._create_tiktok_shop_link(payload, external_base_url=external_base_url)
         raise ValueError(
             f"Gerador ainda nao suportado para plataforma '{platform_key}'. "
-            "No momento use Mercado Livre, Bling ou TikTok Shop."
+            "No momento use Mercado Livre, Mercado Pago, Bling ou TikTok Shop."
         )
 
     def _create_mercado_livre_link(
@@ -146,6 +166,84 @@ class GeneratorLinkManager:
             client_id=app_credentials.client_id,
             redirect_uri=redirect_uri,
             state=state,
+        )
+        return {
+            "platform_key": platform_key,
+            "registration_mode": registration_mode,
+            "client_name": client_name,
+            "authorization_url": authorization_url,
+            "expires_at": expires_at.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        }
+
+    def _create_mercado_pago_link(
+        self,
+        payload: dict[str, object],
+        *,
+        external_base_url: str,
+    ) -> dict[str, object]:
+        platform_key = "mercado_pago"
+        registration_mode = _registration_mode(payload.get("registration_mode"))
+        requested_client_name = _required_text(payload.get("client_name"), field_name="client_name")
+        gid = _parse_gid(payload.get("gid"), field_name="gid")
+        raw_credentials = payload.get("credentials")
+        credentials_payload = raw_credentials if isinstance(raw_credentials, dict) else {}
+
+        app_config = load_app_config(self.app_config_path)
+        client_name = self._resolve_client_name(
+            app_config=app_config,
+            platform_key=platform_key,
+            registration_mode=registration_mode,
+            requested_client_name=requested_client_name,
+        )
+        app_credentials = load_mercado_pago_app_credentials(app_config.credentials_dir)
+        redirect_uri = _build_mercado_pago_callback_uri(external_base_url)
+        configured_redirect = str(app_credentials.redirect_uri or "").strip().rstrip("/")
+        if configured_redirect and configured_redirect != redirect_uri.rstrip("/"):
+            raise ValueError(
+                "Redirect URI do app Mercado Pago diferente do servidor atual. "
+                f"Configure '{redirect_uri}' em secrets/mercado_pago_oauth_app.json "
+                "e no app Mercado Pago."
+            )
+
+        state = secrets.token_urlsafe(32)
+        code_verifier = secrets.token_urlsafe(64)
+        code_challenge = _pkce_s256_challenge(code_verifier)
+        expires_at = datetime.now(UTC) + timedelta(minutes=STATE_TTL_MINUTES)
+        account_alias = _optional_text(
+            credentials_payload.get("account_alias")
+            or credentials_payload.get("account_name")
+            or credentials_payload.get("alias")
+        ) or client_name
+
+        registration_payload: dict[str, object] = {
+            "registration_mode": registration_mode,
+            "platform_key": platform_key,
+            "client_name": client_name,
+            "gid": gid,
+            "credentials": {
+                "client_id": app_credentials.client_id,
+                "client_secret": app_credentials.client_secret,
+                "public_key": app_credentials.public_key,
+                "account_name": account_alias,
+            },
+        }
+
+        pending = PendingMercadoPagoState(
+            state=state,
+            expires_at=expires_at,
+            redirect_uri=redirect_uri,
+            code_verifier=code_verifier,
+            registration_payload=registration_payload,
+        )
+        with self._state_lock:
+            self._cleanup_expired_states_locked()
+            self._pending_mercado_pago_states[state] = pending
+
+        authorization_url = _build_mercado_pago_authorization_url(
+            client_id=app_credentials.client_id,
+            redirect_uri=redirect_uri,
+            state=state,
+            code_challenge=code_challenge,
         )
         return {
             "platform_key": platform_key,
@@ -434,6 +532,60 @@ class GeneratorLinkManager:
         registration_payload["credentials"] = merged_credentials
         return registration_payload
 
+    def consume_mercado_pago_callback(self, *, code: str, state: str) -> dict[str, object]:
+        cleaned_code = _required_text(code, field_name="code")
+        cleaned_state = _required_text(state, field_name="state")
+
+        with self._state_lock:
+            self._cleanup_expired_states_locked()
+            pending = self._pending_mercado_pago_states.pop(cleaned_state, None)
+        if pending is None:
+            raise ValueError(
+                "State Mercado Pago invalido ou expirado. Gere um novo link de autorização e tente novamente."
+            )
+        if pending.expires_at <= datetime.now(UTC):
+            raise ValueError("State Mercado Pago expirado. Gere um novo link de autorização.")
+
+        registration_payload = dict(pending.registration_payload)
+        credentials = registration_payload.get("credentials")
+        if not isinstance(credentials, dict):
+            raise ValueError("Payload interno do gerador Mercado Pago invalido: credentials ausente.")
+
+        token_payload = exchange_mercado_pago_code_for_tokens(
+            client_id=_required_text(credentials.get("client_id"), field_name="credentials.client_id"),
+            client_secret=_required_text(
+                credentials.get("client_secret"),
+                field_name="credentials.client_secret",
+            ),
+            code=cleaned_code,
+            redirect_uri=pending.redirect_uri,
+            code_verifier=pending.code_verifier,
+        )
+        expires_in = _parse_int(token_payload.get("expires_in"), default=21600)
+        expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
+
+        merged_credentials = dict(credentials)
+        merged_credentials.update(
+            {
+                "access_token": _required_text(
+                    token_payload.get("access_token"),
+                    field_name="token_payload.access_token",
+                ),
+                "refresh_token": _required_text(
+                    token_payload.get("refresh_token"),
+                    field_name="token_payload.refresh_token",
+                ),
+                "account_id": _optional_text(token_payload.get("user_id")),
+                "token_type": _optional_text(token_payload.get("token_type")) or "bearer",
+                "expires_in": expires_in,
+                "access_token_expires_at": (
+                    expires_at.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+                ),
+            }
+        )
+        registration_payload["credentials"] = merged_credentials
+        return registration_payload
+
     def consume_tiktok_shop_callback(self, *, code: str, state: str) -> dict[str, object]:
         cleaned_code = _required_text(code, field_name="code")
         cleaned_state = _required_text(state, field_name="state")
@@ -565,6 +717,13 @@ class GeneratorLinkManager:
         ]
         for state in expired_bling:
             self._pending_bling_states.pop(state, None)
+        expired_mercado_pago = [
+            state
+            for state, item in self._pending_mercado_pago_states.items()
+            if item.expires_at <= now
+        ]
+        for state in expired_mercado_pago:
+            self._pending_mercado_pago_states.pop(state, None)
         expired_tiktok_shop = [
             state
             for state, item in self._pending_tiktok_shop_states.items()
@@ -582,6 +741,11 @@ def _build_mercado_livre_callback_uri(external_base_url: str) -> str:
 def _build_bling_callback_uri(external_base_url: str) -> str:
     base = _required_text(external_base_url, field_name="external_base_url").rstrip("/")
     return f"{base}{BLING_CALLBACK_PATH}"
+
+
+def _build_mercado_pago_callback_uri(external_base_url: str) -> str:
+    base = _required_text(external_base_url, field_name="external_base_url").rstrip("/")
+    return f"{base}{MERCADO_PAGO_CALLBACK_PATH}"
 
 
 def _build_tiktok_shop_callback_uri(external_base_url: str) -> str:
@@ -615,6 +779,27 @@ def _build_bling_authorization_url(*, client_id: str, state: str) -> str:
         }
     )
     return f"{BLING_AUTH_URL}?{query}"
+
+
+def _build_mercado_pago_authorization_url(
+    *,
+    client_id: str,
+    redirect_uri: str,
+    state: str,
+    code_challenge: str,
+) -> str:
+    query = urlencode(
+        {
+            "response_type": "code",
+            "client_id": client_id,
+            "platform_id": "mp",
+            "state": state,
+            "redirect_uri": redirect_uri,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+        }
+    )
+    return f"{MERCADO_PAGO_AUTH_URL}?{query}"
 
 
 def _build_tiktok_shop_authorization_url(*, app_key: str, redirect_uri: str, state: str) -> str:
@@ -680,6 +865,11 @@ def _exchange_mercado_livre_code_for_tokens(
         return payload
 
     raise ValueError("Falha inesperada ao trocar authorization code por tokens no Mercado Livre.")
+
+
+def _pkce_s256_challenge(code_verifier: str) -> str:
+    digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
 def _required_text(value: object, *, field_name: str) -> str:

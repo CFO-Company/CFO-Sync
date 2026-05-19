@@ -582,6 +582,12 @@ class GoogleSheetsExporter:
                 scope_fields=("alias", "conta", "account_name"),
             )
 
+        if platform_key == "mercado_pago" and resource_name in {"pagamentos", "payments", "financeiro"}:
+            return PeriodReplacePolicy(
+                period_fields=("data", "date_created", "date_approved", "date_last_updated"),
+                scope_fields=("alias", "conta", "account_name"),
+            )
+
         return None
 
     def _upsert_by_keys(

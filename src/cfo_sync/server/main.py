@@ -71,7 +71,8 @@ def main() -> int:
         "Endpoints: GET /v1/health | GET /v1/catalog | POST /v1/jobs | "
         "GET /v1/jobs | GET /v1/jobs/{id} | POST /v1/clients | POST /v1/generators/link | "
         "GET /v1/runtime/versions | GET /v1/secrets/files | GET/POST /v1/secrets/file | "
-        "GET /v1/oauth/mercado_livre/callback | GET /v1/oauth/tiktok_ads/callback | "
+        "GET /v1/oauth/mercado_livre/callback | GET /v1/oauth/mercado_pago/callback | "
+        "GET /v1/oauth/tiktok_ads/callback | "
         "GET /v1/oauth/tiktok/callback"
     )
     try:
