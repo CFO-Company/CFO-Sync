@@ -1,3 +1,13 @@
+## [1.3.20] - 19-05-2026
+
+### Added
+- Integracao inicial do Mercado Pago com OAuth persistente, coleta de pagamentos e financeiro.
+- Testes para API, normalizacao e OAuth do Mercado Pago.
+
+### Changed
+- Jobs do Mercado Livre passam a ser segmentados por conta e periodo para reduzir timeouts.
+- Versao do aplicativo atualizada para 1.3.20.
+
 ## [1.3.18] - 18-05-2026
 
 ### Added
