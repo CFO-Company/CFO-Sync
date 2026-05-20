@@ -5,7 +5,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from cfo_sync.platforms.pagarme.api import list_orders, list_payables
+from cfo_sync.platforms.pagarme.api import list_orders, list_payables, normalize_period
 from cfo_sync.platforms.pagarme.credentials import PagarmeAccount
 
 
@@ -49,13 +49,19 @@ class PagarmeAPITest(unittest.TestCase):
         second_request = urlopen_mock.call_args_list[1].args[0]
         expected_auth = "Basic " + base64.b64encode(b"sk_123:").decode("ascii")
 
-        self.assertIn("/orders?created_since=2026-05-01", first_request.full_url)
-        self.assertIn("created_until=2026-05-19", first_request.full_url)
+        self.assertIn("/orders?created_since=2026-05-01T00%3A00%3A00Z", first_request.full_url)
+        self.assertIn("created_until=2026-05-19T23%3A59%3A59Z", first_request.full_url)
         self.assertIn("page=1", first_request.full_url)
         self.assertIn("size=100", first_request.full_url)
         self.assertIn("page=2", second_request.full_url)
         self.assertEqual(first_request.headers["Authorization"], expected_auth)
         self.assertEqual(first_request.headers["Accept"], "application/json")
+
+    def test_normalize_period_includes_full_end_date(self) -> None:
+        since, until = normalize_period("2026-05-01", "2026-05-19")
+
+        self.assertEqual(since, "2026-05-01T00:00:00Z")
+        self.assertEqual(until, "2026-05-19T23:59:59Z")
 
     @patch("cfo_sync.platforms.pagarme.api.urlopen")
     def test_list_payables_filters_by_charge_id(self, urlopen_mock) -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -25,7 +25,7 @@ def normalize_period(start_date: str | None, end_date: str | None) -> tuple[str,
     end = _parse_date(end_date, today)
     if start > end:
         raise ValueError("Data inicial nao pode ser maior que data final.")
-    return start.isoformat(), end.isoformat()
+    return _start_of_day_iso(start), _end_of_day_iso(end)
 
 
 def list_orders(
@@ -236,6 +236,14 @@ def _parse_date(raw_value: str | None, fallback: date) -> date:
         return date.fromisoformat(text)
     except ValueError:
         return fallback
+
+
+def _start_of_day_iso(value: date) -> str:
+    return datetime.combine(value, time.min).replace(microsecond=0).isoformat() + "Z"
+
+
+def _end_of_day_iso(value: date) -> str:
+    return datetime.combine(value, time.max).replace(microsecond=0).isoformat() + "Z"
 
 
 def _flatten_into(target: dict[str, object], prefix: str, value: object) -> None:

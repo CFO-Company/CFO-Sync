@@ -1,3 +1,9 @@
+## [1.3.24] - 20-05-2026
+
+### Fixed
+- Filtros de periodo Pagar.me passam a enviar inicio e fim de dia completos (`00:00:00Z` e `23:59:59Z`) para evitar perda de pedidos/cobrancas no ultimo dia selecionado.
+- Versao do aplicativo atualizada para 1.3.24.
+
 ## [1.3.23] - 20-05-2026
 
 ### Fixed
