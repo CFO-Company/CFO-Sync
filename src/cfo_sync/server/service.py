@@ -11,6 +11,7 @@ from cfo_sync.core.client_registration import ClientRegistrationManager
 from cfo_sync.core.config_loader import load_app_config
 from cfo_sync.core.link_generator import GeneratorLinkManager
 from cfo_sync.core.pipeline import SyncPipeline
+from cfo_sync.platforms.meta_ads.api import meta_ads_api_logging
 from cfo_sync.platforms.tiktok_ads.api import (
     TikTokAdsAPIError,
     exchange_auth_code_for_access_token,
@@ -191,6 +192,31 @@ class CfoSyncServerService:
             }
 
         pipeline = SyncPipeline(config)
+        if self._should_segment_meta_ads_accounts(
+            action=action,
+            platform_key=platform_key,
+            client=client,
+            resource_names=resource_names,
+            sub_clients=sub_clients,
+        ):
+            accounts = self._resolve_meta_ads_job_accounts(
+                platform_key=platform_key,
+                client=client,
+                sub_clients=sub_clients,
+            )
+            with meta_ads_api_logging(log):
+                return self._run_segmented_meta_ads_job(
+                    pipeline=pipeline,
+                    action=action,
+                    platform_key=platform_key,
+                    client=client,
+                    start_date=start_date,
+                    end_date=end_date,
+                    resource_names=resource_names,
+                    accounts=accounts,
+                    log=log,
+                )
+
         if self._should_segment_omie_aliases(
             action=action,
             platform_key=platform_key,
@@ -215,15 +241,42 @@ class CfoSyncServerService:
                 log=log,
             )
 
-        if action == "collect":
-            count = pipeline.collect(
+        if self._should_segment_mercado_livre_aliases(
+            action=action,
+            platform_key=platform_key,
+            client=client,
+            start_date=start_date,
+            end_date=end_date,
+            resource_names=resource_names,
+            sub_clients=sub_clients,
+        ):
+            aliases = self._resolve_mercado_livre_job_aliases(
+                platform_key=platform_key,
+                client=client,
+                sub_clients=sub_clients,
+            )
+            return self._run_segmented_mercado_livre_job(
+                pipeline=pipeline,
+                action=action,
                 platform_key=platform_key,
                 client=client,
                 start_date=start_date,
                 end_date=end_date,
                 resource_names=resource_names,
-                sub_clients=sub_clients,
+                aliases=aliases,
+                log=log,
             )
+
+        if action == "collect":
+            with meta_ads_api_logging(log if platform_key == "meta_ads" else None):
+                count = pipeline.collect(
+                    platform_key=platform_key,
+                    client=client,
+                    start_date=start_date,
+                    end_date=end_date,
+                    resource_names=resource_names,
+                    sub_clients=sub_clients,
+                )
             return {
                 "action": action,
                 "platform_key": platform_key,
@@ -232,14 +285,15 @@ class CfoSyncServerService:
             }
 
         if action == "export":
-            count = pipeline.export_to_sheets(
-                platform_key=platform_key,
-                client=client,
-                start_date=start_date,
-                end_date=end_date,
-                resource_names=resource_names,
-                sub_clients=sub_clients,
-            )
+            with meta_ads_api_logging(log if platform_key == "meta_ads" else None):
+                count = pipeline.export_to_sheets(
+                    platform_key=platform_key,
+                    client=client,
+                    start_date=start_date,
+                    end_date=end_date,
+                    resource_names=resource_names,
+                    sub_clients=sub_clients,
+                )
             return {
                 "action": action,
                 "platform_key": platform_key,
@@ -248,6 +302,236 @@ class CfoSyncServerService:
             }
 
         raise ValueError("Acao invalida. Use 'collect', 'export' ou 'sync_mercado_livre_categories'.")
+
+    def _should_segment_meta_ads_accounts(
+        self,
+        *,
+        action: str,
+        platform_key: str,
+        client: str,
+        resource_names: list[str] | None,
+        sub_clients: list[str] | None,
+    ) -> bool:
+        if action not in {"collect", "export"}:
+            return False
+        if platform_key != "meta_ads":
+            return False
+        if resource_names and not {"contas", "insights", "campanhas"}.intersection(resource_names):
+            return False
+
+        accounts = self._resolve_meta_ads_job_accounts(
+            platform_key=platform_key,
+            client=client,
+            sub_clients=sub_clients,
+        )
+        return len(accounts) > 1
+
+    def _resolve_meta_ads_job_accounts(
+        self,
+        *,
+        platform_key: str,
+        client: str,
+        sub_clients: list[str] | None,
+    ) -> list[str]:
+        if sub_clients:
+            return list(dict.fromkeys(name for name in sub_clients if name.strip()))
+
+        behavior = self.platform_ui_registry.get(platform_key)
+        if behavior is None or not client:
+            return []
+        return list(dict.fromkeys(name for name in behavior.sub_client_names(client) if name.strip()))
+
+    def _run_segmented_meta_ads_job(
+        self,
+        *,
+        pipeline: SyncPipeline,
+        action: str,
+        platform_key: str,
+        client: str,
+        start_date: str | None,
+        end_date: str | None,
+        resource_names: list[str] | None,
+        accounts: list[str],
+        log: Callable[[str], None],
+    ) -> dict[str, object]:
+        total_count = 0
+        failures: list[str] = []
+        total_segments = len(accounts)
+        period_label = f"{start_date or ''}..{end_date or ''}".strip(".")
+        log(
+            "Job Meta Ads dividido em partes: "
+            f"contas={len(accounts)} total={total_segments}. "
+            "Cada parte usa sub_clients para preservar as demais contas no Sheets."
+        )
+
+        for segment_index, account in enumerate(accounts, start=1):
+            log(
+                f"Parte {segment_index}/{total_segments} iniciada: "
+                f"conta={account} periodo={period_label}"
+            )
+            try:
+                if action == "collect":
+                    count = pipeline.collect(
+                        platform_key=platform_key,
+                        client=client,
+                        start_date=start_date,
+                        end_date=end_date,
+                        resource_names=resource_names,
+                        sub_clients=[account],
+                    )
+                else:
+                    count = pipeline.export_to_sheets(
+                        platform_key=platform_key,
+                        client=client,
+                        start_date=start_date,
+                        end_date=end_date,
+                        resource_names=resource_names,
+                        sub_clients=[account],
+                    )
+            except Exception as error:  # noqa: BLE001
+                failures.append(f"{account}: {error}")
+                log(
+                    f"Parte {segment_index}/{total_segments} falhou: "
+                    f"conta={account} erro={error}"
+                )
+                continue
+
+            total_count += count
+            log(
+                f"Parte {segment_index}/{total_segments} concluida: "
+                f"conta={account} registros={count}"
+            )
+
+        if failures:
+            raise ValueError("Falha em uma ou mais partes Meta Ads: " + " | ".join(failures))
+
+        return {
+            "action": action,
+            "platform_key": platform_key,
+            "client": client,
+            "count": total_count,
+            "segments": total_segments,
+        }
+
+    def _should_segment_mercado_livre_aliases(
+        self,
+        *,
+        action: str,
+        platform_key: str,
+        client: str,
+        start_date: str | None,
+        end_date: str | None,
+        resource_names: list[str] | None,
+        sub_clients: list[str] | None,
+    ) -> bool:
+        if action not in {"collect", "export"}:
+            return False
+        if platform_key != "mercado_livre":
+            return False
+        if resource_names and "vendas" not in resource_names:
+            return False
+        aliases = self._resolve_mercado_livre_job_aliases(
+            platform_key=platform_key,
+            client=client,
+            sub_clients=sub_clients,
+        )
+        period_segments = _month_period_segments(start_date=start_date, end_date=end_date)
+        return len(aliases) > 1 or len(period_segments) > 1
+
+    def _resolve_mercado_livre_job_aliases(
+        self,
+        *,
+        platform_key: str,
+        client: str,
+        sub_clients: list[str] | None,
+    ) -> list[str]:
+        if sub_clients:
+            return list(dict.fromkeys(name for name in sub_clients if name.strip()))
+
+        behavior = self.platform_ui_registry.get(platform_key)
+        if behavior is None or not client:
+            return []
+        return list(dict.fromkeys(name for name in behavior.sub_client_names(client) if name.strip()))
+
+    def _run_segmented_mercado_livre_job(
+        self,
+        *,
+        pipeline: SyncPipeline,
+        action: str,
+        platform_key: str,
+        client: str,
+        start_date: str | None,
+        end_date: str | None,
+        resource_names: list[str] | None,
+        aliases: list[str],
+        log: Callable[[str], None],
+    ) -> dict[str, object]:
+        total_count = 0
+        failures: list[str] = []
+        period_segments = _month_period_segments(start_date=start_date, end_date=end_date)
+        if not aliases:
+            aliases = [""]
+        total_segments = len(aliases) * len(period_segments)
+        log(
+            "Job Mercado Livre dividido em partes: "
+            f"contas={len([alias for alias in aliases if alias]) or 1} "
+            f"periodos={len(period_segments)} total={total_segments}."
+        )
+
+        segment_index = 0
+        for alias in aliases:
+            for segment_start, segment_end in period_segments:
+                segment_index += 1
+                period_label = f"{segment_start or ''}..{segment_end or ''}".strip(".")
+                alias_label = alias or "<todas>"
+                log(
+                    f"Parte {segment_index}/{total_segments} iniciada: "
+                    f"conta={alias_label} periodo={period_label}"
+                )
+                try:
+                    selected_aliases = [alias] if alias else None
+                    if action == "collect":
+                        count = pipeline.collect(
+                            platform_key=platform_key,
+                            client=client,
+                            start_date=segment_start,
+                            end_date=segment_end,
+                            resource_names=resource_names,
+                            sub_clients=selected_aliases,
+                        )
+                    else:
+                        count = pipeline.export_to_sheets(
+                            platform_key=platform_key,
+                            client=client,
+                            start_date=segment_start,
+                            end_date=segment_end,
+                            resource_names=resource_names,
+                            sub_clients=selected_aliases,
+                        )
+                except Exception as error:  # noqa: BLE001
+                    failures.append(f"{alias_label} {period_label}: {error}")
+                    log(
+                        f"Parte {segment_index}/{total_segments} falhou: "
+                        f"conta={alias_label} periodo={period_label} erro={error}"
+                    )
+                    continue
+
+                total_count += count
+                log(
+                    f"Parte {segment_index}/{total_segments} concluida: "
+                    f"conta={alias_label} periodo={period_label} registros={count}"
+                )
+
+        if failures:
+            raise ValueError("Falha em uma ou mais partes Mercado Livre: " + " | ".join(failures))
+
+        return {
+            "action": action,
+            "platform_key": platform_key,
+            "client": client,
+            "count": total_count,
+            "segments": total_segments,
+        }
 
     def _should_segment_omie_aliases(
         self,
@@ -509,6 +793,36 @@ class CfoSyncServerService:
             "updated_resources": result.get("updated_resources"),
             "redirect_uri": credentials_payload.get("redirect_uri"),
             "account_name": credentials_payload.get("account_alias"),
+            "token_type": credentials_payload.get("token_type"),
+            "access_token_expires_at": credentials_payload.get("access_token_expires_at"),
+            "access_token_masked": _mask_secret(str(credentials_payload.get("access_token") or "")),
+            "refresh_token_masked": _mask_secret(str(credentials_payload.get("refresh_token") or "")),
+        }
+
+    def complete_mercado_pago_oauth_callback(
+        self,
+        *,
+        code: str,
+        state: str,
+    ) -> dict[str, object]:
+        registration_payload = self.generator_manager.consume_mercado_pago_callback(
+            code=code,
+            state=state,
+        )
+        with self._state_lock:
+            result = self.registration_manager.register_client(registration_payload)
+            self._reload_state_locked()
+
+        credentials = registration_payload.get("credentials")
+        credentials_payload = credentials if isinstance(credentials, dict) else {}
+        return {
+            "platform_key": "mercado_pago",
+            "state": state,
+            "client_name": result.get("client_name"),
+            "registration_mode": result.get("registration_mode"),
+            "updated_resources": result.get("updated_resources"),
+            "account_name": credentials_payload.get("account_name"),
+            "account_id": credentials_payload.get("account_id"),
             "token_type": credentials_payload.get("token_type"),
             "access_token_expires_at": credentials_payload.get("access_token_expires_at"),
             "access_token_masked": _mask_secret(str(credentials_payload.get("access_token") or "")),

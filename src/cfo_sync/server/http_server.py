@@ -142,6 +142,45 @@ class CfoSyncHttpServer:
                     self._write_html(HTTPStatus.OK, _oauth_bling_success_html(result))
                     return
 
+                if path == "/v1/oauth/mercado_pago/callback":
+                    params = parse_qs(parsed.query or "")
+                    oauth_error = str((params.get("error") or [""])[0] or "").strip()
+                    oauth_error_description = str(
+                        (params.get("error_description") or params.get("message") or [""])[0] or ""
+                    ).strip()
+                    if oauth_error:
+                        message = f"Autorização recusada pelo Mercado Pago: {oauth_error}"
+                        if oauth_error_description:
+                            message += f" ({oauth_error_description})"
+                        self._write_html(
+                            HTTPStatus.BAD_REQUEST,
+                            _oauth_error_html(message),
+                        )
+                        return
+
+                    code = str((params.get("code") or [""])[0] or "").strip()
+                    state = str((params.get("state") or [""])[0] or "").strip()
+                    try:
+                        result = server.service.complete_mercado_pago_oauth_callback(
+                            code=code,
+                            state=state,
+                        )
+                    except (ValueError, FileNotFoundError) as error:
+                        self._write_html(
+                            HTTPStatus.BAD_REQUEST,
+                            _oauth_error_html(str(error)),
+                        )
+                        return
+                    except Exception as error:  # noqa: BLE001
+                        self._write_html(
+                            HTTPStatus.INTERNAL_SERVER_ERROR,
+                            _oauth_error_html(f"Falha no callback OAuth Mercado Pago: {error}"),
+                        )
+                        return
+
+                    self._write_html(HTTPStatus.OK, _oauth_success_html(result))
+                    return
+
                 if path == "/v1/oauth/tiktok_ads/callback":
                     params = parse_qs(parsed.query or "")
                     oauth_error = str((params.get("error") or [""])[0] or "").strip()

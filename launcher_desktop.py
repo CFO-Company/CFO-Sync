@@ -69,6 +69,9 @@ DEFAULT_SERVER_VERSION = "production"
 DESKTOP_SETTINGS_PATH = desktop_settings_path()
 SOUNDS_DIR = custom_sounds_dir()
 UPDATE_APP_DEFAULT_LABEL = "Atualizar app"
+SINGLE_INSTANCE_MUTEX_NAME = "Local\\CFO-Sync-Desktop"
+ERROR_ALREADY_EXISTS = 183
+_SINGLE_INSTANCE_MUTEX_HANDLE: int | None = None
 
 COLOR_BG = "#0B0D10"
 COLOR_SURFACE = "#14181D"
@@ -324,6 +327,14 @@ GENERATOR_SCHEMAS: dict[str, list[dict[str, object]]] = {
             "label": "Alias/Filial",
             "required": False,
             "help": "Nome da conta Bling que aparecera na selecao. Se vazio, usa o nome do cliente.",
+        }
+    ],
+    "mercado_pago": [
+        {
+            "name": "account_alias",
+            "label": "Alias/Filial",
+            "required": False,
+            "help": "Nome da conta Mercado Pago que aparecera na selecao. Se vazio, usa o nome do cliente.",
         }
     ],
     "tiktok_shop": [
@@ -1192,6 +1203,8 @@ class CFODesktopApp:
             return "Yampi Estoque"
         if key == "mercado_livre":
             return "Mercado Livre"
+        if key == "mercado_pago":
+            return "Mercado Pago"
         if key == "tiktok_ads":
             return "TikTok ADS"
         if key == "tiktok_shop":
@@ -5370,7 +5383,8 @@ class CFODesktopApp:
 
         job_id = remote.create_job(payload)
         self.log(f"Job remoto criado: {job_id}")
-        result = remote.wait_for_job(job_id, timeout_seconds=1800.0)
+        wait_timeout = 7200.0 if platform_key == "mercado_livre" else 1800.0
+        result = remote.wait_for_job(job_id, timeout_seconds=wait_timeout)
         if result.status != "completed":
             logs = remote.get_job_logs(job_id)
             if logs:
@@ -5625,6 +5639,17 @@ class CFODesktopApp:
 
 
 def main() -> None:
+    if not _acquire_single_instance_lock():
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showwarning(
+            "CFO Sync ja esta aberto",
+            "O CFO Sync ja esta aberto nesta maquina.\n\n"
+            "Feche a janela atual antes de abrir outra instancia.",
+        )
+        root.destroy()
+        return
+
     root = tk.Tk()
     try:
         app = CFODesktopApp(root)
@@ -5640,6 +5665,20 @@ def main() -> None:
         return
     app.log("App pronto.")
     root.mainloop()
+
+
+def _acquire_single_instance_lock() -> bool:
+    if os.name != "nt":
+        return True
+
+    global _SINGLE_INSTANCE_MUTEX_HANDLE
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle = kernel32.CreateMutexW(None, False, SINGLE_INSTANCE_MUTEX_NAME)
+    if not handle:
+        return True
+
+    _SINGLE_INSTANCE_MUTEX_HANDLE = handle
+    return ctypes.get_last_error() != ERROR_ALREADY_EXISTS
 
 
 if __name__ == "__main__":

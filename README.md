@@ -17,7 +17,12 @@ Aplicativo desktop para orquestrar coleta e exportacao de dados de plataformas s
   - `POST /v1/jobs`
   - `GET /v1/jobs/{id}`
   - `GET /v1/jobs/{id}/logs`
+  - `POST /v1/generators/link`
+  - `GET /v1/oauth/mercado_livre/callback`
+  - `GET /v1/oauth/mercado_pago/callback`
+  - `GET /v1/oauth/bling/callback`
   - `GET /v1/oauth/tiktok_ads/callback`
+  - `GET /v1/oauth/tiktok/callback`
 - Autenticacao por Bearer token.
 - RBAC por plataforma/cliente via arquivo `server_access.json`.
 - Fila de jobs em background no servidor.
@@ -67,6 +72,10 @@ Dentro de `C:\srv\secrets`, mantenha os arquivos sensiveis do ETL, por exemplo:
 - `omie_credentials.json`
 - `omie_2025.json`
 - `mercado_livre_credentials.json`
+- `mercado_livre_oauth_app.json`
+- `mercado_pago_credentials.json`
+- `mercado_pago_oauth_app.json`
+- `pagarme_credentials.json`
 - `bling_credentials.json`
 - `bling_oauth_app.json`
 
@@ -82,6 +91,54 @@ Para o Bling, registre no `app_config.json` apenas os nomes dos arquivos privado
 Importante:
 - essa pasta deve existir apenas no servidor;
 - nao distribuir esses arquivos para as maquinas dos analistas.
+
+### Credenciais por plataforma
+
+Mercado Livre, Mercado Pago, Bling e TikTok Shop usam o Gerador para criar link
+OAuth. O analista preenche plataforma, cliente, GID da aba do cliente e, quando
+aplicavel, alias/filial/loja. O link deve ser enviado para o dono da conta
+autorizar. O callback grava os tokens no `secrets` do servidor e atualiza o
+cadastro do cliente.
+
+Para Mercado Pago, mantenha as credenciais do app em
+`secrets/mercado_pago_oauth_app.json`:
+
+```json
+{
+  "client_id": "APP_CLIENT_ID",
+  "client_secret": "APP_CLIENT_SECRET",
+  "public_key": "APP_PUBLIC_KEY",
+  "redirect_uri": "https://api.ecfo.com.br/v1/oauth/mercado_pago/callback"
+}
+```
+
+O `redirect_uri` deve estar cadastrado no app do Mercado Pago e precisa apontar
+para a URL publica real do servidor. As contas autorizadas pelos clientes ficam
+em `secrets/mercado_pago_credentials.json`.
+
+Pagar.me nao usa OAuth nesta versao. Cada conta precisa ser cadastrada com
+credenciais diretas em `secrets/pagarme_credentials.json`:
+
+```json
+{
+  "base_url": "https://api.pagar.me/core/v5",
+  "companies": {
+    "Cliente": [
+      {
+        "account_name": "Loja Principal",
+        "account_id": "acc_xxx",
+        "public_key": "pk_xxx",
+        "secret_key": "sk_xxx"
+      }
+    ]
+  }
+}
+```
+
+Mercado Livre pode demorar mais que outras plataformas por volume e pelas
+chamadas de detalhe da API. O servidor segmenta jobs por alias/mes quando
+possivel, e o desktop aguarda mais tempo para evitar timeout durante exports
+longos.
 
 ### 2. Rodar o script unico de bootstrap Docker
 
@@ -247,10 +304,11 @@ python .\scripts\task_scheduler\omie_categorias_diario.py --credentials-file "om
    - `Coletar no banco`
    - `Exportar para Sheets`
 7. Para cadastrar nova conta/credencial em cliente existente:
-   - ir na aba `Clientes`,
-   - selecionar a plataforma,
-   - selecionar `Cliente`, preencher `GID da aba do cliente` e os campos da plataforma,
-   - clicar `Registrar cliente`.
+   - para plataformas com OAuth, ir na aba `Gerador`, selecionar a plataforma,
+     cliente e GID da aba do cliente, gerar o link e enviar para autorizacao;
+   - para plataformas com credencial direta, ir na aba `Clientes`, selecionar a
+     plataforma, selecionar `Cliente`, preencher `GID da aba do cliente` e os
+     campos da plataforma, e clicar `Registrar cliente`.
    - os dados ficam salvos no `secrets` do servidor e passam a valer para todos os usuarios conectados no mesmo servidor.
    - para refletir imediatamente em outra estacao, use `Atualizar catalogo do servidor` (ou reconecte).
 
@@ -263,8 +321,8 @@ Resposta:
 ```json
 {
   "status": "ok",
-  "version": "1.3.13",
-  "build_branch": "1.3.12",
+  "version": "1.3.19",
+  "build_branch": "1.2.20",
   "build_commit": "d899dbe...",
   "server_time": "2026-04-02T12:00:00+00:00"
 }
@@ -433,6 +491,38 @@ Response:
 }
 ```
 
+### POST /v1/generators/link
+
+Auth: `Authorization: Bearer <token>`
+
+Gera um link de autorizacao para plataformas OAuth suportadas pelo Gerador. Use
+para Mercado Livre, Mercado Pago, Bling e TikTok Shop quando o cliente precisa
+autorizar a propria conta.
+
+Request (exemplo Mercado Pago):
+
+```json
+{
+  "registration_mode": "existing_client",
+  "platform_key": "mercado_pago",
+  "client_name": "Unfair",
+  "gid": "123456789",
+  "credentials": {
+    "account_alias": "Le Moritz"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "platform_key": "mercado_pago",
+  "client_name": "Unfair",
+  "authorization_url": "https://auth.mercadopago.com/authorization?..."
+}
+```
+
 ### GET /v1/jobs/{id}
 
 Auth: `Authorization: Bearer <token>`
@@ -472,9 +562,29 @@ Response:
 }
 ```
 
+### GET /v1/oauth/mercado_livre/callback
+
+Endpoint de callback OAuth do Mercado Livre para receber `code`, trocar por
+tokens e atualizar `secrets/mercado_livre_credentials.json` no servidor.
+
+### GET /v1/oauth/mercado_pago/callback
+
+Endpoint de callback OAuth do Mercado Pago para receber `code`, trocar por
+tokens e atualizar `secrets/mercado_pago_credentials.json` no servidor.
+
+### GET /v1/oauth/bling/callback
+
+Endpoint de callback OAuth do Bling para receber `code`, trocar por tokens e
+atualizar `secrets/bling_credentials.json` no servidor.
+
 ### GET /v1/oauth/tiktok_ads/callback
 
 Endpoint de callback OAuth do TikTok Ads para receber `auth_code`, trocar por `access_token` e atualizar `secrets/tiktok_ads_credentials.json` no servidor.
+
+### GET /v1/oauth/tiktok/callback
+
+Endpoint de callback OAuth do TikTok Shop para receber `code`, trocar por
+tokens e atualizar `secrets/tiktok_shop_credentials.json` no servidor.
 
 ## Segurança recomendada (producao)
 
