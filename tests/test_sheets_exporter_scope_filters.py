@@ -60,7 +60,9 @@ class GoogleSheetsExporterScopeFiltersTest(unittest.TestCase):
                 "data": "2026-05-20",
                 "pedido_id": "ord_1",
                 "taxa_pagarme_reais": 1.23,
-                "fee_reais": 1.23,
+                "mdr_fee_reais": 1.0,
+                "anticipation_fee_reais": 0.2,
+                "fraud_coverage_fee_reais": 0.03,
                 "paid_amount_reais": 123.45,
                 "net_amount_reais": 122.22,
                 "refunded_amount_reais": 0.0,
@@ -79,6 +81,9 @@ class GoogleSheetsExporterScopeFiltersTest(unittest.TestCase):
 
         self.assertIn("taxa_pagarme_reais", ordered_columns)
         self.assertEqual(mapped_rows[0]["taxa_pagarme_reais"], 1.23)
+        self.assertEqual(mapped_rows[0]["mdr_fee_reais"], 1.0)
+        self.assertEqual(mapped_rows[0]["anticipation_fee_reais"], 0.2)
+        self.assertEqual(mapped_rows[0]["fraud_coverage_fee_reais"], 0.03)
         self.assertEqual(mapped_rows[0]["net_amount_reais"], 122.22)
 
 

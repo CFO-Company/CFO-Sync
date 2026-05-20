@@ -5,7 +5,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from cfo_sync.platforms.pagarme.api import list_orders
+from cfo_sync.platforms.pagarme.api import list_orders, list_payables
 from cfo_sync.platforms.pagarme.credentials import PagarmeAccount
 
 
@@ -56,6 +56,27 @@ class PagarmeAPITest(unittest.TestCase):
         self.assertIn("page=2", second_request.full_url)
         self.assertEqual(first_request.headers["Authorization"], expected_auth)
         self.assertEqual(first_request.headers["Accept"], "application/json")
+
+    @patch("cfo_sync.platforms.pagarme.api.urlopen")
+    def test_list_payables_filters_by_charge_id(self, urlopen_mock) -> None:
+        urlopen_mock.return_value = _JsonResponse(
+            {
+                "data": [
+                    {
+                        "id": "payable_1",
+                        "charge_id": "chg_1",
+                        "fee": 123,
+                    }
+                ]
+            }
+        )
+
+        rows = list_payables(account=self.account, charge_id="chg_1")
+
+        self.assertEqual(rows[0]["fee"], 123)
+        request = urlopen_mock.call_args.args[0]
+        self.assertIn("/payables?", request.full_url)
+        self.assertIn("charge_id=chg_1", request.full_url)
 
 
 class _JsonResponse:

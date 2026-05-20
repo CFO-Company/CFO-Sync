@@ -1,3 +1,10 @@
+## [1.3.23] - 20-05-2026
+
+### Fixed
+- Taxas de pedidos Pagar.me passam a ser calculadas pelos recebiveis (`/payables`) vinculados a cada cobranca, somando MDR, antecipacao e antifraude.
+- Exportacao de pedidos Pagar.me passa a expor os componentes `Taxa MDR`, `Taxa Antecipacao` e `Taxa Antifraude` alem da `Taxa Pagar.me` total.
+- Versao do aplicativo atualizada para 1.3.23.
+
 ## [1.3.22] - 20-05-2026
 
 ### Fixed

@@ -66,6 +66,32 @@ def list_charges(
     )
 
 
+def list_payables(
+    account: PagarmeAccount,
+    *,
+    charge_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> list[dict[str, Any]]:
+    params: dict[str, Any] = {
+        "page": 1,
+        "size": DEFAULT_PAGE_SIZE,
+    }
+    if charge_id:
+        params["charge_id"] = charge_id
+    if start_date:
+        params["created_since"] = start_date
+    if end_date:
+        params["created_until"] = end_date
+
+    return _paginate(
+        account=account,
+        path="/payables",
+        params=params,
+        items_keys=("payables", "data", "items"),
+    )
+
+
 def get_order(account: PagarmeAccount, order_id: str) -> dict[str, Any]:
     return _call_json(account=account, path=f"/orders/{order_id}", params={})
 
@@ -171,7 +197,7 @@ def _extract_items(payload: dict[str, Any], items_keys: tuple[str, ...]) -> list
         value = payload.get(key)
         if isinstance(value, list):
             return [item for item in value if isinstance(item, dict)]
-    for key in ("data", "items", "orders", "charges"):
+    for key in ("data", "items", "orders", "charges", "payables"):
         value = payload.get(key)
         if isinstance(value, list):
             return [item for item in value if isinstance(item, dict)]

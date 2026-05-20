@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from cfo_sync.core.models import RawRecord, ResourceConfig
-from cfo_sync.platforms.pagarme.api import flatten_record, list_charges, list_orders, normalize_period
+from cfo_sync.platforms.pagarme.api import flatten_record, list_charges, list_orders, list_payables, normalize_period
 from cfo_sync.platforms.pagarme.credentials import PagarmeAccount
 
 
@@ -91,10 +91,16 @@ def _build_order_row(
     row["amount_centavos"] = _to_int(flat.get("amount"))
     row["amount_reais"] = _to_money(flat.get("amount"))
     totals = charge_totals.get(str(row["id"] or "").strip(), {})
-    row["fee_centavos"] = totals.get("fee_centavos", 0)
+    row["fee_centavos"] = totals.get("mdr_fee_centavos", 0)
     row["fee_reais"] = _to_money(row["fee_centavos"])
-    row["taxa_pagarme_centavos"] = row["fee_centavos"]
-    row["taxa_pagarme_reais"] = row["fee_reais"]
+    row["mdr_fee_centavos"] = totals.get("mdr_fee_centavos", 0)
+    row["mdr_fee_reais"] = _to_money(row["mdr_fee_centavos"])
+    row["anticipation_fee_centavos"] = totals.get("anticipation_fee_centavos", 0)
+    row["anticipation_fee_reais"] = _to_money(row["anticipation_fee_centavos"])
+    row["fraud_coverage_fee_centavos"] = totals.get("fraud_coverage_fee_centavos", 0)
+    row["fraud_coverage_fee_reais"] = _to_money(row["fraud_coverage_fee_centavos"])
+    row["taxa_pagarme_centavos"] = totals.get("taxa_pagarme_centavos", 0)
+    row["taxa_pagarme_reais"] = _to_money(row["taxa_pagarme_centavos"])
     row["paid_amount_centavos"] = totals.get("paid_amount_centavos", 0)
     row["paid_amount_reais"] = _to_money(row["paid_amount_centavos"])
     row["net_amount_centavos"] = totals.get("net_amount_centavos", 0)
@@ -128,23 +134,57 @@ def _charge_totals_by_order(
         totals = totals_by_order.setdefault(
             order_id,
             {
-                "fee_centavos": 0,
+                "mdr_fee_centavos": 0,
+                "anticipation_fee_centavos": 0,
+                "fraud_coverage_fee_centavos": 0,
+                "taxa_pagarme_centavos": 0,
                 "paid_amount_centavos": 0,
                 "net_amount_centavos": 0,
                 "refunded_amount_centavos": 0,
                 "charges_count": 0,
             },
         )
-        totals["fee_centavos"] += _to_int(
+        charge_fee = _to_int(
             _first_present(flat, ("fee", "last_transaction.fee", "last_transaction.charge_fee"))
         )
-        totals["paid_amount_centavos"] += _to_int(flat.get("paid_amount"))
-        totals["net_amount_centavos"] += _to_int(
+        charge_net_amount = _to_int(
             _first_present(flat, ("net_amount", "last_transaction.net_amount"))
+        )
+        payable_totals = _payable_fee_totals(account=account, charge_id=_first_text(flat, ("id", "charge_id")))
+        mdr_fee = payable_totals["mdr_fee_centavos"] or charge_fee
+        anticipation_fee = payable_totals["anticipation_fee_centavos"]
+        fraud_coverage_fee = payable_totals["fraud_coverage_fee_centavos"]
+        total_fee = mdr_fee + anticipation_fee + fraud_coverage_fee
+
+        totals["mdr_fee_centavos"] += mdr_fee
+        totals["anticipation_fee_centavos"] += anticipation_fee
+        totals["fraud_coverage_fee_centavos"] += fraud_coverage_fee
+        totals["taxa_pagarme_centavos"] += total_fee
+        totals["paid_amount_centavos"] += _to_int(flat.get("paid_amount"))
+        totals["net_amount_centavos"] += charge_net_amount or max(
+            0,
+            _to_int(flat.get("paid_amount")) - total_fee - _to_int(flat.get("refunded_amount")),
         )
         totals["refunded_amount_centavos"] += _to_int(flat.get("refunded_amount"))
         totals["charges_count"] += 1
     return totals_by_order
+
+
+def _payable_fee_totals(*, account: PagarmeAccount, charge_id: str) -> dict[str, int]:
+    totals = {
+        "mdr_fee_centavos": 0,
+        "anticipation_fee_centavos": 0,
+        "fraud_coverage_fee_centavos": 0,
+    }
+    if not charge_id:
+        return totals
+
+    for payable in list_payables(account=account, charge_id=charge_id):
+        flat = flatten_record(payable)
+        totals["mdr_fee_centavos"] += _to_int(flat.get("fee"))
+        totals["anticipation_fee_centavos"] += _to_int(flat.get("anticipation_fee"))
+        totals["fraud_coverage_fee_centavos"] += _to_int(flat.get("fraud_coverage_fee"))
+    return totals
 
 
 def _filter_accounts(

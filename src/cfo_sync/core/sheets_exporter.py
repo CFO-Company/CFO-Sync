@@ -894,7 +894,9 @@ class GoogleSheetsExporter:
         if platform_key == "pagarme" and resource.name == "pedidos":
             return (
                 ("taxa_pagarme_reais", "taxa_pagarme_reais"),
-                ("fee_reais", "fee_reais"),
+                ("mdr_fee_reais", "mdr_fee_reais"),
+                ("anticipation_fee_reais", "anticipation_fee_reais"),
+                ("fraud_coverage_fee_reais", "fraud_coverage_fee_reais"),
                 ("paid_amount_reais", "paid_amount_reais"),
                 ("net_amount_reais", "net_amount_reais"),
                 ("refunded_amount_reais", "refunded_amount_reais"),
