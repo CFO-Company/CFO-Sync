@@ -321,7 +321,7 @@ Resposta:
 ```json
 {
   "status": "ok",
-  "version": "1.3.20",
+  "version": "1.3.19",
   "build_branch": "1.2.20",
   "build_commit": "d899dbe...",
   "server_time": "2026-04-02T12:00:00+00:00"

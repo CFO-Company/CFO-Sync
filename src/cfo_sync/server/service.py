@@ -11,6 +11,7 @@ from cfo_sync.core.client_registration import ClientRegistrationManager
 from cfo_sync.core.config_loader import load_app_config
 from cfo_sync.core.link_generator import GeneratorLinkManager
 from cfo_sync.core.pipeline import SyncPipeline
+from cfo_sync.platforms.meta_ads.api import meta_ads_api_logging
 from cfo_sync.platforms.tiktok_ads.api import (
     TikTokAdsAPIError,
     exchange_auth_code_for_access_token,
@@ -191,6 +192,31 @@ class CfoSyncServerService:
             }
 
         pipeline = SyncPipeline(config)
+        if self._should_segment_meta_ads_accounts(
+            action=action,
+            platform_key=platform_key,
+            client=client,
+            resource_names=resource_names,
+            sub_clients=sub_clients,
+        ):
+            accounts = self._resolve_meta_ads_job_accounts(
+                platform_key=platform_key,
+                client=client,
+                sub_clients=sub_clients,
+            )
+            with meta_ads_api_logging(log):
+                return self._run_segmented_meta_ads_job(
+                    pipeline=pipeline,
+                    action=action,
+                    platform_key=platform_key,
+                    client=client,
+                    start_date=start_date,
+                    end_date=end_date,
+                    resource_names=resource_names,
+                    accounts=accounts,
+                    log=log,
+                )
+
         if self._should_segment_omie_aliases(
             action=action,
             platform_key=platform_key,
@@ -242,14 +268,15 @@ class CfoSyncServerService:
             )
 
         if action == "collect":
-            count = pipeline.collect(
-                platform_key=platform_key,
-                client=client,
-                start_date=start_date,
-                end_date=end_date,
-                resource_names=resource_names,
-                sub_clients=sub_clients,
-            )
+            with meta_ads_api_logging(log if platform_key == "meta_ads" else None):
+                count = pipeline.collect(
+                    platform_key=platform_key,
+                    client=client,
+                    start_date=start_date,
+                    end_date=end_date,
+                    resource_names=resource_names,
+                    sub_clients=sub_clients,
+                )
             return {
                 "action": action,
                 "platform_key": platform_key,
@@ -258,14 +285,15 @@ class CfoSyncServerService:
             }
 
         if action == "export":
-            count = pipeline.export_to_sheets(
-                platform_key=platform_key,
-                client=client,
-                start_date=start_date,
-                end_date=end_date,
-                resource_names=resource_names,
-                sub_clients=sub_clients,
-            )
+            with meta_ads_api_logging(log if platform_key == "meta_ads" else None):
+                count = pipeline.export_to_sheets(
+                    platform_key=platform_key,
+                    client=client,
+                    start_date=start_date,
+                    end_date=end_date,
+                    resource_names=resource_names,
+                    sub_clients=sub_clients,
+                )
             return {
                 "action": action,
                 "platform_key": platform_key,
@@ -274,6 +302,116 @@ class CfoSyncServerService:
             }
 
         raise ValueError("Acao invalida. Use 'collect', 'export' ou 'sync_mercado_livre_categories'.")
+
+    def _should_segment_meta_ads_accounts(
+        self,
+        *,
+        action: str,
+        platform_key: str,
+        client: str,
+        resource_names: list[str] | None,
+        sub_clients: list[str] | None,
+    ) -> bool:
+        if action not in {"collect", "export"}:
+            return False
+        if platform_key != "meta_ads":
+            return False
+        if resource_names and not {"contas", "insights", "campanhas"}.intersection(resource_names):
+            return False
+
+        accounts = self._resolve_meta_ads_job_accounts(
+            platform_key=platform_key,
+            client=client,
+            sub_clients=sub_clients,
+        )
+        return len(accounts) > 1
+
+    def _resolve_meta_ads_job_accounts(
+        self,
+        *,
+        platform_key: str,
+        client: str,
+        sub_clients: list[str] | None,
+    ) -> list[str]:
+        if sub_clients:
+            return list(dict.fromkeys(name for name in sub_clients if name.strip()))
+
+        behavior = self.platform_ui_registry.get(platform_key)
+        if behavior is None or not client:
+            return []
+        return list(dict.fromkeys(name for name in behavior.sub_client_names(client) if name.strip()))
+
+    def _run_segmented_meta_ads_job(
+        self,
+        *,
+        pipeline: SyncPipeline,
+        action: str,
+        platform_key: str,
+        client: str,
+        start_date: str | None,
+        end_date: str | None,
+        resource_names: list[str] | None,
+        accounts: list[str],
+        log: Callable[[str], None],
+    ) -> dict[str, object]:
+        total_count = 0
+        failures: list[str] = []
+        total_segments = len(accounts)
+        period_label = f"{start_date or ''}..{end_date or ''}".strip(".")
+        log(
+            "Job Meta Ads dividido em partes: "
+            f"contas={len(accounts)} total={total_segments}. "
+            "Cada parte usa sub_clients para preservar as demais contas no Sheets."
+        )
+
+        for segment_index, account in enumerate(accounts, start=1):
+            log(
+                f"Parte {segment_index}/{total_segments} iniciada: "
+                f"conta={account} periodo={period_label}"
+            )
+            try:
+                if action == "collect":
+                    count = pipeline.collect(
+                        platform_key=platform_key,
+                        client=client,
+                        start_date=start_date,
+                        end_date=end_date,
+                        resource_names=resource_names,
+                        sub_clients=[account],
+                    )
+                else:
+                    count = pipeline.export_to_sheets(
+                        platform_key=platform_key,
+                        client=client,
+                        start_date=start_date,
+                        end_date=end_date,
+                        resource_names=resource_names,
+                        sub_clients=[account],
+                    )
+            except Exception as error:  # noqa: BLE001
+                failures.append(f"{account}: {error}")
+                log(
+                    f"Parte {segment_index}/{total_segments} falhou: "
+                    f"conta={account} erro={error}"
+                )
+                continue
+
+            total_count += count
+            log(
+                f"Parte {segment_index}/{total_segments} concluida: "
+                f"conta={account} registros={count}"
+            )
+
+        if failures:
+            raise ValueError("Falha em uma ou mais partes Meta Ads: " + " | ".join(failures))
+
+        return {
+            "action": action,
+            "platform_key": platform_key,
+            "client": client,
+            "count": total_count,
+            "segments": total_segments,
+        }
 
     def _should_segment_mercado_livre_aliases(
         self,

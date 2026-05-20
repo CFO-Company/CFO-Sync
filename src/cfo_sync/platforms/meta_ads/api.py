@@ -3,10 +3,14 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import socket
+import threading
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date
-from typing import Any
+from typing import Any, Callable, Iterator
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
@@ -16,11 +20,35 @@ from cfo_sync.platforms.meta_ads.credentials import MetaAdsAuth
 
 BASE_URL = "https://graph.facebook.com/v20.0"
 MAX_PAGES_SAFETY = 2000
-RETRY_BACKOFF_SECONDS = (1.0, 3.0, 8.0)
+RETRY_BACKOFF_SECONDS = tuple(
+    float(value)
+    for value in os.getenv("CFO_SYNC_META_ADS_RETRY_BACKOFF_SECONDS", "30,90,180").split(",")
+    if value.strip()
+)
+MAX_CONCURRENT_REQUESTS = max(1, int(os.getenv("CFO_SYNC_META_ADS_MAX_CONCURRENT_REQUESTS", "1")))
+USAGE_HEADER_NAMES = (
+    "x-app-usage",
+    "x-ad-account-usage",
+    "x-business-use-case-usage",
+)
+_REQUEST_SEMAPHORE = threading.BoundedSemaphore(MAX_CONCURRENT_REQUESTS)
+_LOG_CALLBACK: ContextVar[Callable[[str], None] | None] = ContextVar(
+    "meta_ads_api_log_callback",
+    default=None,
+)
 
 
 class MetaAdsAPIError(RuntimeError):
     pass
+
+
+@contextmanager
+def meta_ads_api_logging(log: Callable[[str], None] | None) -> Iterator[None]:
+    token = _LOG_CALLBACK.set(log)
+    try:
+        yield
+    finally:
+        _LOG_CALLBACK.reset(token)
 
 
 def iter_paginated(
@@ -67,15 +95,23 @@ def _request_json(
     appsecret_proof = _build_appsecret_proof(auth.access_token, auth.app_secret)
     url = _build_url(path_or_url, auth.access_token, appsecret_proof, params)
 
-    for _attempt, backoff in enumerate((*RETRY_BACKOFF_SECONDS, None), start=1):
+    for attempt, backoff in enumerate((*RETRY_BACKOFF_SECONDS, None), start=1):
         request = Request(url=url, method="GET")
         try:
-            with urlopen(request, timeout=30) as response:
-                return json.loads(response.read().decode("utf-8"))
+            with _REQUEST_SEMAPHORE:
+                with urlopen(request, timeout=30) as response:
+                    _log_usage_headers(response.headers)
+                    return json.loads(response.read().decode("utf-8"))
         except HTTPError as error:
             body = error.read().decode("utf-8", errors="ignore") if error.fp else ""
-            if error.code in {429, 500, 502, 503, 504} and backoff is not None:
-                time.sleep(backoff)
+            _log_usage_headers(error.headers)
+            if _is_retryable_http_error(error=error, body=body) and backoff is not None:
+                sleep_seconds = _retry_after_seconds(error) or backoff
+                _log_api_event(
+                    "Meta Ads rate limit/transient error: "
+                    f"status={error.code} tentativa={attempt} aguardando={sleep_seconds:g}s"
+                )
+                time.sleep(sleep_seconds)
                 continue
             raise MetaAdsAPIError(
                 f"Erro HTTP no Meta Ads (status={error.code}): {body[:300]}"
@@ -89,6 +125,54 @@ def _request_json(
             raise MetaAdsAPIError("Resposta invalida da API Meta Ads.") from error
 
     raise MetaAdsAPIError("Falha inesperada ao chamar a API Meta Ads.")
+
+
+def _is_retryable_http_error(error: HTTPError, body: str) -> bool:
+    if error.code in {429, 500, 502, 503, 504}:
+        return True
+    if error.code != 403:
+        return False
+
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return False
+
+    meta_error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(meta_error, dict):
+        return False
+
+    return bool(meta_error.get("is_transient")) or meta_error.get("code") == 4
+
+
+def _retry_after_seconds(error: HTTPError) -> float | None:
+    raw_value = error.headers.get("Retry-After") if error.headers else None
+    if raw_value is None:
+        return None
+    try:
+        value = float(raw_value)
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
+def _log_usage_headers(headers: Any) -> None:
+    if not headers:
+        return
+
+    parts: list[str] = []
+    for header_name in USAGE_HEADER_NAMES:
+        value = headers.get(header_name)
+        if value:
+            parts.append(f"{header_name}={value}")
+    if parts:
+        _log_api_event("Meta Ads usage headers: " + " ".join(parts))
+
+
+def _log_api_event(message: str) -> None:
+    log = _LOG_CALLBACK.get()
+    if log is not None:
+        log(message)
 
 
 def _build_url(
