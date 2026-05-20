@@ -1,3 +1,15 @@
+## [1.3.19] - 20-05-2026
+
+### Added
+- Testes de resiliencia para segmentacao de jobs Meta Ads, retry de rate limit e filtro de escopo por conta no Google Sheets.
+
+### Changed
+- Jobs Meta Ads passam a ser segmentados por conta/filial usando `sub_clients`, preservando dados das demais contas na substituicao por periodo.
+- Chamadas Meta Ads passam a ter limite de concorrencia configuravel por `CFO_SYNC_META_ADS_MAX_CONCURRENT_REQUESTS`.
+- Rate limits e erros transientes Meta Ads, incluindo `code=4`, passam a usar retry/backoff configuravel por `CFO_SYNC_META_ADS_RETRY_BACKOFF_SECONDS`.
+- Logs de jobs Meta Ads passam a registrar headers de uso da API quando a Meta os retorna.
+- Versao do aplicativo atualizada para 1.3.19.
+
 ## [1.3.20] - 19-05-2026
 
 ### Added
