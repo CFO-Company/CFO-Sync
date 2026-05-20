@@ -1,3 +1,9 @@
+## [1.3.21] - 20-05-2026
+
+### Changed
+- Pedidos Pagar.me passam a agregar as cobrancas do periodo por `order_id` e exportar taxa, valor pago, valor liquido, reembolso e quantidade de cobrancas por pedido.
+- Versao do aplicativo atualizada para 1.3.21.
+
 ## [1.3.19] - 20-05-2026
 
 ### Added

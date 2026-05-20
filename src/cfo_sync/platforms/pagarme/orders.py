@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from cfo_sync.core.models import RawRecord, ResourceConfig
-from cfo_sync.platforms.pagarme.api import flatten_record, list_orders, normalize_period
+from cfo_sync.platforms.pagarme.api import flatten_record, list_charges, list_orders, normalize_period
 from cfo_sync.platforms.pagarme.credentials import PagarmeAccount
 
 
@@ -24,6 +24,11 @@ def fetch_orders(
     rows: list[RawRecord] = []
     for account in selected_accounts:
         raw_rows = list_orders(account=account, start_date=since, end_date=until)
+        charge_totals_by_order = _charge_totals_by_order(
+            account=account,
+            start_date=since,
+            end_date=until,
+        )
         for raw in raw_rows:
             rows.append(
                 _build_order_row(
@@ -31,6 +36,7 @@ def fetch_orders(
                     account=account,
                     resource=resource,
                     raw=raw,
+                    charge_totals=charge_totals_by_order,
                 )
             )
 
@@ -50,6 +56,7 @@ def _build_order_row(
     account: PagarmeAccount,
     resource: ResourceConfig,
     raw: dict[str, Any],
+    charge_totals: dict[str, dict[str, int]],
 ) -> RawRecord:
     flat = flatten_record(raw)
     row: RawRecord = dict(flat)
@@ -83,6 +90,18 @@ def _build_order_row(
     )
     row["amount_centavos"] = _to_int(flat.get("amount"))
     row["amount_reais"] = _to_money(flat.get("amount"))
+    totals = charge_totals.get(str(row["id"] or "").strip(), {})
+    row["fee_centavos"] = totals.get("fee_centavos", 0)
+    row["fee_reais"] = _to_money(row["fee_centavos"])
+    row["taxa_pagarme_centavos"] = row["fee_centavos"]
+    row["taxa_pagarme_reais"] = row["fee_reais"]
+    row["paid_amount_centavos"] = totals.get("paid_amount_centavos", 0)
+    row["paid_amount_reais"] = _to_money(row["paid_amount_centavos"])
+    row["net_amount_centavos"] = totals.get("net_amount_centavos", 0)
+    row["net_amount_reais"] = _to_money(row["net_amount_centavos"])
+    row["refunded_amount_centavos"] = totals.get("refunded_amount_centavos", 0)
+    row["refunded_amount_reais"] = _to_money(row["refunded_amount_centavos"])
+    row["charges_count"] = totals.get("charges_count", 0)
     row["items_count"] = _count_list(raw.get("items"))
     row["payments_count"] = _count_list(raw.get("payments"))
     row["data"] = _resolve_data(
@@ -91,6 +110,41 @@ def _build_order_row(
     )
     row["mes_ano"] = _to_month_year(str(row.get("data") or ""))
     return row
+
+
+def _charge_totals_by_order(
+    *,
+    account: PagarmeAccount,
+    start_date: str,
+    end_date: str,
+) -> dict[str, dict[str, int]]:
+    totals_by_order: dict[str, dict[str, int]] = {}
+    for charge in list_charges(account=account, start_date=start_date, end_date=end_date):
+        flat = flatten_record(charge)
+        order_id = _first_text(flat, ("order_id", "order.id"))
+        if not order_id:
+            continue
+
+        totals = totals_by_order.setdefault(
+            order_id,
+            {
+                "fee_centavos": 0,
+                "paid_amount_centavos": 0,
+                "net_amount_centavos": 0,
+                "refunded_amount_centavos": 0,
+                "charges_count": 0,
+            },
+        )
+        totals["fee_centavos"] += _to_int(
+            _first_present(flat, ("fee", "last_transaction.fee", "last_transaction.charge_fee"))
+        )
+        totals["paid_amount_centavos"] += _to_int(flat.get("paid_amount"))
+        totals["net_amount_centavos"] += _to_int(
+            _first_present(flat, ("net_amount", "last_transaction.net_amount"))
+        )
+        totals["refunded_amount_centavos"] += _to_int(flat.get("refunded_amount"))
+        totals["charges_count"] += 1
+    return totals_by_order
 
 
 def _filter_accounts(
@@ -199,4 +253,13 @@ def _first_text(raw: dict[str, object], keys: tuple[str, ...]) -> str:
         text = str(value).strip()
         if text:
             return text
+    return ""
+
+
+def _first_present(raw: dict[str, object], keys: tuple[str, ...]) -> object:
+    for key in keys:
+        value = raw.get(key)
+        if value in (None, ""):
+            continue
+        return value
     return ""

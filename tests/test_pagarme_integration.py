@@ -63,8 +63,9 @@ class PagarmeIntegrationTest(unittest.TestCase):
         self.assertEqual(store.companies(), ["Unfair"])
         self.assertEqual(store.account_names_for_company("Unfair"), ["Le Moritz"])
 
+    @patch("cfo_sync.platforms.pagarme.orders.list_charges")
     @patch("cfo_sync.platforms.pagarme.orders.list_orders")
-    def test_fetch_orders_normalizes_analysis_fields(self, list_orders_mock) -> None:
+    def test_fetch_orders_normalizes_analysis_fields(self, list_orders_mock, list_charges_mock) -> None:
         list_orders_mock.return_value = [
             {
                 "id": "ord_1",
@@ -81,6 +82,26 @@ class PagarmeIntegrationTest(unittest.TestCase):
                 "items": [{"id": "item_1"}],
                 "payments": [{"id": "pay_1"}],
             }
+        ]
+        list_charges_mock.return_value = [
+            {
+                "id": "chg_1",
+                "order_id": "ord_1",
+                "paid_amount": 10000,
+                "fee": 100,
+                "net_amount": 9900,
+                "refunded_amount": 0,
+            },
+            {
+                "id": "chg_2",
+                "order": {"id": "ord_1"},
+                "paid_amount": 2345,
+                "last_transaction": {
+                    "fee": 23,
+                    "net_amount": 2322,
+                },
+                "refunded_amount": 0,
+            },
         ]
 
         rows = fetch_orders(
@@ -100,6 +121,12 @@ class PagarmeIntegrationTest(unittest.TestCase):
         self.assertEqual(row["payments_count"], 1)
         self.assertEqual(row["resource_source"], "orders")
         self.assertEqual(row["customer.name"], "Maria")
+        self.assertEqual(row["fee_centavos"], 123)
+        self.assertEqual(row["fee_reais"], 1.23)
+        self.assertEqual(row["taxa_pagarme_reais"], 1.23)
+        self.assertEqual(row["paid_amount_reais"], 123.45)
+        self.assertEqual(row["net_amount_reais"], 122.22)
+        self.assertEqual(row["charges_count"], 2)
 
     @patch("cfo_sync.platforms.pagarme.financeiro.list_charges")
     def test_fetch_financeiro_normalizes_financial_fields(self, list_charges_mock) -> None:
