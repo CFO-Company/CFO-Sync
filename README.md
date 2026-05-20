@@ -140,6 +140,11 @@ chamadas de detalhe da API. O servidor segmenta jobs por alias/mes quando
 possivel, e o desktop aguarda mais tempo para evitar timeout durante exports
 longos.
 
+> Release/deploy de producao deve seguir o runbook em
+> [`docs/release-deploy-runbook.md`](docs/release-deploy-runbook.md). Ele cobre
+> validacao de `CHANGELOG.md`, tag/release, update do repositorio no servidor,
+> rebuild Docker e healthcheck.
+
 ### 2. Rodar o script unico de bootstrap Docker
 
 No repo (`C:\CFO-Sync`), execute:

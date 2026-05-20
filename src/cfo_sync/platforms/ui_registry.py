@@ -6,6 +6,7 @@ from cfo_sync.platforms.google_ads.ui_behavior import GoogleAdsUIBehavior
 from cfo_sync.platforms.mercado_livre.ui_behavior import MercadoLivreUIBehavior
 from cfo_sync.platforms.meta_ads.ui_behavior import MetaAdsUIBehavior
 from cfo_sync.platforms.omie.ui_behavior import OmieUIBehavior
+from cfo_sync.platforms.pagarme.ui_behavior import PagarmeUIBehavior
 from cfo_sync.platforms.tiktok_ads.ui_behavior import TikTokAdsUIBehavior
 from cfo_sync.platforms.tiktok_shop.ui_behavior import TikTokShopUIBehavior
 from cfo_sync.platforms.ui_behavior import PlatformUIBehavior
@@ -73,6 +74,14 @@ def build_platform_ui_registry(config: AppConfig) -> dict[str, PlatformUIBehavio
             registry["bling"] = BlingUIBehavior(
                 credentials_path=config.credentials_dir / config.bling.credentials_file,
                 oauth_app_path=config.credentials_dir / config.bling.oauth_app_file,
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
+    if "pagarme" in configured_platform_keys:
+        try:
+            registry["pagarme"] = PagarmeUIBehavior(
+                credentials_path=config.credentials_dir / "pagarme_credentials.json",
             )
         except (OSError, ValueError, KeyError, TypeError):
             pass
