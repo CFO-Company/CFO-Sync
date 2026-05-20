@@ -1,3 +1,9 @@
+## [1.3.22] - 20-05-2026
+
+### Fixed
+- Exportacao de pedidos Pagar.me passa a incluir automaticamente as colunas de taxa e totais financeiros mesmo quando o `field_map` da planilha nao declara esses campos.
+- Versao do aplicativo atualizada para 1.3.22.
+
 ## [1.3.21] - 20-05-2026
 
 ### Changed

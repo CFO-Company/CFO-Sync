@@ -46,6 +46,41 @@ class GoogleSheetsExporterScopeFiltersTest(unittest.TestCase):
         self.assertIsNotNone(policy)
         self.assertEqual(policy.period_fields[0], "data")
 
+    def test_pagarme_orders_include_fee_columns_without_field_map(self) -> None:
+        resource = ResourceConfig(
+            name="pedidos",
+            endpoint="/orders",
+            spreadsheet_url="",
+            spreadsheet_id="",
+            field_map={"data": "Data", "pedido_id": "Pedido"},
+            client_tabs={},
+        )
+        raw_rows = [
+            {
+                "data": "2026-05-20",
+                "pedido_id": "ord_1",
+                "taxa_pagarme_reais": 1.23,
+                "fee_reais": 1.23,
+                "paid_amount_reais": 123.45,
+                "net_amount_reais": 122.22,
+                "refunded_amount_reais": 0.0,
+                "charges_count": 2,
+            }
+        ]
+        mapped_rows = [GoogleSheetsExporter._map_to_sheet_columns(resource, row) for row in raw_rows]
+
+        ordered_columns = GoogleSheetsExporter._include_platform_columns(
+            platform_key="pagarme",
+            resource=resource,
+            rows=raw_rows,
+            mapped_rows=mapped_rows,
+            ordered_columns=list(resource.field_map.values()),
+        )
+
+        self.assertIn("taxa_pagarme_reais", ordered_columns)
+        self.assertEqual(mapped_rows[0]["taxa_pagarme_reais"], 1.23)
+        self.assertEqual(mapped_rows[0]["net_amount_reais"], 122.22)
+
 
 if __name__ == "__main__":
     unittest.main()

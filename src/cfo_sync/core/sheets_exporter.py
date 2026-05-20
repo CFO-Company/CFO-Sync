@@ -53,6 +53,13 @@ class GoogleSheetsExporter:
         tab_name = self._resolve_tab_name(spreadsheet_id, target_tab)
         mapped_rows = [self._map_to_sheet_columns(resource, row) for row in rows]
         ordered_columns = list(resource.field_map.values())
+        ordered_columns = self._include_platform_columns(
+            platform_key=platform_key,
+            resource=resource,
+            rows=rows,
+            mapped_rows=mapped_rows,
+            ordered_columns=ordered_columns,
+        )
 
         replace_policy = self._resolve_period_replace_policy(
             platform_key=platform_key,
@@ -851,6 +858,49 @@ class GoogleSheetsExporter:
             sheet_column: row.get(api_field)
             for api_field, sheet_column in resource.field_map.items()
         }
+
+    @classmethod
+    def _include_platform_columns(
+        cls,
+        *,
+        platform_key: str,
+        resource: ResourceConfig,
+        rows: list[RawRecord],
+        mapped_rows: list[dict[str, object]],
+        ordered_columns: list[str],
+    ) -> list[str]:
+        extra_columns = cls._platform_extra_columns(platform_key=platform_key, resource=resource)
+        if not extra_columns:
+            return ordered_columns
+
+        output_columns = list(ordered_columns)
+        normalized_output = {cls._normalize_column_label(column) for column in output_columns}
+        for api_field, sheet_column in extra_columns:
+            if cls._normalize_column_label(sheet_column) not in normalized_output:
+                output_columns.append(sheet_column)
+                normalized_output.add(cls._normalize_column_label(sheet_column))
+
+        for raw_row, mapped_row in zip(rows, mapped_rows):
+            for api_field, sheet_column in extra_columns:
+                mapped_row.setdefault(sheet_column, raw_row.get(api_field))
+        return output_columns
+
+    @staticmethod
+    def _platform_extra_columns(
+        *,
+        platform_key: str,
+        resource: ResourceConfig,
+    ) -> tuple[tuple[str, str], ...]:
+        if platform_key == "pagarme" and resource.name == "pedidos":
+            return (
+                ("taxa_pagarme_reais", "taxa_pagarme_reais"),
+                ("fee_reais", "fee_reais"),
+                ("paid_amount_reais", "paid_amount_reais"),
+                ("net_amount_reais", "net_amount_reais"),
+                ("refunded_amount_reais", "refunded_amount_reais"),
+                ("charges_count", "charges_count"),
+            )
+        return ()
 
     @staticmethod
     def _to_sheet_row(mapped_row: dict[str, object], ordered_columns: list[str]) -> list[object]:
