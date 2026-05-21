@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from cfo_sync.core.models import RawRecord, ResourceConfig
-from cfo_sync.platforms.pagarme.api import flatten_record, list_charges, normalize_period
+from cfo_sync.platforms.pagarme.api import flatten_record, list_charges
 from cfo_sync.platforms.pagarme.credentials import PagarmeAccount
 
 
@@ -18,12 +18,11 @@ def fetch_financeiro(
     end_date: str | None = None,
     sub_clients: list[str] | None = None,
 ) -> list[RawRecord]:
-    since, until = normalize_period(start_date=start_date, end_date=end_date)
     selected_accounts = _filter_accounts(accounts=accounts, sub_clients=sub_clients)
 
     rows: list[RawRecord] = []
     for account in selected_accounts:
-        raw_rows = list_charges(account=account, start_date=since, end_date=until)
+        raw_rows = list_charges(account=account, start_date=start_date, end_date=end_date)
         for raw in raw_rows:
             rows.append(
                 _build_financeiro_row(
