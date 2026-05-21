@@ -150,8 +150,8 @@ class CfoSyncServerService:
         action = str(payload.get("action") or "").strip().lower()
         platform_key = str(payload.get("platform_key") or "").strip()
         client = str(payload.get("client") or "").strip()
-        start_date = _optional_string(payload.get("start_date"))
-        end_date = _optional_string(payload.get("end_date"))
+        start_date = _optional_iso_date(payload.get("start_date"), field_name="start_date")
+        end_date = _optional_iso_date(payload.get("end_date"), field_name="end_date")
         resource_names = _optional_string_list(payload.get("resource_names"))
         sub_clients = _optional_string_list(payload.get("sub_clients"))
 
@@ -1200,6 +1200,20 @@ def _optional_string(value: object) -> str | None:
         return None
     cleaned = str(value).strip()
     return cleaned or None
+
+
+def _optional_iso_date(value: object, *, field_name: str) -> str | None:
+    text = _optional_string(value)
+    if text is None:
+        return None
+
+    for format_mask in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(text, format_mask).date().isoformat()
+        except ValueError:
+            continue
+
+    raise ValueError(f"{field_name} invalida: {text}. Use DD/MM/AAAA ou AAAA-MM-DD.")
 
 
 def _optional_string_list(value: object) -> list[str] | None:

@@ -1,3 +1,10 @@
+## [1.3.25] - 21-05-2026
+
+### Fixed
+- Validacao de periodo Pagar.me passa a rejeitar datas invalidas, como `31/04/2026`, em vez de usar a data atual como fallback.
+- Pagar.me e jobs remotos passam a aceitar periodos em `DD/MM/AAAA`, normalizando para `AAAA-MM-DD` antes da coleta/exportacao.
+- Versao do aplicativo e do instalador atualizada para 1.3.25.
+
 ## [1.3.24] - 20-05-2026
 
 ### Fixed

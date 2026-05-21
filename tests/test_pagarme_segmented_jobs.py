@@ -1,6 +1,6 @@
 import unittest
 
-from cfo_sync.server.service import CfoSyncServerService
+from cfo_sync.server.service import CfoSyncServerService, _optional_iso_date
 
 
 class _FakePagarmeBehavior:
@@ -20,6 +20,15 @@ class _PartiallyFailingPipeline:
 
 
 class PagarmeSegmentedJobsTest(unittest.TestCase):
+    def test_server_date_parser_rejects_invalid_brazilian_date(self) -> None:
+        with self.assertRaisesRegex(ValueError, "end_date invalida"):
+            _optional_iso_date("31/04/2026", field_name="end_date")
+
+    def test_server_date_parser_normalizes_brazilian_date(self) -> None:
+        parsed = _optional_iso_date("30/04/2026", field_name="end_date")
+
+        self.assertEqual(parsed, "2026-04-30")
+
     def test_segmented_pagarme_job_continues_after_alias_failure(self) -> None:
         service = CfoSyncServerService.__new__(CfoSyncServerService)
         pipeline = _PartiallyFailingPipeline()
