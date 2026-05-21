@@ -1,3 +1,11 @@
+## [1.3.26] - 21-05-2026
+
+### Fixed
+- Pedidos e financeiro Pagar.me deixam de normalizar o periodo duas vezes, garantindo que a API receba exatamente o intervalo selecionado no Sync.
+- Normalizacao de periodo Pagar.me passa a aceitar datas ISO ja expandidas com horario para compatibilidade com fluxos legados.
+- Testes passam a validar que pedidos e financeiro Pagar.me repassam `start_date` e `end_date` selecionados sem trocar pelo mes atual.
+- Versao do aplicativo e do instalador atualizada para 1.3.26.
+
 ## [1.3.25] - 21-05-2026
 
 ### Fixed

@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from cfo_sync.core.models import RawRecord, ResourceConfig
-from cfo_sync.platforms.pagarme.api import flatten_record, list_charges, list_orders, list_payables, normalize_period
+from cfo_sync.platforms.pagarme.api import flatten_record, list_charges, list_orders, list_payables
 from cfo_sync.platforms.pagarme.credentials import PagarmeAccount
 
 
@@ -18,16 +18,15 @@ def fetch_orders(
     end_date: str | None = None,
     sub_clients: list[str] | None = None,
 ) -> list[RawRecord]:
-    since, until = normalize_period(start_date=start_date, end_date=end_date)
     selected_accounts = _filter_accounts(accounts=accounts, sub_clients=sub_clients)
 
     rows: list[RawRecord] = []
     for account in selected_accounts:
-        raw_rows = list_orders(account=account, start_date=since, end_date=until)
+        raw_rows = list_orders(account=account, start_date=start_date, end_date=end_date)
         charge_totals_by_order = _charge_totals_by_order(
             account=account,
-            start_date=since,
-            end_date=until,
+            start_date=start_date,
+            end_date=end_date,
         )
         for raw in raw_rows:
             rows.append(
@@ -121,8 +120,8 @@ def _build_order_row(
 def _charge_totals_by_order(
     *,
     account: PagarmeAccount,
-    start_date: str,
-    end_date: str,
+    start_date: str | None,
+    end_date: str | None,
 ) -> dict[str, dict[str, int]]:
     totals_by_order: dict[str, dict[str, int]] = {}
     for charge in list_charges(account=account, start_date=start_date, end_date=end_date):

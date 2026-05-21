@@ -66,6 +66,33 @@ class PagarmeIntegrationTest(unittest.TestCase):
     @patch("cfo_sync.platforms.pagarme.orders.list_payables")
     @patch("cfo_sync.platforms.pagarme.orders.list_charges")
     @patch("cfo_sync.platforms.pagarme.orders.list_orders")
+    def test_fetch_orders_passes_selected_period_to_api_once(
+        self,
+        list_orders_mock,
+        list_charges_mock,
+        list_payables_mock,
+    ) -> None:
+        list_orders_mock.return_value = []
+        list_charges_mock.return_value = []
+
+        rows = fetch_orders(
+            client="Unfair",
+            resource=self.resource_pedidos,
+            accounts=[self.account],
+            start_date="2026-04-01",
+            end_date="2026-04-30",
+        )
+
+        self.assertEqual(rows, [])
+        self.assertEqual(list_payables_mock.call_count, 0)
+        self.assertEqual(list_orders_mock.call_args.kwargs["start_date"], "2026-04-01")
+        self.assertEqual(list_orders_mock.call_args.kwargs["end_date"], "2026-04-30")
+        self.assertEqual(list_charges_mock.call_args.kwargs["start_date"], "2026-04-01")
+        self.assertEqual(list_charges_mock.call_args.kwargs["end_date"], "2026-04-30")
+
+    @patch("cfo_sync.platforms.pagarme.orders.list_payables")
+    @patch("cfo_sync.platforms.pagarme.orders.list_charges")
+    @patch("cfo_sync.platforms.pagarme.orders.list_orders")
     def test_fetch_orders_normalizes_analysis_fields(
         self,
         list_orders_mock,
@@ -148,6 +175,22 @@ class PagarmeIntegrationTest(unittest.TestCase):
         self.assertEqual(row["paid_amount_reais"], 123.45)
         self.assertEqual(row["net_amount_reais"], 122.05)
         self.assertEqual(row["charges_count"], 2)
+
+    @patch("cfo_sync.platforms.pagarme.financeiro.list_charges")
+    def test_fetch_financeiro_passes_selected_period_to_api_once(self, list_charges_mock) -> None:
+        list_charges_mock.return_value = []
+
+        rows = fetch_financeiro(
+            client="Unfair",
+            resource=self.resource_financeiro,
+            accounts=[self.account],
+            start_date="2026-04-01",
+            end_date="2026-04-30",
+        )
+
+        self.assertEqual(rows, [])
+        self.assertEqual(list_charges_mock.call_args.kwargs["start_date"], "2026-04-01")
+        self.assertEqual(list_charges_mock.call_args.kwargs["end_date"], "2026-04-30")
 
     @patch("cfo_sync.platforms.pagarme.financeiro.list_charges")
     def test_fetch_financeiro_normalizes_financial_fields(self, list_charges_mock) -> None:

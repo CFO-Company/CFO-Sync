@@ -233,7 +233,13 @@ def _parse_date(raw_value: str | None, fallback: date) -> date:
     if not text:
         return fallback
 
-    for format_mask in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+    for format_mask in (
+        "%Y-%m-%d",
+        "%d/%m/%Y",
+        "%d-%m-%Y",
+        "%Y-%m-%dT%H:%M:%SZ",
+        "%Y-%m-%dT%H:%M:%S%z",
+    ):
         try:
             return datetime.strptime(text, format_mask).date()
         except ValueError:

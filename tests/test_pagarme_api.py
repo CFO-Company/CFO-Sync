@@ -73,6 +73,12 @@ class PagarmeAPITest(unittest.TestCase):
         self.assertEqual(since, "2026-04-01T00:00:00Z")
         self.assertEqual(until, "2026-04-30T23:59:59Z")
 
+    def test_normalize_period_accepts_already_expanded_iso_datetime(self) -> None:
+        since, until = normalize_period("2026-04-01T00:00:00Z", "2026-04-30T23:59:59Z")
+
+        self.assertEqual(since, "2026-04-01T00:00:00Z")
+        self.assertEqual(until, "2026-04-30T23:59:59Z")
+
     @patch("cfo_sync.platforms.pagarme.api.urlopen")
     def test_list_payables_filters_by_charge_id(self, urlopen_mock) -> None:
         urlopen_mock.return_value = _JsonResponse(
