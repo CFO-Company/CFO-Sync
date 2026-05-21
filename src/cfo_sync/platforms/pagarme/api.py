@@ -232,10 +232,14 @@ def _parse_date(raw_value: str | None, fallback: date) -> date:
     text = str(raw_value or "").strip()
     if not text:
         return fallback
-    try:
-        return date.fromisoformat(text)
-    except ValueError:
-        return fallback
+
+    for format_mask in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(text, format_mask).date()
+        except ValueError:
+            continue
+
+    raise ValueError(f"Data invalida para Pagar.me: {text}. Use DD/MM/AAAA ou AAAA-MM-DD.")
 
 
 def _start_of_day_iso(value: date) -> str:

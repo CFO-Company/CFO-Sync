@@ -63,6 +63,16 @@ class PagarmeAPITest(unittest.TestCase):
         self.assertEqual(since, "2026-05-01T00:00:00Z")
         self.assertEqual(until, "2026-05-19T23:59:59Z")
 
+    def test_normalize_period_rejects_invalid_date_instead_of_using_today(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Data invalida"):
+            normalize_period("01/04/2026", "31/04/2026")
+
+    def test_normalize_period_accepts_brazilian_date_format(self) -> None:
+        since, until = normalize_period("01/04/2026", "30/04/2026")
+
+        self.assertEqual(since, "2026-04-01T00:00:00Z")
+        self.assertEqual(until, "2026-04-30T23:59:59Z")
+
     @patch("cfo_sync.platforms.pagarme.api.urlopen")
     def test_list_payables_filters_by_charge_id(self, urlopen_mock) -> None:
         urlopen_mock.return_value = _JsonResponse(
